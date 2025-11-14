@@ -72,15 +72,6 @@ data "aws_iam_policy_document" "this" {
   }
 
   statement {
-    effect = "Allow"
-    actions = [
-      "ec2:AuthorizeSecurityGroupIngress",
-      "ec2:RevokeSecurityGroupIngress"
-    ]
-    resources = ["*"]
-  }
-
-  statement {
     effect    = "Allow"
     actions   = ["ec2:CreateSecurityGroup"]
     resources = ["*"]
@@ -130,12 +121,6 @@ data "aws_iam_policy_document" "this" {
       "ec2:DeleteSecurityGroup"
     ]
     resources = ["*"]
-
-    condition {
-      test     = "Null"
-      variable = "aws:ResourceTag/elbv2.k8s.aws/cluster"
-      values   = ["false"]
-    }
   }
 
   statement {
@@ -168,9 +153,9 @@ data "aws_iam_policy_document" "this" {
     effect  = "Allow"
     actions = ["elasticloadbalancing:AddTags", "elasticloadbalancing:RemoveTags"]
     resources = [
-      "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:targetgroup/*/*",
-      "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:loadbalancer/net/*/*",
-      "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:loadbalancer/app/*/*",
+      "${local.elb_arn_prefix}:targetgroup/*/*",
+      "${local.elb_arn_prefix}:loadbalancer/net/*/*",
+      "${local.elb_arn_prefix}:loadbalancer/app/*/*",
     ]
 
     condition {
@@ -193,10 +178,10 @@ data "aws_iam_policy_document" "this" {
       "elasticloadbalancing:RemoveTags"
     ]
     resources = [
-      "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:listener/net/*/*/*",
-      "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:listener/app/*/*/*",
-      "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:listener-rule/net/*/*/*",
-      "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:listener-rule/app/*/*/*",
+      "${local.elb_arn_prefix}:listener/net/*/*/*",
+      "${local.elb_arn_prefix}:listener/app/*/*/*",
+      "${local.elb_arn_prefix}:listener-rule/net/*/*/*",
+      "${local.elb_arn_prefix}:listener-rule/app/*/*/*",
     ]
   }
 
@@ -227,9 +212,9 @@ data "aws_iam_policy_document" "this" {
     effect  = "Allow"
     actions = ["elasticloadbalancing:AddTags"]
     resources = [
-      "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:targetgroup/*/*",
-      "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:loadbalancer/net/*/*",
-      "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:loadbalancer/app/*/*",
+      "${local.elb_arn_prefix}:targetgroup/*/*",
+      "${local.elb_arn_prefix}:loadbalancer/net/*/*",
+      "${local.elb_arn_prefix}:loadbalancer/app/*/*",
     ]
 
     condition {
@@ -252,7 +237,7 @@ data "aws_iam_policy_document" "this" {
       "elasticloadbalancing:DeregisterTargets"
     ]
     resources = [
-      "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}:targetgroup/*/*"
+      "${local.elb_arn_prefix}:targetgroup/*/*"
     ]
   }
 

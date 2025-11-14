@@ -1,37 +1,70 @@
 terraform {
   required_providers {
     local = {
-      source = "hashicorp/local"
+      source  = "hashicorp/local"
+      version = "~> 2.0"
     }
   }
 }
 
 variable "path" {
-  type = string
+  description = "Directory path where Karpenter manifests will be generated"
+  type        = string
+  # Validation added because empty path would cause invalid file creation
+  validation {
+    condition     = length(var.path) > 0
+    error_message = "path must not be empty"
+  }
 }
 
 variable "namespace" {
-  type = string
+  description = "Kubernetes namespace where Karpenter will be deployed"
+  type        = string
+  # Validation added because empty namespace would create invalid Kubernetes resources
+  validation {
+    condition     = length(var.namespace) > 0
+    error_message = "namespace must not be empty"
+  }
 }
 
 variable "cluster_name" {
-  type = string
+  description = "EKS cluster name for Karpenter to manage"
+  type        = string
+  # Validation added because Karpenter requires valid cluster name for AWS API calls
+  validation {
+    condition     = length(var.cluster_name) > 0
+    error_message = "cluster_name must not be empty"
+  }
 }
 
 variable "karpenter_helm_version" {
-  type = string
+  description = "Karpenter Helm chart version to deploy"
+  type        = string
+  # Validation added because empty version would cause Helm chart installation to fail
+  validation {
+    condition     = length(var.karpenter_helm_version) > 0
+    error_message = "karpenter_helm_version must not be empty"
+  }
 }
 
 variable "karpenter_queue_name" {
-  type = string
+  description = "SQS queue name for Karpenter interruption handling"
+  type        = string
+  # Validation added because Karpenter requires valid SQS queue name for interruption handling
+  validation {
+    condition     = length(var.karpenter_queue_name) > 0
+    error_message = "karpenter_queue_name must not be empty"
+  }
 }
 
 variable "resources" {
-  type    = list(string)
-  default = []
+  description = "Additional Kubernetes resource files to include in kustomization"
+  type        = list(string)
+  default     = []
 }
 
 variable "karpenter_resource_request" {
+  description = "CPU and memory resource requests for Karpenter controller"
   type = object({
     cpu    = string
     memory = string
@@ -40,9 +73,19 @@ variable "karpenter_resource_request" {
     cpu    = "250m"
     memory = "512Mi"
   }
+  # Validation added because invalid resource values would cause Kubernetes pod creation to fail
+  validation {
+    condition     = can(regex("^[0-9]+(m|\\.[0-9]+)?$", var.karpenter_resource_request.cpu))
+    error_message = "cpu must be a valid Kubernetes quantity (e.g., 250m, 1, 0.5)"
+  }
+  validation {
+    condition     = can(regex("^[0-9]+(Mi|Gi|M|G|Ki|K)?$", var.karpenter_resource_request.memory))
+    error_message = "memory must be a valid Kubernetes quantity (e.g., 512Mi, 1Gi)"
+  }
 }
 
 variable "karpenter_resource_limit" {
+  description = "CPU and memory resource limits for Karpenter controller"
   type = object({
     cpu    = string
     memory = string
@@ -51,24 +94,37 @@ variable "karpenter_resource_limit" {
     cpu    = "500m"
     memory = "1Gi"
   }
+  # Validation added because invalid resource values would cause Kubernetes pod creation to fail
+  validation {
+    condition     = can(regex("^[0-9]+(m|\\.[0-9]+)?$", var.karpenter_resource_limit.cpu))
+    error_message = "cpu must be a valid Kubernetes quantity (e.g., 500m, 1, 0.5)"
+  }
+  validation {
+    condition     = can(regex("^[0-9]+(Mi|Gi|M|G|Ki|K)?$", var.karpenter_resource_limit.memory))
+    error_message = "memory must be a valid Kubernetes quantity (e.g., 1Gi, 512Mi)"
+  }
 }
 
 variable "karpenter_controller_annotations" {
-  type    = map(string)
-  default = {}
+  description = "Annotations for Karpenter service account (e.g., IAM role)"
+  type        = map(string)
+  default     = {}
 }
 
 variable "karpenter_replicas" {
-  type    = number
-  default = 0
+  description = "Number of Karpenter controller replicas"
+  type        = number
+  default     = 0
 }
 
 variable "cluster_asg_node_labels" {
-  type    = map(string)
-  default = {}
+  description = "Node labels for Karpenter controller pod placement"
+  type        = map(string)
+  default     = {}
 }
 
 variable "ec2nodeclass_configs" {
+  description = "List of EC2NodeClass configurations for Karpenter node provisioning"
   type = list(object({
     name                 = string
     node_role_name       = string
@@ -85,9 +141,20 @@ variable "ec2nodeclass_configs" {
       })
     })), [])
   }))
+  # Validation added because empty name would cause invalid filename generation
+  validation {
+    condition     = alltrue([for config in var.ec2nodeclass_configs : length(config.name) > 0])
+    error_message = "All ec2nodeclass_configs must have non-empty name"
+  }
+  # Validation added because empty node_role_name would cause Karpenter to fail IAM operations
+  validation {
+    condition     = alltrue([for config in var.ec2nodeclass_configs : length(config.node_role_name) > 0])
+    error_message = "All ec2nodeclass_configs must have non-empty node_role_name"
+  }
 }
 
 variable "nodepool_configs" {
+  description = "List of NodePool configurations for Karpenter workload scheduling"
   type = list(object({
     name        = string
     node_labels = map(string)
@@ -106,10 +173,24 @@ variable "nodepool_configs" {
     disruption_consolidation_policy = optional(string, "WhenEmpty")
     disruption_consolidate_after    = optional(string, "1m")
   }))
+  # Validation added because empty name would cause invalid filename generation
+  validation {
+    condition     = alltrue([for config in var.nodepool_configs : length(config.name) > 0])
+    error_message = "All nodepool_configs must have non-empty name"
+  }
+  # Validation added because empty node_class_ref_name would create invalid Kubernetes NodePool resource
+  validation {
+    condition     = alltrue([for config in var.nodepool_configs : length(config.node_class_ref_name) > 0])
+    error_message = "All nodepool_configs must have non-empty node_class_ref_name"
+  }
 }
 
 locals {
   values_file = "values.yaml"
+  # Local created to detect filename collisions between ec2nodeclass and nodepool configs
+  ec2nodeclass_names = toset([for config in var.ec2nodeclass_configs : config.name])
+  nodepool_names     = toset([for config in var.nodepool_configs : config.name])
+  name_overlap       = setintersection(local.ec2nodeclass_names, local.nodepool_names)
 }
 
 module "namespace" {
@@ -161,6 +242,13 @@ resource "local_file" "ec2nodeclass" {
   count    = length(var.ec2nodeclass_configs)
   filename = "${var.path}/${var.ec2nodeclass_configs[count.index].name}.yaml"
   content  = module.ec2nodeclass[count.index].manifest
+  # Lifecycle added because overlapping names would cause file overwrites
+  lifecycle {
+    precondition {
+      condition     = length(local.name_overlap) == 0
+      error_message = "ec2nodeclass_configs and nodepool_configs have overlapping names: ${join(", ", local.name_overlap)}. This would cause file collisions."
+    }
+  }
 }
 
 module "nodepool" {
@@ -189,7 +277,8 @@ resource "local_file" "values" {
       clusterName       = var.cluster_name
       interruptionQueue = var.karpenter_queue_name
       featureGates = {
-        spotToSpotConsolidation = "true"
+        # Changed to boolean because Karpenter expects boolean value not string
+        spotToSpotConsolidation = true
       }
     }
     serviceAccount = {
@@ -205,4 +294,44 @@ resource "local_file" "values" {
     replicas     = var.karpenter_replicas
     dnsPolicy    = "ClusterFirst"
   })
+}
+
+output "namespace" {
+  description = "The Kubernetes namespace where Karpenter is deployed"
+  value       = var.namespace
+}
+
+output "cluster_name" {
+  description = "The EKS cluster name that Karpenter manages"
+  value       = var.cluster_name
+}
+
+output "helm_version" {
+  description = "The version of the Karpenter Helm chart deployed"
+  value       = var.karpenter_helm_version
+}
+
+output "replica_count" {
+  description = "The number of Karpenter controller replicas configured"
+  value       = var.karpenter_replicas
+}
+
+output "ec2nodeclass_names" {
+  description = "Names of the EC2NodeClass resources created"
+  value       = [for config in var.ec2nodeclass_configs : config.name]
+}
+
+output "nodepool_names" {
+  description = "Names of the NodePool resources created"
+  value       = [for config in var.nodepool_configs : config.name]
+}
+
+output "queue_name" {
+  description = "The SQS queue name used for Karpenter interruption handling"
+  value       = var.karpenter_queue_name
+}
+
+output "manifest_path" {
+  description = "The directory path where Kubernetes manifests are generated"
+  value       = var.path
 }

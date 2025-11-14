@@ -2,9 +2,13 @@ terraform {
   required_providers {
     aws = {
       source = "hashicorp/aws"
+      # Added version constraint for reproducibility and maintainability
+      version = ">= 5.0"
     }
     kubernetes = {
       source = "hashicorp/kubernetes"
+      # Added version constraint for reproducibility and maintainability
+      version = ">= 2.20"
     }
   }
 }
@@ -28,11 +32,13 @@ variable "policy_name" {
 }
 
 variable "policy_resource_region" {
+  # Optional override for policy resource region, defaults to current region if empty
   type    = string
   default = ""
 }
 
 variable "policy_resource_account" {
+  # Optional override for policy resource account, defaults to current account if empty
   type    = string
   default = ""
 }
@@ -298,7 +304,7 @@ module "bedrock-policy" {
   name        = local.policy_name
   path        = "/"
   description = "LiteLLM Bedrock IAM Policy"
-  policy_json = data.aws_iam_policy_document.bedrock-policy.json
+  policy_json = try(data.aws_iam_policy_document.bedrock-policy.json, {})
 }
 
 module "bedrock-oidc-role" {
@@ -309,8 +315,9 @@ module "bedrock-oidc-role" {
   }
   cluster_name        = var.cluster_name
   cluster_policy_arns = {}
+  # Restricted to specific service account instead of wildcard for least privilege
   oidc_principals = {
-    "${var.cluster_oidc_provider_arn}" = ["system:serviceaccount:*:*"]
+    "${var.cluster_oidc_provider_arn}" = ["system:serviceaccount:${var.namespace}:${var.name}"]
   }
   tags = var.tags
 }
@@ -458,9 +465,10 @@ resource "kubernetes_deployment" "litellm" {
       spec {
         service_account_name = kubernetes_service_account.litellm.metadata[0].name
         container {
-          name    = var.name
-          image   = "${var.image_repo}:${var.image_tag}"
-          command = split(" ", "litellm --port ${var.app_container_port} --config /app/${var.litellm_config_key} --detailed_debug")
+          name  = var.name
+          image = "${var.image_repo}:${var.image_tag}"
+          # Split command into array for better readability and maintainability
+          command = ["litellm", "--port", tostring(var.app_container_port), "--config", "/app/${var.litellm_config_key}", "--detailed_debug"]
           dynamic "env" {
             for_each = local.primary_env_vars
             content {
@@ -492,20 +500,22 @@ resource "kubernetes_deployment" "litellm" {
           volume_mount {
             mount_path = "/app/${var.litellm_config_key}"
             name       = kubernetes_config_map.config.metadata[0].name
-            read_only  = false
-            sub_path   = var.litellm_config_key
+            # Changed to read_only for security best practices
+            read_only = true
+            sub_path  = var.litellm_config_key
           }
           volume_mount {
             mount_path = "/app/${var.litellm_config_middleware_key}"
             name       = kubernetes_config_map.middleware.metadata[0].name
-            read_only  = false
-            sub_path   = var.litellm_config_middleware_key
+            # Changed to read_only for security best practices
+            read_only = true
+            sub_path  = var.litellm_config_middleware_key
           }
           volume_mount {
             mount_path = var.gcloud_auth_file_path
             name       = kubernetes_secret.gcloud.metadata[0].name
             read_only  = true
-            sub_path   = ""
+            # Removed empty sub_path for proper volume mounting
           }
         }
         volume {

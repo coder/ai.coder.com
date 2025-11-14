@@ -110,7 +110,7 @@ output "manifest" {
         spec = {
           serviceAccountName = var.service_account_name
           containers = [
-            for c in var.containers : {
+            for c in var.containers : merge({
               name  = c.name
               image = c.image
               ports = [for v in c.ports : {
@@ -131,7 +131,6 @@ output "manifest" {
                 }
               }])
               resources = c.resources
-              command   = c.command
               volumeMounts = [
                 for m in c.volume_mounts : {
                   name      = m.name
@@ -140,7 +139,8 @@ output "manifest" {
                   subPath   = m.sub_path
                 }
               ]
-            }
+              # Only include command if not empty to avoid overriding container default
+            }, length(c.command) > 0 ? { command = c.command } : {})
           ]
           volumes = concat([
             for v in var.volumes_from_config_map : {

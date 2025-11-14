@@ -33,15 +33,20 @@ variable "provisioner_tags" {
 ##
 
 resource "random_id" "provisioner_key_name" {
+  # Regenerate ID when provisioner_key_name changes
   keepers = {
-    # Generate a new ID only when a key is defined
-    provisioner_key_name = "${var.provisioner_key_name}"
+    provisioner_key_name = var.provisioner_key_name
   }
   byte_length = 8
 }
 
+locals {
+  # Extract repeated conditional for readability because duplication reduces maintainability
+  provisioner_key_name = var.provisioner_key_name == "" ? random_id.provisioner_key_name.id : var.provisioner_key_name
+}
+
 resource "coderd_provisioner_key" "key" {
-  name            = var.provisioner_key_name == "" ? random_id.provisioner_key_name.id : var.provisioner_key_name
+  name            = local.provisioner_key_name
   organization_id = var.organization_id
   tags            = var.provisioner_tags
 }
@@ -52,7 +57,7 @@ resource "coderd_provisioner_key" "key" {
 
 output "provisioner_key_name" {
   description = "Coder Provisioner Key Name"
-  value       = var.provisioner_key_name == "" ? random_id.provisioner_key_name.id : var.provisioner_key_name
+  value       = local.provisioner_key_name
 }
 
 output "provisioner_key_secret" {

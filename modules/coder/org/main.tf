@@ -2,6 +2,8 @@ terraform {
   required_providers {
     coderd = {
       source = "coder/coderd"
+      # Added version constraint for reproducibility and maintainability
+      version = ">= 1.0"
     }
   }
 }
@@ -24,11 +26,13 @@ variable "organization_display_name" {
 }
 
 variable "organization_description" {
-  type = string
+  description = "Description for the Coder organization"
+  type        = string
 }
 
 variable "organization_icon" {
-  type = string
+  description = "Icon URL for the Coder organization"
+  type        = string
 }
 
 ##

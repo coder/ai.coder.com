@@ -8,23 +8,22 @@ terraform {
 }
 
 variable "namespace" {
-  type    = string
-  default = "kube-system"
+  description = "Kubernetes namespace where metrics-server will be deployed"
+  type        = string
+  default     = "kube-system"
 }
 
 variable "chart_version" {
-  type    = string
-  default = "3.13.0"
+  description = "Helm chart version for metrics-server"
+  type        = string
+  default     = "3.13.0"
 }
 
 variable "node_selector" {
-  type    = map(string)
-  default = {}
+  description = "Node labels for metrics-server pod placement"
+  type        = map(string)
+  default     = {}
 }
-
-data "aws_region" "this" {}
-
-data "aws_caller_identity" "this" {}
 
 resource "helm_release" "metrics-server" {
   name             = "metrics-server"
@@ -32,7 +31,6 @@ resource "helm_release" "metrics-server" {
   chart            = "metrics-server"
   repository       = "https://kubernetes-sigs.github.io/metrics-server/"
   create_namespace = true
-  upgrade_install  = true
   skip_crds        = false
   wait             = true
   wait_for_jobs    = true
@@ -40,8 +38,7 @@ resource "helm_release" "metrics-server" {
   timeout          = 120 # in seconds
 
   values = [yamlencode({
-    nodeSelector = {
-      "node.amazonaws.io/managed-by" : "asg"
-    }
+    # Use variable instead of hardcoded value for flexibility
+    nodeSelector = var.node_selector
   })]
 }

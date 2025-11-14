@@ -36,10 +36,20 @@ variable "failed_job_history_limit" {
 variable "concurrency_policy" {
   type    = string
   default = "Replace"
+  # Added validation because invalid concurrency policy causes Kubernetes API errors
+  validation {
+    condition     = contains(["Allow", "Forbid", "Replace"], var.concurrency_policy)
+    error_message = "concurrency_policy must be one of: Allow, Forbid, Replace."
+  }
 }
 
 variable "schedule" {
   type = string
+  # Added validation because invalid cron schedule causes Kubernetes API errors
+  validation {
+    condition     = var.schedule != "" && can(regex("^(@(annually|yearly|monthly|weekly|daily|hourly|reboot))|(@every (\\d+(ns|us|µs|ms|s|m|h))+)|((((\\d+,)+\\d+|(\\d+([/\\-])\\d+)|\\d+|\\*) ?){5,7})$", var.schedule))
+    error_message = "schedule must be a valid cron expression or predefined schedule (e.g., '0 * * * *', '@hourly')."
+  }
 }
 
 variable "parallelism" {
@@ -55,6 +65,11 @@ variable "service_account_name" {
 variable "restart_policy" {
   type    = string
   default = "OnFailure"
+  # Added validation because invalid restart policy causes Kubernetes API errors
+  validation {
+    condition     = contains(["OnFailure", "Never"], var.restart_policy)
+    error_message = "restart_policy must be one of: OnFailure, Never (Always is not valid for Jobs/CronJobs)."
+  }
 }
 
 variable "containers" {
@@ -84,6 +99,11 @@ variable "containers" {
     })), [])
   }))
   default = []
+  # Added validation because CronJob requires at least one container
+  validation {
+    condition     = length(var.containers) > 0
+    error_message = "containers list must contain at least one container."
+  }
 }
 
 variable "volumes_from_secrets" {
@@ -94,6 +114,43 @@ variable "volumes_from_secrets" {
 variable "volumes_from_config_map" {
   type    = list(string)
   default = []
+}
+
+locals {
+  # Extracted for readability because complex nested loops reduce maintainability
+  containers = [
+    for c in var.containers : {
+      name  = c.name
+      image = c.image
+      ports = [for v in c.ports : {
+        name          = v.name
+        containerPort = v.container_port
+        protocol      = v.protocol
+      }]
+      env = concat([for k, v in c.env : {
+        name  = k
+        value = v
+        }], [for k, v in c.env_secret : {
+        name = k
+        valueFrom = {
+          secretKeyRef = {
+            name = v.name
+            key  = v.key
+          }
+        }
+      }])
+      resources = c.resources
+      command   = c.command
+      volumeMounts = [
+        for m in c.volume_mounts : {
+          name      = m.name
+          mountPath = m.mount_path
+          readOnly  = m.read_only
+          subPath   = m.sub_path
+        }
+      ]
+    }
+  ]
 }
 
 output "manifest" {
@@ -119,39 +176,7 @@ output "manifest" {
             spec = {
               serviceAccountName = var.service_account_name
               restartPolicy      = var.restart_policy
-              containers = [
-                for c in var.containers : {
-                  name  = c.name
-                  image = c.image
-                  ports = [for v in c.ports : {
-                    name          = v.name
-                    containerPort = v.container_port
-                    protocol      = v.protocol
-                  }]
-                  env = concat([for k, v in c.env : {
-                    name  = k
-                    value = v
-                    }], [for k, v in c.env_secret : {
-                    name = k
-                    valueFrom = {
-                      secretKeyRef = {
-                        name = v.name
-                        key  = v.key
-                      }
-                    }
-                  }])
-                  resources = c.resources
-                  command   = c.command
-                  volumeMounts = [
-                    for m in c.volume_mounts : {
-                      name      = m.name
-                      mountPath = m.mount_path
-                      readOnly  = m.read_only
-                      subPath   = m.sub_path
-                    }
-                  ]
-                }
-              ]
+              containers         = local.containers
               volumes = concat([
                 for v in var.volumes_from_config_map : {
                   name      = v

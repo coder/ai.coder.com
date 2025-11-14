@@ -1,28 +1,49 @@
 terraform {}
 
 variable "name" {
-  type = string
+  description = "Name of the Ingress resource"
+  type        = string
+  # Validation added because empty name would create invalid Kubernetes resource
+  validation {
+    condition     = length(var.name) > 0
+    error_message = "name must not be empty"
+  }
 }
 
 variable "namespace" {
-  type = string
+  description = "Kubernetes namespace for the Ingress resource"
+  type        = string
+  # Validation added because empty namespace would create invalid Kubernetes resource
+  validation {
+    condition     = length(var.namespace) > 0
+    error_message = "namespace must not be empty"
+  }
 }
 
 variable "annotations" {
-  type    = map(string)
-  default = {}
+  description = "Annotations for the Ingress resource (e.g., ALB configuration)"
+  type        = map(string)
+  default     = {}
 }
 
 variable "labels" {
-  type    = map(string)
-  default = {}
+  description = "Labels for the Ingress resource"
+  type        = map(string)
+  default     = {}
 }
 
 variable "ingress_class_name" {
-  type = string
+  description = "IngressClass name (e.g., alb, nginx)"
+  type        = string
+  # Validation added because empty ingress class would create invalid Kubernetes resource
+  validation {
+    condition     = length(var.ingress_class_name) > 0
+    error_message = "ingress_class_name must not be empty"
+  }
 }
 
 variable "rules" {
+  description = "List of Ingress rules defining host-based routing and backend services"
   type = list(object({
     host = string
     http = object({
@@ -41,6 +62,15 @@ variable "rules" {
     })
   }))
   default = []
+  # Validation added because empty host or service name would create invalid Ingress rules
+  validation {
+    condition = alltrue([
+      for rule in var.rules : length(rule.host) > 0 && alltrue([
+        for path in rule.http.paths : length(path.backend.service.name) > 0
+      ])
+    ])
+    error_message = "All rules must have non-empty host and service names"
+  }
 }
 
 locals {

@@ -1,6 +1,6 @@
 # AI Demo Environment (ai.coder.com)
 
-Welcome to the AI Demo Environment's Github repository! 
+Welcome to the AI Demo Environment's Github repository!
 
 This project is used by ["ai.coder.com"](https://ai.coder.com), allowing users to experiment with the latest AI features in Coder and create demoes for them.
 
@@ -8,13 +8,13 @@ This project is used by ["ai.coder.com"](https://ai.coder.com), allowing users t
 
 ## Getting Hand's On
 
-> [!IMPORTANT] Before accessing the deployment, make sure you've been invited to our "coder-contrib" Github organization.  If not, reach out to `jullian@coder.com` and send your Github handle to be added in. Otherwise, if you're an internal user, you should already have access to to the environment.
+> [!IMPORTANT] Before accessing the deployment, make sure you've been invited to our "coder-contrib" Github organization. If not, reach out to `jullian@coder.com` and send your Github handle to be added in. Otherwise, if you're an internal user, you should already have access to to the environment.
 
-### Accessing the Deployment:  
+### Accessing the Deployment:
 
 Get Started Here 👉 [https://ai.coder.com](https://ai.coder.com)
 
-**Login Flow**  
+**Login Flow**
 
 - Non-Coder Employee
 
@@ -28,8 +28,7 @@ Get Started Here 👉 [https://ai.coder.com](https://ai.coder.com)
 
 2. Login with your Github account (that has access to the coder-contrib Github Organization).
 
-
---- 
+---
 
 ## How-To-Deploy
 
@@ -66,6 +65,7 @@ The following module creates an opinionated cluster, similar to [EKS Auto Mode](
 We use the the [AWS Managed Terraform EKS Module for Karpenter in the background](https://github.com/terraform-aws-modules/terraform-aws-eks/tree/master/modules/karpenter).
 
 This automatically creates:
+
 - SQS Queue
 - IAM Roles
 - Event Bridge
@@ -73,34 +73,36 @@ This automatically creates:
 ##### Amazon Bedrock
 
 Auto-Creates
+
 - IAM Role
 
 ##### AWS EBS Controller
 
 Auto-Creates
+
 - IAM Role
 
 ##### AWS Load Balancer Controller
 
 Auto-Creates
-- IAM Role
 
+- IAM Role
 
 ##### Coder External Provisioner
 
 Auto-Creates
-- IAM Role
 
+- IAM Role
 
 ### Creating the Infrastructure (on AWS)
 
-To deploy the base infrastructure, you can get started with referencing our [modules directory](./modules). 
+To deploy the base infrastructure, you can get started with referencing our [modules directory](./modules).
 
 If you don't have an existing network infrastructure, then you can start with deploying the [`eks-vpc` module](./modules/network/eks-vpc).
 
 Additionally, if you don't have an existing cluster infrastructure, then you can start with deploying the [`eks-cluster` module](./modules/compute/cluster).
 
-Lastly, for Coder's backend database, you can refer to our deployment in [`./aidev/infra/aws/us-east-2/rds`](./aidev/infra/aws/us-east-2/rds) to see how to deploy it. 
+Lastly, for Coder's backend database, you can refer to our deployment in [`./aidev/infra/aws/us-east-2/rds`](./aidev/infra/aws/us-east-2/rds) to see how to deploy it.
 
 We just an [`aws_db_instance`](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/db_instance) that uses Postgres.
 
@@ -115,7 +117,7 @@ terraform {
             source  = "hashicorp/aws"
             version = ">= 5.100.0"
         }
-    }  
+    }
 }
 
 variable "name" {
@@ -295,7 +297,7 @@ module "eks-cluster" {
 }
 
 ###
-# Only deploy the database if you're creating the central Coder infrastructure. 
+# Only deploy the database if you're creating the central Coder infrastructure.
 # Otherwise, if you're deploying separate clusters for Coder proxies + provisioners in a different network, then there's no need for another database.
 ###
 
@@ -360,7 +362,7 @@ The deployment may take a while (~20 minutes or more). In the meantime, you can 
 
 ### Deploying Required Apps
 
-Once the K8s (and maybe the Database) infrastructure is deployed, the next step is to deploy the K8s apps. 
+Once the K8s (and maybe the Database) infrastructure is deployed, the next step is to deploy the K8s apps.
 
 Before getting to Coder, we should first deploy:
 
@@ -376,7 +378,7 @@ Afterwards, you can then deploy
 - [`Coder Proxy` (uses same chart as the Coder Server)](https://artifacthub.io/packages/helm/coder-v2/coder)
 - [`Coder Workspace`](https://artifacthub.io/packages/helm/coder-v2/coder-provisioner)
 
-You can deploy the above manually yourself following your own preferred methods. 
+You can deploy the above manually yourself following your own preferred methods.
 
 Otherwise, you can leverage our K8s app TF modules to automatically generate the manifests:
 

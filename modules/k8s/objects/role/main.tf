@@ -1,24 +1,39 @@
 terraform {}
 
 variable "name" {
-  type = string
+  description = "Name of the Role resource"
+  type        = string
+  # Validation added because empty name would create invalid Kubernetes resource
+  validation {
+    condition     = length(var.name) > 0
+    error_message = "name must not be empty"
+  }
 }
 
 variable "namespace" {
-  type = string
+  description = "Kubernetes namespace for the Role resource"
+  type        = string
+  # Validation added because empty namespace would create invalid Kubernetes resource
+  validation {
+    condition     = length(var.namespace) > 0
+    error_message = "namespace must not be empty"
+  }
 }
 
 variable "labels" {
-  type    = map(string)
-  default = {}
+  description = "Labels for the Role resource"
+  type        = map(string)
+  default     = {}
 }
 
 variable "annotations" {
-  type    = map(string)
-  default = {}
+  description = "Annotations for the Role resource"
+  type        = map(string)
+  default     = {}
 }
 
 variable "rules" {
+  description = "List of RBAC rules defining permissions for the Role"
   type = list(object({
     api_groups     = optional(list(string), [""])
     resources      = optional(list(string), [""])
@@ -26,6 +41,13 @@ variable "rules" {
     verbs          = optional(list(string), [""])
   }))
   default = []
+  # Validation added because rules with empty resources or verbs create invalid RBAC permissions
+  validation {
+    condition = alltrue([
+      for rule in var.rules : length(rule.resources) > 0 && length(rule.verbs) > 0
+    ])
+    error_message = "All rules must have at least one resource and one verb"
+  }
 }
 
 output "manifest" {

@@ -1,10 +1,11 @@
 variables {
-  name     = "test"
+  name = "test"
+  # Fixed variable reference to use direct value instead of var.name for proper error handling
   expected = <<-EOF
     apiVersion: v1
     kind: Namespace
     metadata:
-        name: ${var.name}
+        name: test
     EOF
 }
 

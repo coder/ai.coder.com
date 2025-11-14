@@ -68,8 +68,8 @@ output "instance_profile_arn" {
   value       = aws_iam_instance_profile.main.arn
 }
 
-output "launch_template_id" {
-  description = "The ID of the launch template used to spawn fck-nat instances"
+output "launch_template_arn" {
+  description = "The ARN of the launch template used to spawn fck-nat instances"
   value       = aws_launch_template.main.arn
 }
 

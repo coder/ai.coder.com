@@ -8,7 +8,7 @@ metadata:
     service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: instance
     service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
   finalizers:
-  - service.k8s.aws/resources
+    - service.k8s.aws/resources
   labels:
     app.kubernetes.io/instance: coder
     app.kubernetes.io/managed-by: Helm
@@ -22,24 +22,24 @@ spec:
   allocateLoadBalancerNodePorts: true
   clusterIP: 172.20.92.166
   clusterIPs:
-  - 172.20.92.166
+    - 172.20.92.166
   externalTrafficPolicy: Cluster
   internalTrafficPolicy: Cluster
   ipFamilies:
-  - IPv4
+    - IPv4
   ipFamilyPolicy: SingleStack
   loadBalancerClass: service.k8s.aws/nlb
   ports:
-  - name: http
-    nodePort: 32579
-    port: 80
-    protocol: TCP
-    targetPort: http
-  - name: https
-    nodePort: 31589
-    port: 443
-    protocol: TCP
-    targetPort: https
+    - name: http
+      nodePort: 32579
+      port: 80
+      protocol: TCP
+      targetPort: http
+    - name: https
+      nodePort: 31589
+      port: 443
+      protocol: TCP
+      targetPort: https
   selector:
     app.kubernetes.io/instance: coder
     app.kubernetes.io/name: coder

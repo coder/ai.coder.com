@@ -12,6 +12,11 @@ variable "annotations" {
 variable "storage_class_type" {
   type    = string
   default = "gp3"
+  # Added validation because empty type causes StorageClass errors
+  validation {
+    condition     = var.storage_class_type != ""
+    error_message = "storage_class_type must not be empty."
+  }
 }
 
 variable "storage_class_provisioner" {
@@ -27,6 +32,11 @@ variable "storage_class_reclaim_policy" {
 variable "storage_class_binding_mode" {
   type    = string
   default = "WaitForFirstConsumer"
+  # Added validation because invalid binding mode causes Kubernetes API errors
+  validation {
+    condition     = contains(["Immediate", "WaitForFirstConsumer"], var.storage_class_binding_mode)
+    error_message = "storage_class_binding_mode must be one of: Immediate, WaitForFirstConsumer."
+  }
 }
 
 output "manifest" {

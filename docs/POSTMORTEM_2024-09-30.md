@@ -4,7 +4,7 @@
 **Environment:** https://ai.coder.com  
 **Severity:** High  
 **Duration:** ~10 minutes into workshop until post-workshop fixes  
-**Impact:** Multiple user workspaces died/restarted, wiping user progress during live workshop  
+**Impact:** Multiple user workspaces died/restarted, wiping user progress during live workshop
 
 ---
 
@@ -23,7 +23,7 @@ During the Agentic Workshop on September 30, the AI demo environment experienced
 **T+~10 min:** Workspaces start dying and restarting, triggering self-healing mechanisms  
 **T+~10 min:** User progress wiped due to ephemeral volume issues  
 **T+~10 min:** Subdomain routing issues surface between Oregon and London proxy clusters  
-**Post-workshop:** Fixes applied to address all identified issues  
+**Post-workshop:** Fixes applied to address all identified issues
 
 ---
 
@@ -32,21 +32,25 @@ During the Agentic Workshop on September 30, the AI demo environment experienced
 ### Multi-Region Deployment
 
 **Control Plane (us-east-2 - Ohio)**:
+
 - Coder Server: 2 replicas @ 4 vCPU / 8 GB each
 - External Provisioners: 6 replicas (default org) @ 500m CPU / 512 MB each
 - LiteLLM Service: 4 replicas @ 2 vCPU / 4 GB each
 - Primary domain: `ai.coder.com` + `*.ai.coder.com`
 
 **Proxy Clusters**:
+
 - Oregon (us-west-2): 2 replicas @ 500m CPU / 1 GB, domain: `oregon-proxy.ai.coder.com`
 - London (eu-west-2): 2 replicas @ 500m CPU / 1 GB, domain: `emea-proxy.ai.coder.com`
 
 **Image Management**:
+
 - Source: `ghcr.io/coder/coder-preview` (non-GA preview for beta AI features)
 - Mirrored to private AWS ECR (us-east-2)
 - Critical dependency: ECR must stay in sync with GHCR
 
 **DNS Management**:
+
 - 6 domains managed in CloudFlare (control plane + 2 proxies, each with wildcard)
 - Manual process via #help-me-ops Slack channel
 
@@ -60,13 +64,15 @@ During the Agentic Workshop on September 30, the AI demo environment experienced
 
 **Impact:** Workspaces died and restarted when nodes exhausted storage, triggering self-healing that wiped user progress.
 
-**Why it wasn't caught:** 
+**Why it wasn't caught:**
+
 - No stress testing with realistic concurrent user load (10+ users)
 - Internal testing used lower concurrency
 - Capacity planning didn't account for simultaneous workspace workloads
 - No monitoring/alerting for ephemeral volume storage thresholds
 
 **Technical Details:**
+
 - Workspace templates allow 2-4 vCPU / 4-8 GB configuration
 - ~10 concurrent workspaces @ 4 vCPU / 8 GB = 40+ vCPU / 80+ GB demand
 - Ephemeral volumes for each workspace competed for node storage
@@ -78,13 +84,15 @@ During the Agentic Workshop on September 30, the AI demo environment experienced
 
 **Impact:** Image version mismatches caused subdomain routing failures across regions. Workspaces couldn't be accessed via proxy URLs (`*.oregon-proxy.ai.coder.com`, `*.emea-proxy.ai.coder.com`).
 
-**Why it wasn't caught:** 
+**Why it wasn't caught:**
+
 - Manual ECR mirroring process from GHCR is error-prone
 - No automated validation of image digests across all clusters
 - Issue only manifests under multi-region load with simultaneous deployments
 - Pre-workshop checklist lacked image consistency verification
 
 **Technical Details:**
+
 - Image sync process:
   1. Pull from `ghcr.io/coder/coder-preview:latest`
   2. Tag and push to private ECR
@@ -102,11 +110,13 @@ During the Agentic Workshop on September 30, the AI demo environment experienced
 **Note:** Currently using open-source LiteLLM which has limited key management flexibility. Enterprise version not justified for current needs.
 
 **Why it wasn't caught:**
+
 - No pre-workshop validation of key expiration times
 - Key rotation schedule not documented or considered in workshop planning
 - No monitoring/alerting for upcoming key expirations
 
 **Technical Details:**
+
 - LiteLLM: 4 replicas @ 2 vCPU / 4 GB, round-robin between AWS Bedrock and GCP Vertex AI
 - Auxiliary addon runs on 4-5 hour schedule
 - Key rotation requires workspace restart to pick up new credentials
@@ -119,12 +129,14 @@ During the Agentic Workshop on September 30, the AI demo environment experienced
 **Impact:** Workspace create operations queued or timed out, causing delays and poor user experience.
 
 **Why it wasn't caught:**
+
 - No capacity planning guidelines for concurrent user scaling
 - Provisioners are single-threaded (1 provisioner = 1 Terraform operation)
 - No monitoring of provisioner queue depth
 - Workshop planning didn't include provisioner pre-scaling
 
 **Technical Details:**
+
 - 10 users × 1 workspace each = 10 concurrent Terraform operations
 - 6 provisioners = max 6 concurrent operations
 - Remaining 4 operations queued, causing delays
@@ -137,6 +149,7 @@ During the Agentic Workshop on September 30, the AI demo environment experienced
 **Impact:** No immediate impact during workshop, but DNS issues would have been slow to resolve.
 
 **Why it's a concern:**
+
 - 6 domains to manage: control plane + 2 proxies (each with wildcard)
 - No self-service for infrastructure team
 - Dependency on ops team availability
@@ -149,9 +162,10 @@ During the Agentic Workshop on September 30, the AI demo environment experienced
 **Users Affected:** All workshop participants (~10+ concurrent users)  
 **Data Loss:** User workspace progress wiped due to ephemeral volume restarts  
 **Service Availability:** Degraded for ~10+ minutes during workshop  
-**Business Impact:** Poor user experience during live demonstration/workshop event  
+**Business Impact:** Poor user experience during live demonstration/workshop event
 
 **Metrics**:
+
 - Workspace failure rate: ~40-50% (estimated, 4-5 workspaces restarted)
 - Average workspace restart time: 2-3 minutes
 - Number of incidents: 3 major (storage, image sync, key expiration)
@@ -189,6 +203,7 @@ During the Agentic Workshop on September 30, the AI demo environment experienced
 ## Action Items
 
 ### Completed (Post-Workshop)
+
 - ✅ Applied fixes for all identified issues
 - ✅ Created comprehensive incident documentation
 - ✅ Documented architecture and component details
@@ -199,6 +214,7 @@ During the Agentic Workshop on September 30, the AI demo environment experienced
 ### High Priority (Before Next Workshop)
 
 **Storage & Capacity** (Issue #1)
+
 - [ ] Audit current ephemeral volume allocation per node
 - [ ] Calculate storage requirements for target concurrent workspace count
 - [ ] Implement storage capacity monitoring and alerting
@@ -206,18 +222,21 @@ During the Agentic Workshop on September 30, the AI demo environment experienced
 - [ ] Test with realistic concurrent user load
 
 **Image Management** (Issue #2, Issue #7)
+
 - [ ] Automate ECR image mirroring from `ghcr.io/coder/coder-preview`
 - [ ] Implement pre-deployment validation of image digests across all clusters
 - [ ] Add to pre-workshop checklist
 - [ ] Document rollback procedure for bad images
 
 **LiteLLM Key Management** (Issue #3)
+
 - [ ] Implement monitoring/alerting for key expiration (7, 3, 1 day warnings)
 - [ ] Document key rotation procedure
 - [ ] Add key expiration check to pre-workshop checklist
 - [ ] Disable/schedule key rotation around workshops
 
 **Pre-Workshop Validation** (Issue #4)
+
 - [ ] Complete pre-workshop checklist 2 days before each workshop
 - [ ] Validate LiteLLM keys, image consistency, storage capacity
 - [ ] Test subdomain routing across all regions
@@ -225,11 +244,13 @@ During the Agentic Workshop on September 30, the AI demo environment experienced
 - [ ] Confirm monitoring and alerting is operational
 
 **Provisioner Scaling** (Issue #8)
+
 - [ ] Document scaling recommendations based on concurrent user count
 - [ ] Scale provisioners 1 day before workshops (6 → 8-10 for 10-15 users)
 - [ ] (Long-term) Implement provisioner auto-scaling based on queue depth
 
 **Monitoring & Alerting** (Issue #6)
+
 - [ ] Ephemeral volume storage capacity per node (alert at 70%, 85%, 95%)
 - [ ] Concurrent workspace count
 - [ ] Workspace restart/failure rate
@@ -241,12 +262,14 @@ During the Agentic Workshop on September 30, the AI demo environment experienced
 ### Medium Priority (1-3 months)
 
 **CloudFlare DNS Automation** (Issue #9)
+
 - [ ] Migrate CloudFlare DNS to Terraform
 - [ ] Enable self-service DNS changes via PR workflow
 - [ ] Add DNS validation to CI/CD pipeline
 - [ ] Implement monitoring for DNS resolution
 
 **Monthly Workshop Cadence** (Issue #5)
+
 - [ ] Establish monthly workshop schedule
 - [ ] Develop workshop content/agenda
 - [ ] Define success metrics
@@ -256,12 +279,14 @@ During the Agentic Workshop on September 30, the AI demo environment experienced
 ### Long-Term (3+ months)
 
 **Stress Testing Automation**
+
 - [ ] Build internal stress testing tooling
 - [ ] Simulate concurrent user load
 - [ ] Automate capacity validation
 - [ ] Integrate into CI/CD pipeline
 
 **Architectural Improvements**
+
 - [ ] Evaluate persistent storage options to prevent data loss
 - [ ] Consider workspace state backup/restore mechanisms
 - [ ] Implement provisioner auto-scaling (HPA based on queue depth)
@@ -313,18 +338,21 @@ During the Agentic Workshop on September 30, the AI demo environment experienced
 ## Technical Recommendations
 
 ### Immediate (Week 1)
+
 1. Implement ephemeral storage monitoring with alerting
 2. Create automated ECR sync job (GitHub Actions or AWS Lambda)
 3. Document provisioner scaling procedure in runbook
 4. Add LiteLLM key expiration to monitoring
 
 ### Short-term (Month 1)
+
 1. Migrate CloudFlare DNS to Terraform
 2. Implement image digest validation across clusters
 3. Set up workshop-specific monitoring dashboard
 4. Create provisioner HPA based on CPU/memory
 
 ### Long-term (Quarter 1)
+
 1. Build stress testing automation
 2. Implement provisioner queue depth monitoring and auto-scaling
 3. Evaluate persistent storage options for workspace data
@@ -337,6 +365,7 @@ During the Agentic Workshop on September 30, the AI demo environment experienced
 Track these metrics month-over-month:
 
 **Platform Stability**:
+
 - Workspace restart/failure rate: Target <2%
 - Incidents with user-visible impact: Target 0
 - Storage contention events: Target 0
@@ -344,11 +373,13 @@ Track these metrics month-over-month:
 - Average workspace start time: Target <2 minutes
 
 **Workshop Quality**:
+
 - Participant satisfaction score: Target 4.5+/5
 - Percentage completing workshop: Target >90%
 - Number of blockers encountered: Target <3
 
 **Operational Efficiency**:
+
 - Pre-workshop checklist completion time: Target <30 minutes
 - Time to resolve incidents: Target <5 minutes
 - Manual interventions required: Target <2 per workshop
@@ -358,6 +389,7 @@ Track these metrics month-over-month:
 ## Related Resources
 
 ### Documentation
+
 - [Architecture Overview](./workshops/ARCHITECTURE.md)
 - [Monthly Workshop Guide](./workshops/MONTHLY_WORKSHOP_GUIDE.md)
 - [Pre-Workshop Checklist](./workshops/PRE_WORKSHOP_CHECKLIST.md)
@@ -366,6 +398,7 @@ Track these metrics month-over-month:
 - [Participant Guide](./workshops/PARTICIPANT_GUIDE.md)
 
 ### GitHub Issues
+
 - [#1 - Optimize ephemeral volume storage capacity](https://github.com/coder/ai.coder.com/issues/1)
 - [#2 - Standardize image management across clusters](https://github.com/coder/ai.coder.com/issues/2)
 - [#3 - Improve LiteLLM key rotation and monitoring](https://github.com/coder/ai.coder.com/issues/3)
@@ -380,12 +413,12 @@ Track these metrics month-over-month:
 
 ## Approvals
 
-**Infrastructure Team Lead**: _________________  
-**Product Team Lead**: _________________  
-**Date**: _________________  
+**Infrastructure Team Lead**: **\*\*\*\***\_**\*\*\*\***  
+**Product Team Lead**: **\*\*\*\***\_**\*\*\*\***  
+**Date**: **\*\*\*\***\_**\*\*\*\***
 
 ---
 
 **Prepared by:** Dave Ahr  
 **Review Date:** October 2024  
-**Next Review:** After first monthly workshop  
+**Next Review:** After first monthly workshop

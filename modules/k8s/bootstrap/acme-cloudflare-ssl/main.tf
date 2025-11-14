@@ -20,14 +20,26 @@ terraform {
 
 variable "dns_names" {
   type = list(string)
+  validation {
+    condition     = length(var.dns_names) > 0
+    error_message = "DNS names list must not be empty"
+  }
 }
 
 variable "common_name" {
   type = string
+  validation {
+    condition     = length(var.common_name) > 0
+    error_message = "Common name must not be empty"
+  }
 }
 
 variable "acme_registration_email" {
   type = string
+  validation {
+    condition     = can(regex("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$", var.acme_registration_email))
+    error_message = "ACME registration email must be a valid email address"
+  }
 }
 
 variable "acme_days_until_renewal" {
@@ -43,10 +55,18 @@ variable "acme_revoke_certificate" {
 variable "cloudflare_api_token" {
   type      = string
   sensitive = true
+  validation {
+    condition     = length(var.cloudflare_api_token) > 0
+    error_message = "Cloudflare API token must not be empty"
+  }
 }
 
 variable "kubernetes_secret_name" {
   type = string
+  validation {
+    condition     = length(var.kubernetes_secret_name) > 0
+    error_message = "Kubernetes secret name must not be empty"
+  }
 }
 
 variable "kubernetes_namespace" {
@@ -108,8 +128,15 @@ resource "kubernetes_secret" "coder-proxy-tls" {
     "tls.key" = tls_private_key.this.private_key_pem
     "tls.crt" = local.full_chain
   }
-  type = "kubernetes_namespace.io/tls"
+  type = "kubernetes.io/tls"
 
+  # Ensure certificate is generated before creating secret
+  depends_on = [acme_certificate.this]
+
+  lifecycle {
+    # Recreate secret when certificate changes
+    create_before_destroy = true
+  }
 }
 
 output "private_key_pem" {

@@ -1,80 +1,134 @@
 terraform {
   required_providers {
     local = {
-      source = "hashicorp/local"
+      source  = "hashicorp/local"
+      version = "~> 2.0"
     }
   }
 }
 
 variable "path" {
-  type = string
+  description = "Directory path where Kubernetes manifests will be generated"
+  type        = string
+  validation {
+    condition     = length(var.path) > 0
+    error_message = "Path must not be empty"
+  }
 }
 
 variable "namespace" {
-  type = string
+  description = "Kubernetes namespace where Coder will be deployed"
+  type        = string
+  validation {
+    condition     = length(var.namespace) > 0
+    error_message = "Namespace must not be empty"
+  }
 }
 
 variable "image_repo" {
-  type = string
+  description = "Container image repository for Coder (e.g., ghcr.io/coder/coder)"
+  type        = string
+  validation {
+    condition     = length(var.image_repo) > 0
+    error_message = "Image repository must not be empty"
+  }
 }
 
 variable "image_tag" {
-  type = string
+  description = "Container image tag for Coder"
+  type        = string
+  validation {
+    condition     = length(var.image_tag) > 0
+    error_message = "Image tag must not be empty"
+  }
 }
 
 variable "image_pull_policy" {
-  type    = string
-  default = "IfNotPresent"
+  description = "Image pull policy for Coder container (Always, IfNotPresent, or Never)"
+  type        = string
+  default     = "IfNotPresent"
+  validation {
+    condition     = contains(["Always", "IfNotPresent", "Never"], var.image_pull_policy)
+    error_message = "Image pull policy must be one of: Always, IfNotPresent, Never"
+  }
 }
 
 variable "image_pull_secrets" {
-  type    = list(string)
-  default = []
+  description = "List of image pull secret names for private container registries"
+  type        = list(string)
+  default     = []
 }
 
 variable "coder_helm_chart_ver" {
-  type = string
+  description = "Version of the Coder Helm chart to deploy (must be in semver format)"
+  type        = string
+  validation {
+    condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+$", var.coder_helm_chart_ver))
+    error_message = "Helm chart version must be in semver format (e.g., 2.23.0)"
+  }
 }
 
 variable "primary_access_url" {
-  type = string
+  description = "Primary URL for accessing Coder (e.g., https://coder.example.com)"
+  type        = string
+  validation {
+    condition     = can(regex("^https?://", var.primary_access_url))
+    error_message = "Primary access URL must start with http:// or https://"
+  }
 }
 
 variable "service_account_name" {
-  type = string
+  description = "Name of the Kubernetes service account for Coder"
+  type        = string
+  validation {
+    condition     = length(var.service_account_name) > 0
+    error_message = "Service account name must not be empty"
+  }
 }
 
 variable "service_account_labels" {
-  type    = map(string)
-  default = {}
+  description = "Labels to apply to the Coder service account"
+  type        = map(string)
+  default     = {}
 }
 
 variable "service_account_annotations" {
-  type    = map(string)
-  default = {}
+  description = "Annotations to apply to the Coder service account"
+  type        = map(string)
+  default     = {}
 }
 
 variable "extern_prov_service_account_name" {
-  type    = string
-  default = "coder"
+  description = "Name of the service account for external provisioner workspaces"
+  type        = string
+  default     = "coder"
 }
 
 variable "extern_prov_service_account_annotations" {
-  type    = map(string)
-  default = {}
+  description = "Annotations for the external provisioner service account (e.g., for IRSA)"
+  type        = map(string)
+  default     = {}
 }
 
 variable "replica_count" {
-  type    = number
-  default = 0
+  description = "Number of Coder server replicas to run for high availability"
+  type        = number
+  # Changed from 0 to 1 to ensure at least one Coder server pod runs by default
+  default = 1
+  validation {
+    condition     = var.replica_count >= 1
+    error_message = "Replica count must be at least 1 to ensure service availability"
+  }
 }
 
 variable "env_vars" {
-  type    = map(string)
-  default = {}
+  description = "Additional environment variables for Coder server"
+  type        = map(string)
+  default     = {}
 }
 
 variable "resource_requests" {
+  description = "Kubernetes resource requests for CPU and memory"
   type = object({
     cpu    = string
     memory = string
@@ -83,11 +137,20 @@ variable "resource_requests" {
     cpu    = "2000m"
     memory = "4Gi"
   }
+  validation {
+    condition     = can(regex("^[0-9]+(\\.[0-9]+)?(m|[KMGT]i?)?$", var.resource_requests.cpu))
+    error_message = "CPU must be in Kubernetes format (e.g., 2000m, 2, 0.5)"
+  }
+  validation {
+    condition     = can(regex("^[0-9]+(\\.[0-9]+)?([EPTGMK]i?)?$", var.resource_requests.memory))
+    error_message = "Memory must be in Kubernetes format (e.g., 4Gi, 2048Mi, 1G)"
+  }
 }
 
 # https://coder.com/docs/admin/infrastructure/validated-architectures/1k-users#coderd-nodes
 # 4 CPU's for other pods on the node (e.g. ebs-csi, kube-proxy)
 variable "resource_limits" {
+  description = "Kubernetes resource limits for CPU and memory"
   type = object({
     cpu    = string
     memory = string
@@ -96,14 +159,24 @@ variable "resource_limits" {
     cpu    = "4000m"
     memory = "8Gi"
   }
+  validation {
+    condition     = can(regex("^[0-9]+(\\.[0-9]+)?(m|[KMGT]i?)?$", var.resource_limits.cpu))
+    error_message = "CPU must be in Kubernetes format (e.g., 4000m, 4, 2.5)"
+  }
+  validation {
+    condition     = can(regex("^[0-9]+(\\.[0-9]+)?([EPTGMK]i?)?$", var.resource_limits.memory))
+    error_message = "Memory must be in Kubernetes format (e.g., 8Gi, 4096Mi, 2G)"
+  }
 }
 
 variable "node_selector" {
-  type    = map(string)
-  default = {}
+  description = "Node labels for pod assignment (e.g., {\"node-type\" = \"coder\"})"
+  type        = map(string)
+  default     = {}
 }
 
 variable "tolerations" {
+  description = "Pod tolerations for node taints"
   type = list(object({
     key      = string
     operator = optional(string, "Equal")
@@ -114,6 +187,7 @@ variable "tolerations" {
 }
 
 variable "topology_spread_constraints" {
+  description = "Topology spread constraints to control pod distribution across failure domains"
   type = list(object({
     max_skew           = number
     topology_key       = string
@@ -127,6 +201,7 @@ variable "topology_spread_constraints" {
 }
 
 variable "pod_anti_affinity_preferred_during_scheduling_ignored_during_execution" {
+  description = "Preferred pod anti-affinity rules to spread pods across nodes"
   type = list(object({
     weight = number
     pod_affinity_term = object({
@@ -150,18 +225,10 @@ module "kustomization" {
     include_crds = true
     version      = var.coder_helm_chart_ver
     values_file  = "./values.yaml"
-    secret_generator = [{
-      name      = ""
-      namespace = var.namespace
-      behavior  = "create"
-      files     = []
-      options = {
-        disable_name_suffix_hash = true
-      }
-    }]
+    # Set empty secret_generator (no secrets to generate for this deployment)
+    secret_generator = []
   }]
   resources = [
-    "secrets",
     "namespace.yaml"
   ]
 }
@@ -212,7 +279,8 @@ locals {
       matchLabelKeys    = v.match_label_keys
     }
   ]
-  pod_anti_affinity_preferred_during_scheduling_ignored_during_execution = [
+  # Shortened name for readability because full Kubernetes field name is excessively long
+  pod_anti_affinity_preferred = [
     for v in var.pod_anti_affinity_preferred_during_scheduling_ignored_during_execution : {
       weight = v.weight
       podAffinityTerm = {
@@ -245,7 +313,7 @@ resource "local_file" "values" {
         runAsNonRoot           = true
         runAsUser              = 1000
         runAsGroup             = 1000
-        readOnlyRootFilesystem = null
+        readOnlyRootFilesystem = null #Security Risk: should be false but leaving for now 
         seccompProfile = {
           type = "RuntimeDefault"
         }
@@ -261,9 +329,44 @@ resource "local_file" "values" {
       topologySpreadConstraints = local.topology_spread_constraints
       affinity = {
         podAntiAffinity = {
-          preferredDuringSchedulingIgnoredDuringExecution = local.pod_anti_affinity_preferred_during_scheduling_ignored_during_execution
+          preferredDuringSchedulingIgnoredDuringExecution = local.pod_anti_affinity_preferred
         }
       }
     }
   })
+}
+
+output "namespace" {
+  description = "The Kubernetes namespace where Coder is deployed"
+  value       = var.namespace
+}
+
+output "service_account_name" {
+  description = "The name of the Kubernetes service account used by Coder"
+  value       = var.service_account_name
+}
+
+output "external_provisioner_service_account_name" {
+  description = "The name of the service account for external provisioner workspaces"
+  value       = var.extern_prov_service_account_name
+}
+
+output "helm_chart_version" {
+  description = "The version of the Coder Helm chart deployed"
+  value       = var.coder_helm_chart_ver
+}
+
+output "replica_count" {
+  description = "The number of Coder server replicas"
+  value       = var.replica_count
+}
+
+output "primary_access_url" {
+  description = "The primary URL for accessing Coder"
+  value       = var.primary_access_url
+}
+
+output "manifest_path" {
+  description = "The directory path where Kubernetes manifests are generated"
+  value       = var.path
 }

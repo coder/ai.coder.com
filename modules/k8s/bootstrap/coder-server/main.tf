@@ -97,7 +97,8 @@ variable "image_repo" {
 }
 
 variable "image_tag" {
-  type    = string
+  type = string
+  # Default is latest for convenience but should be overridden with specific version in production for reproducibility
   default = "latest"
 }
 
@@ -112,8 +113,9 @@ variable "image_pull_secrets" {
 }
 
 variable "replica_count" {
-  type    = number
-  default = 0
+  type = number
+  # Changed from 0 to 1 because zero replicas results in no running server pods
+  default = 1
 }
 
 variable "env_vars" {
@@ -124,6 +126,12 @@ variable "env_vars" {
 variable "load_balancer_class" {
   type    = string
   default = "service.k8s.aws/nlb"
+  # Added validation because invalid load balancer class causes Kubernetes service errors
+  validation {
+    # Validation checks for empty string which is sufficient for this use case
+    condition     = var.load_balancer_class != ""
+    error_message = "load_balancer_class must not be empty."
+  }
 }
 
 variable "resource_request" {
@@ -359,6 +367,24 @@ variable "coder_github_allowed_orgs" {
   default = []
 }
 
+variable "coder_enable_terraform_debug_mode" {
+  # Debug mode should be disabled in production for performance
+  type    = bool
+  default = false
+}
+
+variable "coder_trace_logs" {
+  # Trace logs should be disabled in production for performance
+  type    = bool
+  default = false
+}
+
+variable "coder_log_filter" {
+  # Log filter should be more restrictive in production for performance
+  type    = string
+  default = "info"
+}
+
 variable "tags" {
   type    = map(string)
   default = {}
@@ -370,6 +396,10 @@ data "aws_caller_identity" "this" {}
 
 locals {
   github_allow_everyone = length(var.coder_github_allowed_orgs) == 0
+  # Cache GitHub config key and value to avoid repeated conditional evaluation for performance
+  github_config_key   = local.github_allow_everyone ? "CODER_OAUTH2_GITHUB_ALLOW_EVERYONE" : "CODER_OAUTH2_GITHUB_ALLOWED_ORGS"
+  github_config_value = local.github_allow_everyone ? "true" : join(",", var.coder_github_allowed_orgs)
+
   primary_env_vars = {
     CODER_ACCESS_URL             = var.primary_access_url
     CODER_WILDCARD_ACCESS_URL    = var.wildcard_access_url
@@ -381,17 +411,18 @@ locals {
     CODER_OIDC_SCOPES       = join(",", var.oidc_config.scopes)
     CODER_OIDC_EMAIL_DOMAIN = var.oidc_config.email_domain
 
-    CODER_OAUTH2_GITHUB_DEFAULT_PROVIDER_ENABLE                                                                  = false
-    CODER_OAUTH2_GITHUB_ALLOW_SIGNUPS                                                                            = true
-    CODER_OAUTH2_GITHUB_DEVICE_FLOW                                                                              = false
-    "${local.github_allow_everyone ? "CODER_OAUTH2_GITHUB_ALLOW_EVERYONE" : "CODER_OAUTH2_GITHUB_ALLOWED_ORGS"}" = "${local.github_allow_everyone ? "true" : join(",", var.coder_github_allowed_orgs)}"
+    CODER_OAUTH2_GITHUB_DEFAULT_PROVIDER_ENABLE = false
+    CODER_OAUTH2_GITHUB_ALLOW_SIGNUPS           = true
+    CODER_OAUTH2_GITHUB_DEVICE_FLOW             = false
+    "${local.github_config_key}"                = local.github_config_value
 
     CODER_EXTERNAL_AUTH_0_ID   = var.github_external_auth_config.id
     CODER_EXTERNAL_AUTH_0_TYPE = var.github_external_auth_config.type
 
-    CODER_ENABLE_TERRAFORM_DEBUG_MODE = true
-    CODER_TRACE_LOGS                  = true
-    CODER_LOG_FILTER                  = ".*"
+    # Made configurable for production performance optimization
+    CODER_ENABLE_TERRAFORM_DEBUG_MODE = var.coder_enable_terraform_debug_mode
+    CODER_TRACE_LOGS                  = var.coder_trace_logs
+    CODER_LOG_FILTER                  = var.coder_log_filter
     CODER_SWAGGER_ENABLE              = true
     CODER_UPDATE_CHECK                = true
     CODER_CLI_UPGRADE_MESSAGE         = true
@@ -484,7 +515,8 @@ locals {
         labelSelector = {
           matchLabels = try(v.pod_affinity_term.label_selector.match_labels, {})
         }
-        topologyKey = try(v.pod_affinity_term.topology_key, {})
+        # Removed try() - topologyKey is required string field
+        topologyKey = v.pod_affinity_term.topology_key
       }
     }
   ]
@@ -545,12 +577,24 @@ resource "helm_release" "coder-server" {
   chart            = "coder"
   repository       = "https://helm.coder.com/v2"
   create_namespace = false
-  upgrade_install  = true
   skip_crds        = false
   wait             = true
   wait_for_jobs    = true
   version          = var.helm_version
   timeout          = var.helm_timeout
+
+  # Ensure secrets exist before helm install
+  depends_on = [
+    kubernetes_secret.pg-connection,
+    kubernetes_secret.oidc,
+    kubernetes_secret.oauth,
+    kubernetes_secret.external_auth
+  ]
+
+  lifecycle {
+    # Recreate on version change for clean upgrades
+    create_before_destroy = true
+  }
 
   values = [yamlencode({
     coder = {

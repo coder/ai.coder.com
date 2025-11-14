@@ -1,59 +1,91 @@
 terraform {
   required_providers {
     local = {
-      source = "hashicorp/local"
+      source  = "hashicorp/local"
+      version = "~> 2.0"
     }
   }
 }
 
 variable "path" {
-  type = string
+  description = "Directory path where Kubernetes manifests will be generated"
+  type        = string
+  validation {
+    condition     = length(var.path) > 0
+    error_message = "Path must not be empty"
+  }
 }
 
 variable "namespace" {
-  type = string
+  description = "Kubernetes namespace where Coder workspace proxy will be deployed"
+  type        = string
+  validation {
+    condition     = length(var.namespace) > 0
+    error_message = "Namespace must not be empty"
+  }
 }
 
 variable "coder_helm_version" {
-  type = string
+  description = "Version of the Coder Helm chart to deploy for workspace proxy"
+  type        = string
+  validation {
+    condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+$", var.coder_helm_version))
+    error_message = "Helm version must be in semver format (e.g., 2.23.0)"
+  }
 }
 
 variable "image_repo" {
-  type    = string
-  default = "ghcr.io/coder/coder"
+  description = "Container image repository for Coder workspace proxy"
+  type        = string
+  default     = "ghcr.io/coder/coder"
 }
 
 variable "image_tag" {
-  type    = string
-  default = "latest"
+  description = "Container image tag for Coder workspace proxy"
+  type        = string
+  default     = "latest"
 }
 
 variable "image_pull_policy" {
-  type    = string
-  default = "IfNotPresent"
+  description = "Image pull policy for Coder workspace proxy container"
+  type        = string
+  default     = "IfNotPresent"
+  validation {
+    condition     = contains(["Always", "IfNotPresent", "Never"], var.image_pull_policy)
+    error_message = "Image pull policy must be one of: Always, IfNotPresent, Never"
+  }
 }
 
 variable "image_pull_secrets" {
-  type    = list(string)
-  default = []
+  description = "List of image pull secret names for private container registries"
+  type        = list(string)
+  default     = []
 }
 
 variable "replica_count" {
-  type    = number
-  default = 0
+  description = "Number of Coder workspace proxy replicas to run"
+  type        = number
+  default     = 0
+  validation {
+    condition     = var.replica_count >= 0
+    error_message = "Replica count must be non-negative"
+  }
 }
 
 variable "env_vars" {
-  type    = map(string)
-  default = {}
+  description = "Additional environment variables for Coder workspace proxy"
+  type        = map(string)
+  default     = {}
 }
 
 variable "load_balancer_class" {
-  type    = string
-  default = "service.k8s.aws/nlb"
+  description = "Load balancer class for the workspace proxy service (e.g., service.k8s.aws/nlb)"
+  type        = string
+  default     = "service.k8s.aws/nlb"
 }
 
 variable "resource_request" {
+  description = "Kubernetes resource requests for CPU and memory"
   type = object({
     cpu    = string
     memory = string
@@ -62,9 +94,18 @@ variable "resource_request" {
     cpu    = "250m"
     memory = "512Mi"
   }
+  validation {
+    condition     = can(regex("^[0-9]+(\\.[0-9]+)?(m|[KMGT]i?)?$", var.resource_request.cpu))
+    error_message = "CPU must be in Kubernetes format (e.g., 250m, 0.25, 1)"
+  }
+  validation {
+    condition     = can(regex("^[0-9]+(\\.[0-9]+)?([EPTGMK]i?)?$", var.resource_request.memory))
+    error_message = "Memory must be in Kubernetes format (e.g., 512Mi, 1Gi)"
+  }
 }
 
 variable "resource_limit" {
+  description = "Kubernetes resource limits for CPU and memory"
   type = object({
     cpu    = string
     memory = string
@@ -73,24 +114,36 @@ variable "resource_limit" {
     cpu    = "500m"
     memory = "1Gi"
   }
+  validation {
+    condition     = can(regex("^[0-9]+(\\.[0-9]+)?(m|[KMGT]i?)?$", var.resource_limit.cpu))
+    error_message = "CPU must be in Kubernetes format (e.g., 500m, 0.5, 1)"
+  }
+  validation {
+    condition     = can(regex("^[0-9]+(\\.[0-9]+)?([EPTGMK]i?)?$", var.resource_limit.memory))
+    error_message = "Memory must be in Kubernetes format (e.g., 1Gi, 1024Mi)"
+  }
 }
 
 variable "service_annotations" {
-  type    = map(string)
-  default = {}
+  description = "Annotations to apply to the workspace proxy service (e.g., for load balancer config)"
+  type        = map(string)
+  default     = {}
 }
 
 variable "service_account_annotations" {
-  type    = map(string)
-  default = {}
+  description = "Annotations to apply to the workspace proxy service account"
+  type        = map(string)
+  default     = {}
 }
 
 variable "node_selector" {
-  type    = map(string)
-  default = {}
+  description = "Node labels for pod assignment"
+  type        = map(string)
+  default     = {}
 }
 
 variable "tolerations" {
+  description = "Pod tolerations for node taints"
   type = list(object({
     key      = string
     operator = optional(string, "Equal")
@@ -101,6 +154,7 @@ variable "tolerations" {
 }
 
 variable "topology_spread_constraints" {
+  description = "Topology spread constraints to control pod distribution across failure domains"
   type = list(object({
     max_skew           = number
     topology_key       = string
@@ -114,6 +168,7 @@ variable "topology_spread_constraints" {
 }
 
 variable "pod_anti_affinity_preferred_during_scheduling_ignored_during_execution" {
+  description = "Preferred pod anti-affinity rules to spread pods across nodes"
   type = list(object({
     weight = number
     pod_affinity_term = object({
@@ -127,23 +182,44 @@ variable "pod_anti_affinity_preferred_during_scheduling_ignored_during_execution
 }
 
 variable "primary_access_url" {
-  type = string
+  description = "Primary URL for accessing the main Coder deployment"
+  type        = string
+  validation {
+    condition     = can(regex("^https?://", var.primary_access_url))
+    error_message = "Primary access URL must start with http:// or https://"
+  }
 }
 
 variable "proxy_access_url" {
-  type = string
+  description = "URL for accessing the workspace proxy"
+  type        = string
+  validation {
+    condition     = can(regex("^https?://", var.proxy_access_url))
+    error_message = "Proxy access URL must start with http:// or https://"
+  }
 }
 
 variable "proxy_wildcard_url" {
-  type = string
+  description = "Wildcard URL for workspace proxy (e.g., https://*.proxy.example.com)"
+  type        = string
+  validation {
+    condition     = can(regex("^https?://", var.proxy_wildcard_url))
+    error_message = "Proxy wildcard URL must start with http:// or https://"
+  }
 }
 
 variable "termination_grace_period_seconds" {
-  type    = number
-  default = 600
+  description = "Grace period for pod termination in seconds"
+  type        = number
+  default     = 600
+  validation {
+    condition     = var.termination_grace_period_seconds >= 0
+    error_message = "Termination grace period must be non-negative"
+  }
 }
 
 variable "cert_config" {
+  description = "TLS certificate configuration for the workspace proxy"
   type = object({
     name          = string
     create_secret = optional(bool, true)
@@ -153,6 +229,7 @@ variable "cert_config" {
 }
 
 variable "proxy_token_config" {
+  description = "Proxy session token configuration for authenticating with the main Coder deployment"
   type = object({
     name = string
     path = string
@@ -160,6 +237,7 @@ variable "proxy_token_config" {
 }
 
 variable "patches" {
+  description = "Kustomize patches to apply to generated Kubernetes resources"
   type = list(object({
     target = object({
       group   = optional(string, "")
@@ -265,7 +343,8 @@ locals {
         labelSelector = {
           matchLabels = try(v.pod_affinity_term.label_selector.match_labels, {})
         }
-        topologyKey = try(v.pod_affinity_term.topology_key, {})
+        # Removed try() wrapper - topology_key is required string, not optional
+        topologyKey = v.pod_affinity_term.topology_key
       }
     }
   ]
@@ -325,4 +404,49 @@ resource "local_file" "values" {
       terminationGracePeriodSeconds = var.termination_grace_period_seconds
     }
   })
+
+  lifecycle {
+    # Recreate file on content changes to ensure consistency
+    create_before_destroy = true
+  }
+}
+
+output "namespace" {
+  description = "The Kubernetes namespace where Coder workspace proxy is deployed"
+  value       = var.namespace
+}
+
+output "helm_version" {
+  description = "The version of the Coder Helm chart deployed for workspace proxy"
+  value       = var.coder_helm_version
+}
+
+output "replica_count" {
+  description = "The number of workspace proxy replicas configured"
+  value       = var.replica_count
+}
+
+output "primary_access_url" {
+  description = "The primary URL for accessing the main Coder deployment"
+  value       = var.primary_access_url
+}
+
+output "proxy_access_url" {
+  description = "The URL for accessing the workspace proxy"
+  value       = var.proxy_access_url
+}
+
+output "proxy_wildcard_url" {
+  description = "The wildcard URL for the workspace proxy"
+  value       = var.proxy_wildcard_url
+}
+
+output "load_balancer_class" {
+  description = "The load balancer class used by the workspace proxy service"
+  value       = var.load_balancer_class
+}
+
+output "manifest_path" {
+  description = "The directory path where Kubernetes manifests are generated"
+  value       = var.path
 }

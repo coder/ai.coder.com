@@ -12,10 +12,14 @@ data "aws_iam_policy_document" "provisioner-policy" {
       "ec2:ModifyInstanceAttribute",
       "ec2:DescribeInstanceAttribute"
     ]
+    # Restrict to specific resource types for least privilege
     resources = [
-      "arn:aws:ec2:${local.region}:${local.account_id}:*",
-      "arn:aws:ec2:${local.region}:${local.account_id}:*/*",
-      "arn:aws:ec2:${local.region}:${local.account_id}:*:*",
+      "arn:aws:ec2:${local.region}:${local.account_id}:instance/*",
+      "arn:aws:ec2:${local.region}:${local.account_id}:volume/*",
+      "arn:aws:ec2:${local.region}:${local.account_id}:network-interface/*",
+      "arn:aws:ec2:${local.region}:${local.account_id}:security-group/*",
+      "arn:aws:ec2:${local.region}:${local.account_id}:subnet/*",
+      "arn:aws:ec2:${local.region}:${local.account_id}:key-pair/*",
       "arn:aws:ec2:${local.region}::image/*"
     ]
   }
@@ -121,7 +125,8 @@ data "aws_iam_policy_document" "provisioner-policy" {
       "ecr:BatchGetImage",
       "ecr:GetDownloadUrlForLayer"
     ]
-    resources = ["*"]
+    # Restrict to specific repositories for least privilege
+    resources = ["arn:aws:ecr:${local.region}:${local.account_id}:repository/*"]
   }
 
   statement {
@@ -141,11 +146,14 @@ data "aws_iam_policy_document" "provisioner-policy" {
   statement {
     sid    = "IAMReadOnly"
     effect = "Allow"
+    # Restrict to specific IAM read actions for least privilege
     actions = [
-      "iam:Get*",
-      "iam:List*"
+      "iam:GetRole",
+      "iam:GetInstanceProfile",
+      "iam:ListInstanceProfiles",
+      "iam:ListRoles"
     ]
-    resources = ["arn:aws:iam::${local.account_id}:*"]
+    resources = ["arn:aws:iam::${local.account_id}:role/*", "arn:aws:iam::${local.account_id}:instance-profile/*"]
   }
 
   statement {
@@ -154,7 +162,13 @@ data "aws_iam_policy_document" "provisioner-policy" {
     actions = [
       "iam:PassRole",
     ]
-    resources = ["arn:aws:iam::${local.account_id}:*"]
+    # Restrict to specific role pattern for least privilege
+    resources = ["arn:aws:iam::${local.account_id}:role/*"]
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PassedToService"
+      values   = ["ec2.amazonaws.com"]
+    }
   }
 }
 
@@ -167,10 +181,10 @@ data "aws_iam_policy_document" "ws-policy" {
       "bedrock:InvokeModelWithResponseStream",
       "bedrock:ListInferenceProfiles"
     ]
+    # Restrict to specific region and foundation models for least privilege
     resources = [
-      "arn:aws:bedrock:*:*:*",
-      "arn:aws:bedrock:*:*:*/*",
-      "arn:aws:bedrock:*:*:*:*",
+      "arn:aws:bedrock:${local.region}::foundation-model/*",
+      "arn:aws:bedrock:${local.region}:${local.account_id}:inference-profile/*"
     ]
   }
 }

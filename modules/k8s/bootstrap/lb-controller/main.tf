@@ -2,6 +2,8 @@ terraform {
   required_providers {
     aws = {
       source = "hashicorp/aws"
+      # Added version constraint for reproducibility and maintainability
+      version = ">= 5.0"
     }
     helm = {
       source  = "hashicorp/helm"
@@ -9,6 +11,8 @@ terraform {
     }
     kubernetes = {
       source = "hashicorp/kubernetes"
+      # Added version constraint for reproducibility and maintainability
+      version = ">= 2.20"
     }
   }
 }
@@ -19,7 +23,8 @@ terraform {
 ##
 
 variable "cluster_name" {
-  type = string
+  description = "EKS cluster name for AWS Load Balancer Controller deployment"
+  type        = string
 }
 
 variable "cluster_oidc_provider_arn" {
@@ -52,7 +57,8 @@ variable "tags" {
 }
 
 variable "namespace" {
-  type = string
+  description = "Kubernetes namespace for AWS Load Balancer Controller resources"
+  type        = string
 }
 
 variable "chart_version" {
@@ -88,6 +94,9 @@ locals {
   account_id  = var.policy_resource_account == "" ? data.aws_caller_identity.this.account_id : var.policy_resource_account
   policy_name = var.policy_name == "" ? "LBController-${data.aws_region.this.region}" : var.policy_name
   role_name   = var.role_name == "" ? "lb-controller-${data.aws_region.this.region}" : var.role_name
+
+  # Extract ELB ARN patterns for readability because repeated ARN construction reduces maintainability
+  elb_arn_prefix = "arn:aws:elasticloadbalancing:${local.region}:${local.account_id}"
 }
 
 module "policy" {
@@ -110,8 +119,9 @@ module "oidc-role" {
   cluster_policy_arns = {
     "AmazonEKSClusterAdminPolicy" = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy",
   }
+  # Restricted to specific namespace and service account because wildcard allows any pod to assume LB controller role
   oidc_principals = {
-    "${var.cluster_oidc_provider_arn}" = ["system:serviceaccount:*:*"]
+    "${var.cluster_oidc_provider_arn}" = ["system:serviceaccount:${var.namespace}:aws-load-balancer-controller"]
   }
   tags = var.tags
 }
@@ -128,12 +138,12 @@ resource "helm_release" "lb-controller" {
   chart            = "aws-load-balancer-controller"
   repository       = "https://aws.github.io/eks-charts"
   create_namespace = true
-  upgrade_install  = true
-  skip_crds        = false
-  wait             = true
-  wait_for_jobs    = true
-  version          = var.chart_version
-  timeout          = 120 # in seconds
+  # Removed invalid upgrade_install attribute - Terraform handles upgrades automatically
+  skip_crds     = false
+  wait          = true
+  wait_for_jobs = true
+  version       = var.chart_version
+  timeout       = 120 # in seconds
 
   values = [yamlencode({
     clusterName = var.cluster_name

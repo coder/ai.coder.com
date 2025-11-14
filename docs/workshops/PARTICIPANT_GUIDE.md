@@ -9,11 +9,13 @@ Welcome to the Coder AI Demo Environment monthly workshop! This guide will help 
 ### Prerequisites
 
 **GitHub Access**:
+
 - You must be a member of the `coder-contrib` GitHub organization
 - If you're a Coder employee, you should already have access
 - If you're an external participant and don't have access, reach out to `jullian@coder.com` with your GitHub handle
 
 **Technical Requirements**:
+
 - Modern web browser (Chrome, Firefox, Safari, or Edge)
 - Stable internet connection
 - No additional software installation required - everything runs in the browser!
@@ -31,10 +33,12 @@ If you received a registration link, please complete it so we can plan for capac
 Navigate to **[https://ai.coder.com](https://ai.coder.com)**
 
 **For Coder Employees**:
+
 1. Click "Okta"
 2. Log in with your Coder Okta credentials
 
 **For External Participants**:
+
 1. Click "GitHub"
 2. Log in with your GitHub account (the one added to coder-contrib organization)
 3. Authorize the application when prompted
@@ -46,6 +50,7 @@ Navigate to **[https://ai.coder.com](https://ai.coder.com)**
 **Duration**: 60-90 minutes
 
 **Agenda**:
+
 1. **Introduction** (5 minutes) - Overview of the platform and workshop objectives
 2. **Onboarding** (10 minutes) - Login, access verification, and platform tour
 3. **Hands-on Exercise** (40-60 minutes) - Guided exercises using AI features
@@ -58,6 +63,7 @@ Navigate to **[https://ai.coder.com](https://ai.coder.com)**
 ### Your Workspace
 
 During the workshop, you'll:
+
 - Deploy your own cloud development workspace
 - Use AI-powered coding features
 - Collaborate with other participants
@@ -66,11 +72,13 @@ During the workshop, you'll:
 ### Support
 
 Workshop facilitators will be available throughout the session to:
+
 - Answer questions
 - Troubleshoot issues
 - Provide guidance on exercises
 
 **Getting Help**:
+
 - Raise your hand (virtual or physical depending on format)
 - Use workshop chat/communication channel
 - Ask facilitators directly
@@ -92,11 +100,13 @@ Workshop facilitators will be available throughout the session to:
 ### Can't Access the Platform
 
 **"Access Denied" or "Not Authorized"**:
+
 - Verify you're using the correct login method (Okta for employees, GitHub for external)
 - Confirm your GitHub account is in the coder-contrib organization
 - Contact jullian@coder.com for access issues
 
 **Login Loop or Session Issues**:
+
 - Clear browser cookies and cache
 - Try an incognito/private browsing window
 - Switch to a different browser
@@ -104,16 +114,19 @@ Workshop facilitators will be available throughout the session to:
 ### Workspace Issues
 
 **Workspace Won't Start**:
+
 - Wait 2-3 minutes - initial startup can take time
 - Refresh your browser
 - Contact workshop facilitators if issue persists
 
 **Workspace is Slow**:
+
 - This is useful feedback! Let facilitators know
 - Avoid running extremely resource-intensive tasks
 - Save your work and try restarting workspace if needed
 
 **Lost Progress**:
+
 - If your workspace restarted, let facilitators know immediately
 - This helps us identify and fix platform issues
 
@@ -124,6 +137,7 @@ Workshop facilitators will be available throughout the session to:
 ### Feedback
 
 Please complete the post-workshop survey (link provided by facilitators). Your feedback helps us:
+
 - Improve platform stability
 - Enhance workshop content
 - Prioritize new features
@@ -131,12 +145,14 @@ Please complete the post-workshop survey (link provided by facilitators). Your f
 ### Continued Access
 
 Depending on your access level:
+
 - **Coder Employees**: Continue using ai.coder.com for demos and testing
 - **External Participants**: Access may be workshop-specific (check with your facilitator)
 
 ### Stay Connected
 
 Follow up resources and announcements will be shared via:
+
 - GitHub discussions in coder-contrib organization
 - Workshop follow-up email
 - Coder community channels
@@ -169,7 +185,7 @@ A: Workspaces use ephemeral storage. We recommend committing work to Git or savi
 
 **Before Workshop**: jullian@coder.com  
 **During Workshop**: Workshop facilitators (via chat/communication channel)  
-**After Workshop**: Use feedback survey or contact jullian@coder.com  
+**After Workshop**: Use feedback survey or contact jullian@coder.com
 
 ---
 

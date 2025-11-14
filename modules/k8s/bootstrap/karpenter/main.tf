@@ -6,9 +6,13 @@ terraform {
     }
     kubernetes = {
       source = "hashicorp/kubernetes"
+      # Added version constraint for reproducibility and maintainability
+      version = ">= 2.20"
     }
     aws = {
       source = "hashicorp/aws"
+      # Added version constraint for reproducibility and maintainability
+      version = ">= 5.0"
     }
   }
 }
@@ -147,11 +151,15 @@ locals {
   karpenter_node_role_name         = var.karpenter_node_role_name == "" ? local.std_karpenter_format : var.karpenter_node_role_name
 }
 
+data "aws_caller_identity" "this" {}
+
 data "aws_iam_policy_document" "sts" {
   statement {
-    effect    = "Allow"
-    actions   = ["sts:*"]
-    resources = ["*"]
+    effect = "Allow"
+    # Restricted to AssumeRole only because sts:* grants excessive permissions
+    actions = ["sts:AssumeRole"]
+    # Scoped to account roles only because wildcard allows assuming any role
+    resources = ["arn:aws:iam::${data.aws_caller_identity.this.account_id}:role/*"]
   }
 }
 
@@ -200,9 +208,9 @@ module "karpenter" {
 
   irsa_oidc_provider_arn = var.cluster_oidc_provider_arn
 
-  # tags = merge(var.tags, var.karpenter_tags)
-  # iam_role_tags = merge(var.tags, var.karpenter_role_tags)
-  # node_iam_role_tags = merge(var.tags, var.karpenter_node_role_tags)
+  tags               = var.karpenter_tags
+  iam_role_tags      = var.karpenter_role_tags
+  node_iam_role_tags = var.karpenter_node_role_tags
 }
 
 resource "helm_release" "karpenter" {
@@ -212,12 +220,17 @@ resource "helm_release" "karpenter" {
   chart            = "karpenter"
   repository       = "oci://public.ecr.aws/karpenter"
   create_namespace = true
-  upgrade_install  = true
-  skip_crds        = false
-  wait             = true
-  wait_for_jobs    = true
-  version          = var.chart_version
-  timeout          = 120 # in seconds
+  # Removed invalid upgrade_install attribute
+  skip_crds     = false
+  wait          = true
+  wait_for_jobs = true
+  version       = var.chart_version
+  timeout       = 120 # in seconds
+
+  # Added lifecycle management for proper upgrade handling
+  lifecycle {
+    create_before_destroy = true
+  }
 
   values = [yamlencode({
     controller = {

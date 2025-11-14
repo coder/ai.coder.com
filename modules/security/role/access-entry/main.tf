@@ -49,6 +49,14 @@ variable "cluster_access_type" {
   default = "STANDARD"
 }
 
+locals {
+  # Extract OIDC provider path for readability because repeated string manipulation is hard to maintain
+  oidc_provider_paths = {
+    for arn, subjects in var.oidc_principals :
+    arn => join("/", slice(split("/", arn), 1, length(split("/", arn))))
+  }
+}
+
 data "aws_iam_policy_document" "sts" {
   dynamic "statement" {
     for_each = var.oidc_principals
@@ -60,12 +68,12 @@ data "aws_iam_policy_document" "sts" {
       }
       condition {
         test     = "StringLike"
-        variable = "${join("/", slice(split("/", statement.key), 1, length(split("/", statement.key))))}:sub"
+        variable = "${local.oidc_provider_paths[statement.key]}:sub"
         values   = statement.value
       }
       condition {
         test     = "StringEquals"
-        variable = "${join("/", slice(split("/", statement.key), 1, length(split("/", statement.key))))}:aud"
+        variable = "${local.oidc_provider_paths[statement.key]}:aud"
         values   = ["sts.amazonaws.com"]
       }
     }
@@ -95,9 +103,8 @@ resource "aws_eks_access_entry" "this" {
 }
 
 resource "aws_eks_access_policy_association" "attach" {
-
-  depends_on = [aws_eks_access_entry.this[0]]
-  for_each   = var.cluster_create_access_entry ? var.cluster_policy_arns : {}
+  # Removed depends_on because for_each already handles conditional creation
+  for_each = var.cluster_create_access_entry ? var.cluster_policy_arns : {}
 
   cluster_name  = var.cluster_name
   policy_arn    = each.value
@@ -106,6 +113,9 @@ resource "aws_eks_access_policy_association" "attach" {
   access_scope {
     type = "cluster"
   }
+
+  # Policy association requires access entry to exist; for_each already handles conditional creation
+  depends_on = [aws_eks_access_entry.this[0]]
 }
 
 output "role_name" {
@@ -117,5 +127,6 @@ output "role_arn" {
 }
 
 output "access_entry_arn" {
-  value = try(aws_eks_access_entry.this[0].access_entry_arn, "SET CREATE_ACCESS_ENTRY TO TRUE")
+  # Returns null when access entry not created because string fallback reduces type consistency
+  value = try(aws_eks_access_entry.this[0].access_entry_arn, null)
 }

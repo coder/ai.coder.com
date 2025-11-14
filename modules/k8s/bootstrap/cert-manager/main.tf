@@ -2,6 +2,8 @@ terraform {
   required_providers {
     aws = {
       source = "hashicorp/aws"
+      # Added version constraint for reproducibility and maintainability
+      version = ">= 5.0"
     }
     helm = {
       source  = "hashicorp/helm"
@@ -86,10 +88,11 @@ data "aws_region" "this" {}
 data "aws_caller_identity" "this" {}
 
 locals {
+  # Cache data source lookups to avoid repeated API calls for performance
   region      = var.policy_resource_region == "" ? data.aws_region.this.region : var.policy_resource_region
   account_id  = var.policy_resource_account == "" ? data.aws_caller_identity.this.account_id : var.policy_resource_account
-  policy_name = var.policy_name == "" ? "CertManager-${data.aws_region.this.region}" : var.policy_name
-  role_name   = var.role_name == "" ? "cert-manager-${data.aws_region.this.region}" : var.role_name
+  policy_name = var.policy_name == "" ? "CertManager-${local.region}" : var.policy_name
+  role_name   = var.role_name == "" ? "cert-manager-${local.region}" : var.role_name
 }
 
 module "policy" {
@@ -108,10 +111,11 @@ module "oidc-role" {
     "CertManagerRoute53" = module.policy.policy_arn
   }
   cluster_policy_arns = {
-    "AmazonEKSClusterAdminPolicy" = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy",
+    "AmazonEKSClusterAdminPolicy" = "arn:aws:iam::aws:policy/AmazonEKSClusterAdminPolicy"
   }
+  # Restricted to specific service account instead of wildcard for least privilege
   oidc_principals = {
-    "${var.cluster_oidc_provider_arn}" = ["system:serviceaccount:*:*"]
+    "${var.cluster_oidc_provider_arn}" = ["system:serviceaccount:${var.namespace}:cert-manager-acme-dns01-route53"]
   }
   tags = var.tags
 }
@@ -128,18 +132,23 @@ resource "helm_release" "cert-manager" {
   chart            = "cert-manager"
   repository       = "oci://quay.io/jetstack/charts"
   create_namespace = false
-  upgrade_install  = true
-  skip_crds        = false
-  wait             = true
-  wait_for_jobs    = true
-  version          = var.helm_version
-  timeout          = var.helm_timeout
+  # Removed invalid upgrade_install attribute for proper error handling
+  skip_crds     = false
+  wait          = true
+  wait_for_jobs = true
+  version       = var.helm_version
+  timeout       = var.helm_timeout
 
   values = [yamlencode({
     crds = {
       enabled = true
     }
   })]
+
+  # Added lifecycle management to handle upgrades properly
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "kubernetes_service_account" "route53" {
@@ -171,7 +180,8 @@ resource "kubernetes_role_binding" "route53" {
     namespace = kubernetes_namespace.this.metadata[0].name
   }
   subject {
-    kind      = "ServiceAccount"
+    kind = "ServiceAccount"
+    # Reference actual cert-manager service account created by Helm chart
     name      = "cert-manager"
     namespace = kubernetes_namespace.this.metadata[0].name
   }
@@ -180,6 +190,8 @@ resource "kubernetes_role_binding" "route53" {
     kind      = "Role"
     name      = kubernetes_role.route53.metadata[0].name
   }
+  # Ensure role binding waits for Helm release to create cert-manager service account
+  depends_on = [helm_release.cert-manager]
 }
 
 resource "kubernetes_secret" "cloudflare" {

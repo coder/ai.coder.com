@@ -61,14 +61,15 @@ Complete the [Pre-Workshop Validation Checklist](./PRE_WORKSHOP_CHECKLIST.md) wh
 
 Provisioners handle Terraform operations for workspace create/delete/update. Each provisioner can handle 1 concurrent operation.
 
-| Concurrent Users | Provisioner Replicas (Default Org) | Command |
-|-----------------|-----------------------------------|----------|
-| <10 | 6 (default, no change) | N/A |
-| 10-15 | 8 replicas | `kubectl scale deployment coder-provisioner-default -n coder --replicas=8` |
-| 15-20 | 10 replicas | `kubectl scale deployment coder-provisioner-default -n coder --replicas=10` |
-| 20-30 | 12-15 replicas | `kubectl scale deployment coder-provisioner-default -n coder --replicas=12` |
+| Concurrent Users | Provisioner Replicas (Default Org) | Command                                                                     |
+| ---------------- | ---------------------------------- | --------------------------------------------------------------------------- |
+| <10              | 6 (default, no change)             | N/A                                                                         |
+| 10-15            | 8 replicas                         | `kubectl scale deployment coder-provisioner-default -n coder --replicas=8`  |
+| 15-20            | 10 replicas                        | `kubectl scale deployment coder-provisioner-default -n coder --replicas=10` |
+| 20-30            | 12-15 replicas                     | `kubectl scale deployment coder-provisioner-default -n coder --replicas=12` |
 
-**Current State**: 
+**Current State**:
+
 - Default org: 6 replicas @ 500m CPU / 512 MB each
 - Experimental org: 2 replicas
 - Demo org: 2 replicas
@@ -77,28 +78,31 @@ Provisioners handle Terraform operations for workspace create/delete/update. Eac
 
 LiteLLM handles AI feature requests (Claude Code CLI, Goose CLI) via round-robin to AWS Bedrock and GCP Vertex.
 
-| Concurrent Users | LiteLLM Replicas | Command |
-|-----------------|------------------|----------|
-| <20 | 4 (default, no change) | N/A |
-| 20-30 | 6 replicas | `kubectl scale deployment litellm -n litellm --replicas=6` |
-| 30+ | 8 replicas | `kubectl scale deployment litellm -n litellm --replicas=8` |
+| Concurrent Users | LiteLLM Replicas       | Command                                                    |
+| ---------------- | ---------------------- | ---------------------------------------------------------- |
+| <20              | 4 (default, no change) | N/A                                                        |
+| 20-30            | 6 replicas             | `kubectl scale deployment litellm -n litellm --replicas=6` |
+| 30+              | 8 replicas             | `kubectl scale deployment litellm -n litellm --replicas=8` |
 
 **Current State**: 4 replicas @ 2 vCPU / 4 GB each
 
 **Workspace Resource Allocation**
 
 Each workspace template allows users to select:
+
 - **CPU**: 2-4 vCPU
 - **Memory**: 4-8 GB
 - **Storage**: Ephemeral volumes on node-local storage
 
 **Example Capacity Calculation**:
+
 - 15 concurrent users × 4 vCPU (average) = 60 vCPU total
 - 15 concurrent users × 8 GB (average) = 120 GB total
 - Verify Karpenter can scale to meet demand
 - Ensure node storage capacity >60% headroom
 
 **Karpenter Considerations**:
+
 - Verify NodePools are healthy in all regions (us-east-2, us-west-2, eu-west-2)
 - Check AWS EC2 instance quotas allow for expected node scaling
 - Ensure sufficient EBS volume capacity for workspace storage
@@ -115,37 +119,41 @@ Each workspace template allows users to select:
 **Complete 1 day before workshop to allow for validation**:
 
 - [ ] **Scale provisioners** based on expected attendance (see scaling guidelines above)
+
   ```bash
   # Example for 15-20 users:
   kubectl scale deployment coder-provisioner-default -n coder --replicas=10
-  
+
   # Verify scaling completed:
   kubectl get pods -n coder -l app=coder-provisioner -w
   ```
 
 - [ ] **Scale LiteLLM** if expecting >20 users
+
   ```bash
   # Example for 20-30 users:
   kubectl scale deployment litellm -n litellm --replicas=6
-  
+
   # Verify scaling completed:
   kubectl get pods -n litellm -l app=litellm -w
   ```
 
 - [ ] **Disable LiteLLM key rotation** to prevent forced workspace restarts
+
   ```bash
   # Temporarily disable auxiliary addon key rotation
   kubectl scale deployment litellm-key-rotator -n litellm --replicas=0
-  
+
   # IMPORTANT: Re-enable after workshop:
   # kubectl scale deployment litellm-key-rotator -n litellm --replicas=1
   ```
 
 - [ ] **Verify Karpenter capacity**
+
   ```bash
   # Check current node count and capacity
   kubectl get nodes --show-labels | grep -E 'node.kubernetes.io/instance-type'
-  
+
   # Verify AWS EC2 quotas allow for growth
   aws service-quotas get-service-quota --service-code ec2 --quota-code L-1216C47A --region us-east-2
   ```

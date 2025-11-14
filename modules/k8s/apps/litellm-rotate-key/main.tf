@@ -1,49 +1,75 @@
 terraform {}
 
 variable "name" {
-  type = string
+  description = "Name for the LiteLLM key rotation RBAC resources (role, service account, role binding)"
+  type        = string
+  validation {
+    condition     = length(var.name) > 0
+    error_message = "Name must not be empty"
+  }
 }
 
 variable "namespace" {
-  type = string
+  description = "Kubernetes namespace where the LiteLLM key rotation resources will be created"
+  type        = string
+  validation {
+    condition     = length(var.namespace) > 0
+    error_message = "Namespace must not be empty"
+  }
 }
 
 variable "role_labels" {
-  type    = map(string)
-  default = {}
+  description = "Labels to apply to the LiteLLM key rotation role"
+  type        = map(string)
+  default     = {}
 }
 
 variable "role_annotations" {
-  type    = map(string)
-  default = {}
+  description = "Annotations to apply to the LiteLLM key rotation role"
+  type        = map(string)
+  default     = {}
 }
 
 variable "service_account_labels" {
-  type    = map(string)
-  default = {}
+  description = "Labels to apply to the LiteLLM key rotation service account"
+  type        = map(string)
+  default     = {}
 }
 
 variable "role_binding_labels" {
-  type    = map(string)
-  default = {}
+  description = "Labels to apply to the LiteLLM key rotation role binding"
+  type        = map(string)
+  default     = {}
 }
 
 variable "role_binding_annotations" {
-  type    = map(string)
-  default = {}
+  description = "Annotations to apply to the LiteLLM key rotation role binding"
+  type        = map(string)
+  default     = {}
 }
 
 variable "service_account_annotations" {
-  type    = map(string)
-  default = {}
+  description = "Annotations to apply to the LiteLLM key rotation service account"
+  type        = map(string)
+  default     = {}
 }
 
 variable "litellm_deployment_name" {
-  type = string
+  description = "Name of the LiteLLM deployment that will be restarted during key rotation"
+  type        = string
+  validation {
+    condition     = length(var.litellm_deployment_name) > 0
+    error_message = "LiteLLM deployment name must not be empty"
+  }
 }
 
 variable "litellm_secret_key_name" {
-  type = string
+  description = "Name of the Kubernetes secret containing the LiteLLM master key"
+  type        = string
+  validation {
+    condition     = length(var.litellm_secret_key_name) > 0
+    error_message = "LiteLLM secret key name must not be empty"
+  }
 }
 
 module "role" {
@@ -82,18 +108,45 @@ module "rolebinding" {
   namespace   = var.namespace
   labels      = var.role_binding_labels
   annotations = var.role_binding_annotations
+  # Use var.name directly as modules don't expose name outputs, only manifests
   role_ref = {
     name = var.name
   }
   subjects = [{
-    name = var.name
+    # Added kind field for proper Kubernetes RBAC subject specification
+    kind      = "ServiceAccount"
+    name      = var.name
+    namespace = var.namespace
   }]
 }
 
-module "kustomization" {
-  source = "../../objects/cronjob"
+# Output manifests for validation and debugging
+output "role_manifest" {
+  description = "The Kubernetes role manifest for LiteLLM key rotation"
+  value       = module.role.manifest
 }
 
-module "cronjob" {
-  source = "../../objects/cronjob"
+output "serviceaccount_manifest" {
+  description = "The Kubernetes service account manifest for LiteLLM key rotation"
+  value       = module.serviceaccount.manifest
+}
+
+output "rolebinding_manifest" {
+  description = "The Kubernetes role binding manifest for LiteLLM key rotation"
+  value       = module.rolebinding.manifest
+}
+
+output "name" {
+  description = "The name of the LiteLLM key rotation RBAC resources"
+  value       = var.name
+}
+
+output "namespace" {
+  description = "The Kubernetes namespace containing the LiteLLM key rotation resources"
+  value       = var.namespace
+}
+
+output "service_account_name" {
+  description = "The name of the service account for LiteLLM key rotation"
+  value       = var.name
 }

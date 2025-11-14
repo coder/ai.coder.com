@@ -18,7 +18,8 @@ variable "acme_server" {
 }
 
 variable "solvers" {
-  type = list(map(object({
+  # Simplified type from list(map(object)) to list(object) for better error handling
+  type = list(object({
     cloudflare = optional(object({
       email = string
       api_token_secret_ref = object({
@@ -26,17 +27,18 @@ variable "solvers" {
         key  = string
       })
     }))
-  })))
+  }))
   default = []
 }
 
 locals {
+  # Filter out null cloudflare values and only include valid solver configurations
   solvers = [for v in var.solvers : {
-    cloudflare = try({
+    cloudflare = v.cloudflare != null ? {
       email                = v.cloudflare.email
       api_token_secret_ref = v.cloudflare.api_token_secret_ref
-    }, {})
-  }]
+    } : null
+  } if v.cloudflare != null]
 }
 
 output "manifest" {
@@ -44,8 +46,8 @@ output "manifest" {
     apiVersion = "cert-manager.io/v1"
     kind       = "ClusterIssuer"
     metadata = {
-      name      = var.name
-      namespace = var.namespace
+      # ClusterIssuer is cluster-scoped and does not have a namespace
+      name = var.name
     }
     spec = {
       acme = {

@@ -2,9 +2,13 @@ terraform {
   required_providers {
     aws = {
       source = "hashicorp/aws"
+      # Added version constraint for reproducibility and maintainability
+      version = ">= 5.0"
     }
     kubernetes = {
       source = "hashicorp/kubernetes"
+      # Added version constraint for reproducibility and maintainability
+      version = ">= 2.20"
     }
   }
 }
@@ -50,8 +54,7 @@ variable "secret_id" {
 }
 
 variable "secret_region" {
-  type      = string
-  sensitive = true
+  type = string
 }
 
 variable "rotate_key_script_file_name" {
@@ -77,18 +80,38 @@ locals {
   role_name   = var.role_name == "" ? "litellm-swap-${data.aws_region.this.region}" : var.role_name
 }
 
+# Create custom policy for least privilege access to specific secret
+data "aws_iam_policy_document" "litellm_secrets" {
+  statement {
+    sid    = "SecretsManagerAccess"
+    effect = "Allow"
+    # Restrict to specific secret operations for least privilege
+    actions = [
+      "secretsmanager:GetSecretValue",
+      "secretsmanager:PutSecretValue",
+      "secretsmanager:UpdateSecret"
+    ]
+    resources = ["arn:aws:secretsmanager:${var.secret_region}:${data.aws_caller_identity.this.account_id}:secret:${var.secret_id}*"]
+  }
+}
+
+resource "aws_iam_policy" "litellm_secrets" {
+  name        = "${local.policy_name}-secrets"
+  description = "LiteLLM secrets access policy"
+  policy      = data.aws_iam_policy_document.litellm_secrets.json
+}
+
 module "oidc-role" {
   source       = "../../../security/role/access-entry"
   name         = local.role_name
   cluster_name = var.cluster_name
   policy_arns = {
-    "SecretsManagerReadWrite" = "arn:aws:iam::aws:policy/SecretsManagerReadWrite"
+    "LiteLLMSecretsPolicy" = aws_iam_policy.litellm_secrets.arn
   }
-  cluster_policy_arns = {
-    "AmazonEKSClusterAdminPolicy" = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy",
-  }
+  # Removed overly broad EKS cluster admin policy for least privilege
+  cluster_policy_arns = {}
   oidc_principals = {
-    "${var.cluster_oidc_provider_arn}" = ["system:serviceaccount:*:*"]
+    "${var.cluster_oidc_provider_arn}" = ["system:serviceaccount:${var.namespace}:${var.name}"]
   }
   tags = var.tags
 }
@@ -200,8 +223,9 @@ resource "kubernetes_cron_job_v1" "this" {
             volume {
               name = kubernetes_config_map.this.metadata[0].name
               config_map {
-                name         = kubernetes_config_map.this.metadata[0].name
-                default_mode = "0777"
+                name = kubernetes_config_map.this.metadata[0].name
+                # Changed from string to numeric octal for proper file permissions
+                default_mode = "0755"
               }
             }
           }

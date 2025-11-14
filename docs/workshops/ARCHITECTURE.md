@@ -93,6 +93,7 @@ graph TB
 ### Control Plane (us-east-2 - Ohio)
 
 **Coder Server**
+
 - **Function**: Main control plane for workspace management
 - **Deployment**: Helm release managed via Terraform
 - **Replicas**: 2
@@ -103,9 +104,10 @@ graph TB
 - **Authentication**: GitHub OAuth (external users), Okta OIDC (internal users)
 
 **External Provisioners**
+
 - **Function**: Execute Terraform operations for workspace lifecycle
 - **Deployment**: Helm release managed via Terraform
-- **Replicas**: 
+- **Replicas**:
   - Default org: 6 replicas (scale to 8-10 for workshops >15 users)
   - Experimental org: 2 replicas
   - Demo org: 2 replicas
@@ -114,6 +116,7 @@ graph TB
 - **IAM**: AWS IAM role for EC2 workspace provisioning
 
 **Karpenter**
+
 - **Function**: Dynamic node auto-scaling for EKS cluster
 - **Triggers**: Pod pending state, resource requests
 - **AMI**: EKS-optimized Ubuntu/Bottlerocket/AL2023
@@ -124,6 +127,7 @@ graph TB
 ### Proxy Clusters
 
 **Oregon Proxy (us-west-2)**
+
 - **Function**: Regional workspace access proxy
 - **Replicas**: 2
 - **Resources**: 500m CPU / 1 GB per replica
@@ -132,6 +136,7 @@ graph TB
 - **Token**: Managed via Terraform `coderd_workspace_proxy` resource
 
 **London Proxy (eu-west-2)**
+
 - **Function**: Regional workspace access proxy
 - **Replicas**: 2
 - **Resources**: 500m CPU / 1 GB per replica
@@ -144,6 +149,7 @@ graph TB
 ### LiteLLM Service (us-east-2)
 
 **LiteLLM Deployment**
+
 - **Function**: LLM proxy/router for AI features
 - **Deployment**: Kubernetes manifests (not Helm)
 - **Replicas**: 4 (scale to 6-8 for workshops >20 users)
@@ -153,12 +159,14 @@ graph TB
 - **Models**: Claude (Sonnet, Haiku, Opus)
 
 **Auxiliary Key Rotation**
+
 - **Function**: Periodically generates and rotates LiteLLM keys
 - **Frequency**: Every 4-5 hours
 - **Impact**: Forces all workspaces to restart and consume new key
 - **Note**: Disable during workshops to avoid disruptions
 
 **Authentication**
+
 - **AWS Bedrock**: IAM role with limited Bedrock permissions
 - **GCP Vertex**: Service account with Vertex AI permissions
 
@@ -167,16 +175,19 @@ graph TB
 ### Image Management
 
 **Source**: `ghcr.io/coder/coder-preview`
+
 - Non-GA preview image with beta AI features
 - Publicly accessible on GitHub Container Registry
 
 **Private ECR Mirror**
+
 - Mirrored copy in AWS ECR (us-east-2)
 - **Critical**: Must stay in sync with GHCR source
 - **Issue**: Manual sync process prone to drift
 - **Solution**: See Issue #7 for automation
 
 **Workspace Images**
+
 - Build from Scratch w/ Claude: Stored in private ECR
 - Build from Scratch w/ Goose: Stored in private ECR
 - Real World App w/ Claude: `codercom/example-universal:ubuntu` (DockerHub)
@@ -186,6 +197,7 @@ graph TB
 ### DNS Management (CloudFlare)
 
 **Managed Domains**:
+
 1. `ai.coder.com` + `*.ai.coder.com` → us-east-2 NLB
 2. `oregon-proxy.ai.coder.com` + `*.oregon-proxy.ai.coder.com` → us-west-2 NLB
 3. `emea-proxy.ai.coder.com` + `*.emea-proxy.ai.coder.com` → eu-west-2 NLB
@@ -198,6 +210,7 @@ graph TB
 ## Workspace Templates
 
 ### Build from Scratch w/ Claude
+
 - **Image**: Custom image from private ECR
 - **Pre-installed**: Claude Code CLI, desktop-commander, playwright
 - **Resources**: 2-4 vCPU, 4-8 GB (user-configurable)
@@ -206,6 +219,7 @@ graph TB
 - **AI Interface**: Claude coder_app via AgentAPI or Coder Tasks
 
 ### Build from Scratch w/ Goose
+
 - **Image**: Custom image from private ECR
 - **Pre-installed**: Goose CLI, desktop-commander, playwright
 - **Resources**: 2-4 vCPU, 4-8 GB (user-configurable)
@@ -214,6 +228,7 @@ graph TB
 - **AI Interface**: Goose coder_app via AgentAPI or Coder Tasks
 
 ### Real World App w/ Claude
+
 - **Image**: `codercom/example-universal:ubuntu` (DockerHub)
 - **Application**: Django app (auto-starts on workspace launch)
 - **Pre-installed**: Claude Code CLI, AgentAPI
@@ -227,16 +242,19 @@ graph TB
 ## Supporting Infrastructure
 
 ### AWS Load Balancer Controller
+
 - **Function**: Manages AWS NLB/ALB via Kubernetes Service/Ingress objects
 - **Deployment**: Helm release managed via Terraform
 - **IAM**: Dedicated IAM role with LoadBalancer management permissions
 
 ### AWS EBS CSI Driver
+
 - **Function**: Provisions EBS volumes via Kubernetes PersistentVolume objects
 - **Deployment**: Helm release managed via Terraform
 - **IAM**: Dedicated IAM role with EBS management permissions
 
 ### cert-manager
+
 - **Function**: SSL certificate renewal for all load balancers
 - **Integration**: Works with AWS Load Balancer Controller
 
@@ -247,15 +265,16 @@ graph TB
 ### Concurrent User Targets
 
 | Users | Provisioner Replicas | LiteLLM Replicas | Karpenter Nodes |
-|-------|---------------------|------------------|----------------|
-| <10 | 6 (default) | 4 (default) | Auto-scale |
-| 10-15 | 8 | 4 | Auto-scale |
-| 15-20 | 10 | 4-6 | Auto-scale |
-| 20-30 | 12-15 | 6-8 | Auto-scale |
+| ----- | -------------------- | ---------------- | --------------- |
+| <10   | 6 (default)          | 4 (default)      | Auto-scale      |
+| 10-15 | 8                    | 4                | Auto-scale      |
+| 15-20 | 10                   | 4-6              | Auto-scale      |
+| 20-30 | 12-15                | 6-8              | Auto-scale      |
 
 ### Workspace Resource Allocation
 
 **Per Workspace** (template-dependent):
+
 - **CPU**: 2-4 vCPU
 - **Memory**: 4-8 GB
 - **Storage**: Ephemeral volumes (node-local)
@@ -267,27 +286,32 @@ graph TB
 ## Known Limitations & Issues
 
 ### Storage
+
 - **Issue**: Ephemeral volume storage capacity limited per node
 - **Impact**: Workspaces restart when nodes exhaust storage
 - **Tracking**: Issue #1
 
 ### Image Synchronization
+
 - **Issue**: ECR mirror can fall out of sync with GHCR
 - **Impact**: Image version mismatch causes subdomain routing failures
 - **Tracking**: Issue #2, Issue #7
 
 ### LiteLLM Key Rotation
+
 - **Issue**: Automatic rotation every 4-5 hours forces workspace restarts
 - **Impact**: User progress lost during workshops if rotation occurs
 - **Mitigation**: Disable rotation before workshops
 - **Tracking**: Issue #3
 
 ### DNS Management
+
 - **Issue**: Manual process via Slack requests
 - **Impact**: Slow incident response, dependency on ops team
 - **Tracking**: Issue #9
 
 ### Provisioner Scaling
+
 - **Issue**: Manual scaling required, no auto-scaling
 - **Impact**: Timeouts during simultaneous workspace operations
 - **Tracking**: Issue #8
@@ -309,11 +333,13 @@ graph TB
 Planned additional demo environments:
 
 ### coderdemo.io
+
 - **Purpose**: SE official demo environment
 - **Level**: Production-grade, best practices, reference architecture
 - **Status**: Not yet live
 
 ### devcoder.io
+
 - **Purpose**: CS / Engineering collaboration environment
 - **Use Case**: Enablement, internal feedback loops, dogfooding
 - **Status**: Not yet live

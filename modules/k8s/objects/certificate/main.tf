@@ -15,10 +15,20 @@ variable "secret_name" {
 variable "issuer_ref_kind" {
   type    = string
   default = "ClusterIssuer"
+  # Added validation because invalid issuer kind causes cert-manager errors
+  validation {
+    condition     = contains(["Issuer", "ClusterIssuer"], var.issuer_ref_kind)
+    error_message = "issuer_ref_kind must be one of: Issuer, ClusterIssuer."
+  }
 }
 
 variable "issuer_ref_name" {
   type = string
+  # Added validation because empty issuer name causes cert-manager errors
+  validation {
+    condition     = var.issuer_ref_name != ""
+    error_message = "issuer_ref_name must not be empty."
+  }
 }
 
 variable "common_name" {

@@ -1,12 +1,40 @@
 variables {
-  name                 = "test"
-  namespace            = []
-  patches              = []
-  resources            = []
-  helm_charts          = []
-  config_map_generator = []
-  secret_generator     = []
-  expected             = <<-EOF
+  name = "test"
+  # Changed to string because namespace should be a single value not an array
+  namespace = "test"
+  patches   = []
+  resources = []
+  helm_charts = [{
+    name         = "test"
+    release_name = "test"
+    version      = "2.23.0"
+    repo         = "https://helm.test.com/v2"
+    namespace    = "test"
+    values_file  = "./values.yaml"
+    values_inline = {
+      test = "test"
+    }
+  }]
+  config_map_generator = [{
+    name      = "test"
+    namespace = "test"
+    behavior  = "create"
+    envs      = []
+    files     = []
+    options = {
+      disableNameSuffixHash = true
+    }
+  }]
+  secret_generator = [{
+    name      = "gcloud-auth"
+    namespace = "litellm"
+    behavior  = "create"
+    files     = ["secrets/service_account.json"]
+    options = {
+      disableNameSuffixHash = true
+    }
+  }]
+  expected = <<-EOF
     apiVersion: kustomize.config.k8s.io/v1beta1
     kind: Kustomization
     namespace: test
@@ -36,7 +64,7 @@ variables {
         envs: []
         files: []
         options:
-            disableNameSuffiHash: true
+            disableNameSuffixHash: true
 
     resources: []
     patches: []

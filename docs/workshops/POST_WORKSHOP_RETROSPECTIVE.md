@@ -1,9 +1,9 @@
 # Post-Workshop Retrospective Template
 
-**Workshop Date**: _________________  
-**Participants**: _________________  
-**Retrospective Date**: _________________  
-**Attendees**: _________________  
+**Workshop Date**: **\*\*\*\***\_**\*\*\*\***  
+**Participants**: **\*\*\*\***\_**\*\*\*\***  
+**Retrospective Date**: **\*\*\*\***\_**\*\*\*\***  
+**Attendees**: **\*\*\*\***\_**\*\*\*\***
 
 ---
 
@@ -11,18 +11,18 @@
 
 ### Metrics
 
-**Registration**: _________ participants  
-**Actual Attendance**: _________ participants  
-**Completion Rate**: _________%  
-**Duration**: _________ minutes  
+**Registration**: \***\*\_\*\*** participants  
+**Actual Attendance**: \***\*\_\*\*** participants  
+**Completion Rate**: \***\*\_\*\***%  
+**Duration**: \***\*\_\*\*** minutes
 
 ### Concurrent Load
 
-**Peak Concurrent Workspaces**: _________  
-**Average Concurrent Workspaces**: _________  
-**Peak Storage Utilization**: _________%  
-**Peak CPU Utilization**: _________%  
-**Peak Memory Utilization**: _________%  
+**Peak Concurrent Workspaces**: \***\*\_\*\***  
+**Average Concurrent Workspaces**: \***\*\_\*\***  
+**Peak Storage Utilization**: \***\*\_\*\***%  
+**Peak CPU Utilization**: \***\*\_\*\***%  
+**Peak Memory Utilization**: \***\*\_\*\***%
 
 ---
 
@@ -30,44 +30,44 @@
 
 ### Incidents
 
-**Total Incidents**: _________
+**Total Incidents**: \***\*\_\*\***
 
 | Severity | Count | Description | Impact | Resolution Time |
-|----------|-------|-------------|--------|----------------|
-| Critical | | | | |
-| High | | | | |
-| Medium | | | | |
-| Low | | | | |
+| -------- | ----- | ----------- | ------ | --------------- |
+| Critical |       |             |        |                 |
+| High     |       |             |        |                 |
+| Medium   |       |             |        |                 |
+| Low      |       |             |        |                 |
 
 ### Key Metrics
 
-| Metric | Target | Actual | Status |
-|--------|--------|--------|--------|
-| Workspace Failure Rate | <2% | _____% | ✅ / ❌ |
-| Storage Contention Events | 0 | _____ | ✅ / ❌ |
-| Authentication Failures | 0 | _____ | ✅ / ❌ |
-| Subdomain Routing Errors | 0 | _____ | ✅ / ❌ |
-| Average Workspace Start Time | <2 min | _____ | ✅ / ❌ |
+| Metric                       | Target | Actual  | Status  |
+| ---------------------------- | ------ | ------- | ------- |
+| Workspace Failure Rate       | <2%    | **\_**% | ✅ / ❌ |
+| Storage Contention Events    | 0      | **\_**  | ✅ / ❌ |
+| Authentication Failures      | 0      | **\_**  | ✅ / ❌ |
+| Subdomain Routing Errors     | 0      | **\_**  | ✅ / ❌ |
+| Average Workspace Start Time | <2 min | **\_**  | ✅ / ❌ |
 
 ---
 
 ## What Went Well 🎉
 
-1. _________________
-2. _________________
-3. _________________
-4. _________________
-5. _________________
+1. ***
+2. ***
+3. ***
+4. ***
+5. ***
 
 ---
 
 ## What Went Wrong ⚠️
 
-1. _________________
-2. _________________
-3. _________________
-4. _________________
-5. _________________
+1. ***
+2. ***
+3. ***
+4. ***
+5. ***
 
 ---
 
@@ -76,18 +76,18 @@
 ### New Issues
 
 | Issue # | Title | Severity | Owner | Target Resolution |
-|---------|-------|----------|-------|------------------|
-| | | | | |
-| | | | | |
-| | | | | |
+| ------- | ----- | -------- | ----- | ----------------- |
+|         |       |          |       |                   |
+|         |       |          |       |                   |
+|         |       |          |       |                   |
 
 ### Existing Issues Validated
 
-| Issue # | Status | Notes |
-|---------|--------|-------|
-| #1 | Fixed / Persists / Improved | |
-| #2 | Fixed / Persists / Improved | |
-| #3 | Fixed / Persists / Improved | |
+| Issue # | Status                      | Notes |
+| ------- | --------------------------- | ----- |
+| #1      | Fixed / Persists / Improved |       |
+| #2      | Fixed / Persists / Improved |       |
+| #3      | Fixed / Persists / Improved |       |
 
 ---
 
@@ -95,27 +95,30 @@
 
 ### Satisfaction Score
 
-**Overall Satisfaction**: _____/5  
-**Platform Stability**: _____/5  
-**Workshop Content**: _____/5  
-**Support Quality**: _____/5  
+**Overall Satisfaction**: **\_**/5  
+**Platform Stability**: **\_**/5  
+**Workshop Content**: **\_**/5  
+**Support Quality**: **\_**/5
 
 ### Qualitative Feedback
 
 **What participants liked**:
-- _________________
-- _________________
-- _________________
+
+- ***
+- ***
+- ***
 
 **What participants struggled with**:
-- _________________
-- _________________
-- _________________
+
+- ***
+- ***
+- ***
 
 **Feature requests**:
-- _________________
-- _________________
-- _________________
+
+- ***
+- ***
+- ***
 
 ---
 
@@ -123,25 +126,25 @@
 
 ### Improvements Since Last Workshop
 
-1. _________________
-2. _________________
-3. _________________
+1. ***
+2. ***
+3. ***
 
 ### Regressions Since Last Workshop
 
-1. _________________
-2. _________________
-3. _________________
+1. ***
+2. ***
+3. ***
 
 ### Trend Analysis
 
-| Metric | Last Month | This Month | Trend |
-|--------|------------|------------|-------|
-| Workspace Failure Rate | _____% | _____% | ↑ / ↓ / → |
-| Incident Count | _____ | _____ | ↑ / ↓ / → |
-| Participant Satisfaction | _____/5 | _____/5 | ↑ / ↓ / → |
-| Avg Workspace Start Time | _____ | _____ | ↑ / ↓ / → |
-| Peak Concurrent Workspaces | _____ | _____ | ↑ / ↓ / → |
+| Metric                     | Last Month | This Month | Trend     |
+| -------------------------- | ---------- | ---------- | --------- |
+| Workspace Failure Rate     | **\_**%    | **\_**%    | ↑ / ↓ / → |
+| Incident Count             | **\_**     | **\_**     | ↑ / ↓ / → |
+| Participant Satisfaction   | **\_**/5   | **\_**/5   | ↑ / ↓ / → |
+| Avg Workspace Start Time   | **\_**     | **\_**     | ↑ / ↓ / → |
+| Peak Concurrent Workspaces | **\_**     | **\_**     | ↑ / ↓ / → |
 
 ---
 
@@ -150,26 +153,26 @@
 ### Immediate (Before Next Workshop)
 
 | Action | Owner | Due Date | GitHub Issue |
-|--------|-------|----------|-------------|
-| | | | |
-| | | | |
-| | | | |
+| ------ | ----- | -------- | ------------ |
+|        |       |          |              |
+|        |       |          |              |
+|        |       |          |              |
 
 ### Short-term (1-3 months)
 
 | Action | Owner | Due Date | GitHub Issue |
-|--------|-------|----------|-------------|
-| | | | |
-| | | | |
-| | | | |
+| ------ | ----- | -------- | ------------ |
+|        |       |          |              |
+|        |       |          |              |
+|        |       |          |              |
 
 ### Long-term (3+ months)
 
 | Action | Owner | Due Date | GitHub Issue |
-|--------|-------|----------|-------------|
-| | | | |
-| | | | |
-| | | | |
+| ------ | ----- | -------- | ------------ |
+|        |       |          |              |
+|        |       |          |              |
+|        |       |          |              |
 
 ---
 
@@ -177,44 +180,44 @@
 
 ### What We Learned
 
-1. _________________
-2. _________________
-3. _________________
+1. ***
+2. ***
+3. ***
 
 ### What We'll Do Differently
 
-1. _________________
-2. _________________
-3. _________________
+1. ***
+2. ***
+3. ***
 
 ### Process Improvements
 
-1. _________________
-2. _________________
-3. _________________
+1. ***
+2. ***
+3. ***
 
 ---
 
 ## Next Workshop Planning
 
-**Proposed Date**: _________________  
-**Target Participants**: _________________  
-**Focus Areas**: _________________  
-**Key Changes from This Workshop**: _________________  
+**Proposed Date**: **\*\*\*\***\_**\*\*\*\***  
+**Target Participants**: **\*\*\*\***\_**\*\*\*\***  
+**Focus Areas**: **\*\*\*\***\_**\*\*\*\***  
+**Key Changes from This Workshop**: **\*\*\*\***\_**\*\*\*\***
 
 ---
 
 ## Approvals
 
-**Infrastructure Team Lead**: _________________  
-**Product Team Lead**: _________________  
-**Date**: _________________  
+**Infrastructure Team Lead**: **\*\*\*\***\_**\*\*\*\***  
+**Product Team Lead**: **\*\*\*\***\_**\*\*\*\***  
+**Date**: **\*\*\*\***\_**\*\*\*\***
 
 ---
 
 ## Attachments
 
-- Link to metrics dashboard export: _________________
-- Link to participant feedback survey results: _________________
-- Link to incident reports: _________________
-- Link to GitHub issues created: _________________
+- Link to metrics dashboard export: **\*\*\*\***\_**\*\*\*\***
+- Link to participant feedback survey results: **\*\*\*\***\_**\*\*\*\***
+- Link to incident reports: **\*\*\*\***\_**\*\*\*\***
+- Link to GitHub issues created: **\*\*\*\***\_**\*\*\*\***

@@ -1,40 +1,68 @@
 terraform {
   required_providers {
     local = {
-      source = "hashicorp/local"
+      source  = "hashicorp/local"
+      version = "~> 2.0"
     }
   }
 }
 
 variable "path" {
-  type = string
+  description = "Directory path where EBS CSI driver manifests will be generated"
+  type        = string
+  validation {
+    condition     = length(var.path) > 0
+    error_message = "Path must not be empty"
+  }
 }
 
 variable "namespace" {
-  type = string
+  description = "Kubernetes namespace where EBS CSI driver will be deployed"
+  type        = string
+  validation {
+    condition     = length(var.namespace) > 0
+    error_message = "Namespace must not be empty"
+  }
 }
 
 variable "ebs_controller_helm_version" {
-  type = string
+  description = "Version of the AWS EBS CSI driver Helm chart to deploy"
+  type        = string
+  validation {
+    condition     = length(var.ebs_controller_helm_version) > 0
+    error_message = "EBS controller Helm version must not be empty"
+  }
 }
 
 variable "service_account_annotations" {
-  type    = map(string)
-  default = {}
+  description = "Annotations for EBS CSI driver service account (e.g., IAM role)"
+  type        = map(string)
+  default     = {}
 }
 
 variable "storage_class_name" {
-  type = string
+  description = "Name of the Kubernetes storage class to create for EBS volumes"
+  type        = string
+  validation {
+    condition     = length(var.storage_class_name) > 0
+    error_message = "Storage class name must not be empty"
+  }
 }
 
 variable "storage_class_type" {
-  type    = string
-  default = "gp3"
+  description = "EBS volume type for the storage class (gp2, gp3, io1, io2, sc1, st1)"
+  type        = string
+  default     = "gp3"
+  validation {
+    condition     = contains(["gp2", "gp3", "io1", "io2", "sc1", "st1"], var.storage_class_type)
+    error_message = "Storage class type must be one of: gp2, gp3, io1, io2, sc1, st1"
+  }
 }
 
 variable "storage_class_annotations" {
-  type    = map(string)
-  default = {}
+  description = "Annotations to apply to the storage class"
+  type        = map(string)
+  default     = {}
 }
 
 locals {
@@ -85,4 +113,29 @@ resource "local_file" "values" {
       }
     }
   })
+}
+
+output "namespace" {
+  description = "The Kubernetes namespace where EBS CSI driver is deployed"
+  value       = var.namespace
+}
+
+output "helm_version" {
+  description = "The version of the AWS EBS CSI driver Helm chart deployed"
+  value       = var.ebs_controller_helm_version
+}
+
+output "storage_class_name" {
+  description = "The name of the Kubernetes storage class created for EBS volumes"
+  value       = var.storage_class_name
+}
+
+output "storage_class_type" {
+  description = "The EBS volume type configured for the storage class"
+  value       = var.storage_class_type
+}
+
+output "manifest_path" {
+  description = "The directory path where Kubernetes manifests are generated"
+  value       = var.path
 }

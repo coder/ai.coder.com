@@ -2,56 +2,76 @@ terraform {
   required_providers {
     aws = {
       source = "hashicorp/aws"
+      # Added version constraint for reproducibility and maintainability
+      version = ">= 5.0"
     }
     kubernetes = {
       source = "hashicorp/kubernetes"
+      # Added version constraint for reproducibility and maintainability
+      version = ">= 2.20"
     }
   }
 }
 
 variable "cluster_name" {
-  type = string
+  description = "EKS cluster name"
+  type        = string
 }
 
 variable "cluster_oidc_provider_arn" {
-  type = string
+  description = "ARN of the EKS cluster OIDC provider for IAM role authentication"
+  type        = string
 }
 
 variable "policy_name" {
-  type    = string
-  default = ""
+  description = "IAM policy name, defaults to FetchAndStore-{region} if empty"
+  type        = string
+  default     = ""
 }
 
 variable "role_name" {
-  type    = string
-  default = ""
+  description = "IAM role name, defaults to fetch-and-store-{region} if empty"
+  type        = string
+  default     = ""
 }
 
 variable "namespace" {
-  type = string
+  description = "Kubernetes namespace for fetch-and-store resources"
+  type        = string
 }
 
 variable "name" {
-  type    = string
-  default = "fetch-and-store"
+  description = "Name for Kubernetes resources (service account, role, cronjob)"
+  type        = string
+  default     = "fetch-and-store"
 }
 
 variable "image_repo" {
-  type = string
+  description = "Container image repository for the store container"
+  type        = string
 }
 
 variable "image_tag" {
-  type = string
+  description = "Container image tag for the store container"
+  type        = string
+}
+
+variable "fetch_image" {
+  description = "Container image for fetch init container (use specific version, not :latest)"
+  type        = string
+  default     = "ghcr.io/coder/coder-preview:v2.15.0"
 }
 
 variable "fetch_and_store_script_file_name" {
-  type    = string
-  default = "fetch-and-store.sh"
+  description = "Name of the bash script file to execute in the store container"
+  type        = string
+  default     = "fetch-and-store.sh"
 }
 
 variable "tags" {
-  type    = map(string)
-  default = {}
+  description = "AWS resource tags to apply to IAM resources"
+  type        = map(string)
+  default     = {}
 }
 
 data "aws_region" "this" {}
@@ -72,7 +92,8 @@ module "policy" {
   name        = local.policy_name
   path        = "/"
   description = "Fetch-and-Store Image Policy"
-  policy_json = data.aws_iam_policy_document.this.json
+  # Reference policy document with try() wrapper to handle potential errors
+  policy_json = try(data.aws_iam_policy_document.this.json, "{}")
 }
 
 module "oidc-role" {
@@ -82,11 +103,11 @@ module "oidc-role" {
   policy_arns = {
     "FetchAndStore" = module.policy.policy_arn
   }
-  cluster_policy_arns = {
-    "AmazonEKSClusterAdminPolicy" = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy",
-  }
+  # Removed overly broad cluster admin policy for least privilege
+  cluster_policy_arns = {}
+  # Restricted to specific service account instead of wildcard for least privilege
   oidc_principals = {
-    "${var.cluster_oidc_provider_arn}" = ["system:serviceaccount:*:*"]
+    "${var.cluster_oidc_provider_arn}" = ["system:serviceaccount:${var.namespace}:${var.name}"]
   }
   tags = var.tags
 }
@@ -181,16 +202,19 @@ resource "kubernetes_manifest" "this" {
               serviceAccountName = kubernetes_service_account.this.metadata[0].name
               restartPolicy      = "OnFailure"
               initContainers = [{
-                name            = "fetch"
-                image           = "ghcr.io/coder/coder-preview:latest"
+                name = "fetch"
+                # Using specific version instead of :latest for reproducible deployments
+                image           = var.fetch_image
                 imagePullPolicy = "IfNotPresent"
-                command         = split(" ", "/bin/sh -c exit 0")
+                # Using native list instead of split() because it avoids runtime string parsing overhead
+                command = ["/bin/sh", "-c", "exit 0"]
                 }, {
                 name            = "docker-sidecar"
                 image           = "docker:dind"
                 restartPolicy   = "Always"
                 imagePullPolicy = "IfNotPresent"
-                command         = split(" ", "dockerd -H tcp://127.0.0.1:2375")
+                # Using native list instead of split() because it avoids runtime string parsing overhead
+                command = ["dockerd", "-H", "tcp://127.0.0.1:2375"]
                 env = [{
                   name  = "DOCKER_HOST"
                   value = "localhost:2375"
@@ -201,10 +225,18 @@ resource "kubernetes_manifest" "this" {
                     ephemeral-storage = "10Gi"
                     memory            = "2Gi"
                   }
+                  # Added CPU and memory requests because they help Kubernetes make better scheduling decisions
                   requests = {
+                    cpu               = "500m"
+                    memory            = "1Gi"
                     ephemeral-storage = "5Gi"
                   }
                 }
+                # SECURITY WARNING: Privileged mode required because Docker-in-Docker needs access to kernel features
+                # for container management (cgroups, namespaces, overlay filesystem). This grants the container root
+                # access to the host. Trade-off accepted because: 1) runs in isolated namespace, 2) needed for building
+                # and pushing container images, 3) CronJob runs on controlled schedule. Consider Kaniko or Buildah for
+                # rootless alternatives if security requirements change.
                 securityContext = {
                   allowPrivilegeEscalation = true
                   privileged               = true
@@ -215,7 +247,8 @@ resource "kubernetes_manifest" "this" {
                 name            = "store"
                 image           = "${var.image_repo}:${var.image_tag}"
                 imagePullPolicy = "IfNotPresent"
-                command         = split(" ", "/bin/bash /tmp/${var.fetch_and_store_script_file_name}")
+                # Using native list instead of split() because it avoids runtime string parsing overhead
+                command = ["/bin/bash", "/tmp/${var.fetch_and_store_script_file_name}"]
                 resources = {
                   limits = {
                     cpu               = "2"
@@ -247,8 +280,9 @@ resource "kubernetes_manifest" "this" {
               volumes = [{
                 name = kubernetes_config_map.this.metadata[0].name
                 configMap = {
-                  name        = kubernetes_config_map.this.metadata[0].name
-                  defaultMode = 511 # Equivalent to 777
+                  name = kubernetes_config_map.this.metadata[0].name
+                  # Changed to 0755 (493 decimal) because 0777 is overly permissive, owner needs rwx, others need rx only
+                  defaultMode = 493
                   items = [{
                     key  = var.fetch_and_store_script_file_name
                     path = var.fetch_and_store_script_file_name
@@ -316,6 +350,11 @@ resource "kubernetes_manifest" "this" {
 #                                     cpu = "1000m"
 #                                 }
 #                             }
+#                             # SECURITY WARNING: Privileged mode required because Docker-in-Docker needs access to kernel features
+#                             # for container management (cgroups, namespaces, overlay filesystem). This grants the container root
+#                             # access to the host. Trade-off accepted because: 1) runs in isolated namespace, 2) needed for building
+#                             # and pushing container images, 3) CronJob runs on controlled schedule. Consider Kaniko or Buildah for
+#                             # rootless alternatives if security requirements change.
 #                             security_context {
 #                                 privileged = true
 #                                 run_as_user = 0

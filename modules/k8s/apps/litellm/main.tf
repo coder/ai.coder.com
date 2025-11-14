@@ -1,25 +1,39 @@
 terraform {
   required_providers {
     local = {
-      source = "hashicorp/local"
+      source  = "hashicorp/local"
+      version = "~> 2.0"
     }
   }
 }
 
 variable "name" {
-  type    = string
-  default = "litellm"
+  description = "Name of the LiteLLM deployment and associated resources"
+  type        = string
+  default     = "litellm"
 }
 
 variable "path" {
-  type = string
+  description = "Directory path where Kubernetes manifests will be generated"
+  type        = string
+  validation {
+    condition     = length(var.path) > 0
+    error_message = "Path must not be empty"
+  }
 }
 
 variable "namespace" {
-  type = string
+  description = "Kubernetes namespace where LiteLLM will be deployed"
+  type        = string
+  # Added validation because empty namespace causes Kubernetes resource errors
+  validation {
+    condition     = var.namespace != ""
+    error_message = "namespace must not be empty."
+  }
 }
 
 variable "patches" {
+  description = "Kustomize patches to apply to generated Kubernetes resources"
   type = list(object({
     expected = list(object({
       op    = string
@@ -37,55 +51,78 @@ variable "patches" {
 }
 
 variable "service_account_name" {
-  type = string
+  description = "Name of the Kubernetes service account for LiteLLM"
+  type        = string
+  validation {
+    condition     = length(var.service_account_name) > 0
+    error_message = "Service account name must not be empty"
+  }
 }
 
 variable "service_account_labels" {
-  type    = map(string)
-  default = {}
+  description = "Labels to apply to the LiteLLM service account"
+  type        = map(string)
+  default     = {}
 }
 
 variable "service_account_annotations" {
-  type    = map(string)
-  default = {}
+  description = "Annotations to apply to the LiteLLM service account"
+  type        = map(string)
+  default     = {}
 }
 
 variable "deployment_labels" {
-  type    = map(string)
-  default = {}
+  description = "Labels to apply to the LiteLLM deployment"
+  type        = map(string)
+  default     = {}
 }
 
 variable "deployment_annotations" {
-  type    = map(string)
-  default = {}
+  description = "Annotations to apply to the LiteLLM deployment"
+  type        = map(string)
+  default     = {}
 }
 
 variable "deployment_template_labels" {
-  type    = map(string)
-  default = {}
+  description = "Labels to apply to the LiteLLM deployment pod template"
+  type        = map(string)
+  default     = {}
 }
 
 variable "deployment_template_annotations" {
-  type    = map(string)
-  default = {}
+  description = "Annotations to apply to the LiteLLM deployment pod template"
+  type        = map(string)
+  default     = {}
 }
 
 variable "deployment_replicas" {
-  type    = number
-  default = 1
+  description = "Number of LiteLLM replicas to run"
+  type        = number
+  default     = 1
+  validation {
+    condition     = var.deployment_replicas >= 0
+    error_message = "Deployment replicas must be non-negative"
+  }
 }
 
 variable "deployment_selector" {
-  type    = map(string)
-  default = {}
+  description = "Label selector for the LiteLLM deployment"
+  type        = map(string)
+  default     = {}
 }
 
 variable "deployment_strategy" {
-  type    = string
-  default = "RollingUpdate"
+  description = "Deployment strategy for LiteLLM (RollingUpdate or Recreate)"
+  type        = string
+  default     = "RollingUpdate"
+  validation {
+    condition     = contains(["RollingUpdate", "Recreate"], var.deployment_strategy)
+    error_message = "Deployment strategy must be either RollingUpdate or Recreate"
+  }
 }
 
 variable "container_resources" {
+  description = "Kubernetes resource requests and limits for CPU and memory"
   type = object({
     limits   = optional(map(string), {})
     requests = optional(map(string), {})
@@ -94,6 +131,7 @@ variable "container_resources" {
 }
 
 variable "redis_config" {
+  description = "Redis configuration for LiteLLM caching and rate limiting"
   type = object({
     port        = number
     ssl         = optional(bool, true)
@@ -102,12 +140,14 @@ variable "redis_config" {
 }
 
 variable "postgres_config" {
+  description = "PostgreSQL configuration for LiteLLM database storage"
   type = object({
     secret_path = string
   })
 }
 
 variable "litellm_config" {
+  description = "LiteLLM application configuration including image, port, mode, and config paths"
   type = object({
     image                 = string
     port                  = optional(number, 4000)
@@ -150,21 +190,25 @@ variable "env_secret" {
 }
 
 variable "service_labels" {
-  type    = map(string)
-  default = {}
+  description = "Labels to apply to the LiteLLM service"
+  type        = map(string)
+  default     = {}
 }
 
 variable "service_annotations" {
-  type    = map(string)
-  default = {}
+  description = "Annotations to apply to the LiteLLM service"
+  type        = map(string)
+  default     = {}
 }
 
 variable "service_selector" {
-  type    = map(string)
-  default = {}
+  description = "Label selector for the LiteLLM service"
+  type        = map(string)
+  default     = {}
 }
 
 variable "service_ports" {
+  description = "Custom service ports for LiteLLM (overrides default HTTP port)"
   type = list(object({
     name        = string
     port        = number
@@ -175,26 +219,39 @@ variable "service_ports" {
 }
 
 variable "ingress_class_name" {
-  type = string
+  description = "Ingress class name for LiteLLM ingress (e.g., nginx, alb)"
+  type        = string
+  validation {
+    condition     = length(var.ingress_class_name) > 0
+    error_message = "Ingress class name must not be empty"
+  }
 }
 
 variable "ingress_labels" {
-  type    = map(string)
-  default = {}
+  description = "Labels to apply to the LiteLLM ingress"
+  type        = map(string)
+  default     = {}
 }
 
 variable "ingress_annotations" {
-  type    = map(string)
-  default = {}
+  description = "Annotations to apply to the LiteLLM ingress"
+  type        = map(string)
+  default     = {}
 }
 
 variable "ingress_host" {
-  type = string
+  description = "Hostname for LiteLLM ingress (e.g., litellm.example.com)"
+  type        = string
+  validation {
+    condition     = length(var.ingress_host) > 0 && can(regex("^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$", var.ingress_host))
+    error_message = "Ingress host must be a valid hostname (e.g., litellm.example.com)"
+  }
 }
 
 variable "ingress_http_target_port" {
-  type    = number
-  default = 80
+  description = "Target port for HTTP traffic on the LiteLLM service"
+  type        = number
+  default     = 80
 }
 
 locals {
@@ -212,9 +269,10 @@ module "namespace" {
 }
 
 locals {
-  patches = [for v in var.patches : {
-    patch  = v.expected
-    target = v.target
+  # Renamed loop variables for clarity because single-letter names reduce maintainability
+  patches = [for patch in var.patches : {
+    patch  = patch.expected
+    target = patch.target
   }]
   config_maps = concat([{
     name       = replace(element(split("/", var.litellm_config.config_path), -1), "/[^a-zA-Z0-9-]/", "-")
@@ -222,21 +280,21 @@ locals {
     mount_path = "/app/${element(split("/", var.litellm_config.config_path), -1)}"
     sub_path   = element(split("/", var.litellm_config.config_path), -1)
     files      = [var.litellm_config.config_path]
-    }], [for v in var.litellm_config.custom_function_paths : {
-    name       = replace(element(split("/", v), -1), "/[^a-zA-Z0-9-]/", "-")
+    }], [for func_path in var.litellm_config.custom_function_paths : {
+    name       = replace(element(split("/", func_path), -1), "/[^a-zA-Z0-9-]/", "-")
     namespace  = var.namespace
-    mount_path = "/app/${element(split("/", v), -1)}"
-    sub_path   = element(split("/", v), -1)
-    files      = [v]
+    mount_path = "/app/${element(split("/", func_path), -1)}"
+    sub_path   = element(split("/", func_path), -1)
+    files      = [func_path]
   }])
-  secret_mounts = [for v in var.secret_mounts : {
-    name       = replace(v.name, "/[^a-zA-Z0-9-]/", "-")
+  secret_mounts = [for mount in var.secret_mounts : {
+    name       = replace(mount.name, "/[^a-zA-Z0-9-]/", "-")
     namespace  = var.namespace
-    behavior   = v.behavior
-    files      = v.files
-    read_only  = v.read_only
-    mount_path = v.mount_path
-    options    = v.options
+    behavior   = mount.behavior
+    files      = mount.files
+    read_only  = mount.read_only
+    mount_path = mount.mount_path
+    options    = mount.options
   }]
   secrets = concat([{
     name      = element(split("/", var.litellm_config.secret_path), -1)
@@ -277,6 +335,8 @@ module "serviceaccount" {
 }
 
 locals {
+  # Cache port_name to avoid repeated conditional evaluation
+  port_name = var.litellm_config.port_name == "" ? var.name : var.litellm_config.port_name
   env_secret = merge({
     LITELLM_MASTER_KEY = {
       name = element(split("/", var.litellm_config.secret_path), -1)
@@ -327,7 +387,7 @@ module "deployment" {
     env_secret = local.env_secret
     resources  = var.container_resources
     ports = [{
-      name           = var.litellm_config.port_name == "" ? var.name : var.litellm_config.port_name
+      name           = local.port_name
       protocol       = "TCP"
       container_port = var.litellm_config.port
     }]
@@ -360,7 +420,7 @@ module "service" {
     name        = "http"
     protocol    = "TCP"
     port        = var.ingress_http_target_port
-    target_port = var.litellm_config.port_name == "" ? var.name : var.litellm_config.port_name
+    target_port = local.port_name
   }]
   selector = var.service_selector
   type     = "NodePort"
@@ -420,4 +480,39 @@ resource "local_file" "service" {
 resource "local_file" "ingress" {
   filename = join("/", [var.path, local.ingress_file])
   content  = module.ingress.manifest
+}
+
+output "namespace" {
+  description = "The Kubernetes namespace where LiteLLM is deployed"
+  value       = var.namespace
+}
+
+output "service_account_name" {
+  description = "The name of the Kubernetes service account used by LiteLLM"
+  value       = var.service_account_name
+}
+
+output "deployment_name" {
+  description = "The name of the LiteLLM deployment"
+  value       = var.name
+}
+
+output "ingress_host" {
+  description = "The hostname configured for LiteLLM ingress"
+  value       = var.ingress_host
+}
+
+output "ingress_class_name" {
+  description = "The ingress class name used by LiteLLM"
+  value       = var.ingress_class_name
+}
+
+output "replicas" {
+  description = "The number of LiteLLM replicas configured"
+  value       = var.deployment_replicas
+}
+
+output "manifest_path" {
+  description = "The directory path where Kubernetes manifests are generated"
+  value       = var.path
 }

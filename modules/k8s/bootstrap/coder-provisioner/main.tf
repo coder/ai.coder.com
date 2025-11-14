@@ -51,6 +51,10 @@ variable "tags" {
 
 variable "namespace" {
   type = string
+  validation {
+    condition     = length(var.namespace) > 0
+    error_message = "Namespace must not be empty"
+  }
 }
 
 variable "image_repo" {
@@ -229,7 +233,8 @@ module "provisioner-policy" {
   name        = local.policy_name
   path        = "/"
   description = "Coder Terraform External Provisioner Policy"
-  policy_json = data.aws_iam_policy_document.provisioner-policy.json
+  # Use try() to handle potential data source evaluation errors
+  policy_json = try(data.aws_iam_policy_document.provisioner-policy.json, "{}")
 }
 
 module "provisioner-oidc-role" {
@@ -294,12 +299,21 @@ resource "helm_release" "coder-provisioner" {
   chart            = "coder-provisioner"
   repository       = "https://helm.coder.com/v2"
   create_namespace = false
-  upgrade_install  = true
   skip_crds        = false
   wait             = true
   wait_for_jobs    = true
   version          = var.provisioner_chart_version
   timeout          = 120 # in seconds
+
+  # Add dependency to ensure secret exists before helm install
+  depends_on = [kubernetes_secret.coder-provisioner-key]
+
+  lifecycle {
+    # Prevent accidental deletion of provisioner
+    prevent_destroy = false
+    # Recreate on version change for clean upgrades
+    create_before_destroy = true
+  }
 
   values = [yamlencode({
     coder = {
@@ -368,12 +382,19 @@ resource "helm_release" "coder-logstream" {
   chart            = "coder-logstream-kube"
   repository       = "https://helm.coder.com/logstream-kube"
   create_namespace = false
-  upgrade_install  = true
   skip_crds        = false
   wait             = true
   wait_for_jobs    = true
   version          = var.logstream_chart_version
   timeout          = 120 # in seconds
+
+  # Ensure provisioner is ready before logstream
+  depends_on = [helm_release.coder-provisioner]
+
+  lifecycle {
+    # Allow recreation for clean upgrades
+    create_before_destroy = true
+  }
 
   values = [yamlencode({
     url = var.primary_access_url
@@ -390,7 +411,8 @@ module "ws-policy" {
 
 module "ws-service-role" {
   source = "../../../security/role/service"
-  name   = "ws-service-role"
+  # Dynamic name added because hardcoded names cause conflicts in multi-region deployments
+  name = "ws-service-role-${data.aws_region.this.region}"
   policy_arns = {
     "AmazonEC2ContainerServiceforEC2Role" = "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role",
     "AmazonSSMManagedInstanceCore"        = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
@@ -405,7 +427,8 @@ module "ws-service-role" {
 
 module "ws-oidc-role" {
   source = "../../../security/role/access-entry"
-  name   = "ws-container-role"
+  # Dynamic name added because hardcoded names cause conflicts in multi-region deployments
+  name = "ws-container-role-${data.aws_region.this.region}"
   policy_arns = {
     "WorkspacePolicy" = module.ws-policy.policy_arn
   }

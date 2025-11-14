@@ -8,10 +8,20 @@ terraform {
 
 variable "name" {
   type = string
+  # Added validation because empty name causes Kubernetes resource errors
+  validation {
+    condition     = var.name != ""
+    error_message = "name must not be empty."
+  }
 }
 
 variable "namespace" {
   type = string
+  # Added validation because empty namespace causes Kubernetes resource errors
+  validation {
+    condition     = var.namespace != ""
+    error_message = "namespace must not be empty."
+  }
 }
 
 variable "annotations" {

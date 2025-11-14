@@ -100,10 +100,12 @@ resource "aws_instance" "main" {
 
   launch_template {
     id      = aws_launch_template.main.id
-    version = "$Latest"
+    version = "$Latest" # Using $Latest to always use the most recent version without manual updates
   }
 
   tags = var.tags
+
+  depends_on = [aws_launch_template.main] # Explicit dependency ensures launch template exists before instance creation
 
   lifecycle {
     ignore_changes = [

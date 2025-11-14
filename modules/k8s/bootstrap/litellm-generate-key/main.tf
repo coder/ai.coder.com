@@ -2,19 +2,31 @@ terraform {
   required_providers {
     aws = {
       source = "hashicorp/aws"
+      # Added version constraint for reproducibility and maintainability
+      version = ">= 5.0"
     }
     kubernetes = {
       source = "hashicorp/kubernetes"
+      # Added version constraint for reproducibility and maintainability
+      version = ">= 2.20"
     }
   }
 }
 
 variable "cluster_name" {
   type = string
+  validation {
+    condition     = length(var.cluster_name) > 0
+    error_message = "Cluster name must not be empty"
+  }
 }
 
 variable "cluster_oidc_provider_arn" {
   type = string
+  validation {
+    condition     = can(regex("^arn:aws:iam::", var.cluster_oidc_provider_arn))
+    error_message = "Cluster OIDC provider ARN must be a valid IAM ARN"
+  }
 }
 
 variable "role_name" {
@@ -39,10 +51,18 @@ variable "name" {
 
 variable "image_repo" {
   type = string
+  validation {
+    condition     = length(var.image_repo) > 0
+    error_message = "Image repository must not be empty"
+  }
 }
 
 variable "image_tag" {
   type = string
+  validation {
+    condition     = length(var.image_tag) > 0
+    error_message = "Image tag must not be empty"
+  }
 }
 
 variable "rotate_key_script_file_name" {
@@ -84,6 +104,10 @@ variable "litellm_create_secret" {
 
 variable "litellm_url" {
   type = string
+  validation {
+    condition     = can(regex("^https?://", var.litellm_url))
+    error_message = "LiteLLM URL must start with http:// or https://"
+  }
 }
 
 variable "tags" {
@@ -94,11 +118,19 @@ variable "tags" {
 variable "secret_id" {
   type      = string
   sensitive = true
+  validation {
+    condition     = length(var.secret_id) > 0
+    error_message = "Secret ID must not be empty"
+  }
 }
 
 variable "secret_region" {
   type      = string
   sensitive = true
+  validation {
+    condition     = length(var.secret_region) > 0
+    error_message = "Secret region must not be empty"
+  }
 }
 
 data "aws_region" "this" {}
@@ -114,18 +146,38 @@ locals {
   role_name   = var.role_name == "" ? "litellm-create-${data.aws_region.this.region}" : var.role_name
 }
 
+# Create custom policy for least privilege access
+data "aws_iam_policy_document" "litellm_secrets" {
+  statement {
+    sid    = "SecretsManagerAccess"
+    effect = "Allow"
+    # Restrict to specific secret operations for least privilege
+    actions = [
+      "secretsmanager:GetSecretValue",
+      "secretsmanager:PutSecretValue",
+      "secretsmanager:UpdateSecret"
+    ]
+    resources = ["arn:aws:secretsmanager:${var.secret_region}:${data.aws_caller_identity.this.account_id}:secret:${var.secret_id}*"]
+  }
+}
+
+resource "aws_iam_policy" "litellm_secrets" {
+  name        = "${local.policy_name}-secrets"
+  description = "LiteLLM secrets access policy"
+  policy      = data.aws_iam_policy_document.litellm_secrets.json
+}
+
 module "oidc-role" {
   source       = "../../../security/role/access-entry"
   name         = local.role_name
   cluster_name = var.cluster_name
   policy_arns = {
-    "SecretsManagerReadWrite" = "arn:aws:iam::aws:policy/SecretsManagerReadWrite"
+    "LiteLLMSecretsPolicy" = aws_iam_policy.litellm_secrets.arn
   }
-  cluster_policy_arns = {
-    "AmazonEKSClusterAdminPolicy" = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy",
-  }
+  # Removed overly broad EKS cluster admin policy for least privilege
+  cluster_policy_arns = {}
   oidc_principals = {
-    "${var.cluster_oidc_provider_arn}" = ["system:serviceaccount:*:*"]
+    "${var.cluster_oidc_provider_arn}" = ["system:serviceaccount:${var.namespace}:${var.name}"]
   }
   tags = var.tags
 }
@@ -284,8 +336,9 @@ resource "kubernetes_cron_job_v1" "this" {
             volume {
               name = kubernetes_config_map.this.metadata[0].name
               config_map {
-                name         = kubernetes_config_map.this.metadata[0].name
-                default_mode = "0777"
+                name = kubernetes_config_map.this.metadata[0].name
+                # Changed to 0555 because 0777 is overly permissive, script should be read-only and executable
+                default_mode = "0555"
               }
             }
           }

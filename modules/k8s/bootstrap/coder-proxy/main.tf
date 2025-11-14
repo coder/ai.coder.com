@@ -2,6 +2,8 @@ terraform {
   required_providers {
     aws = {
       source = "hashicorp/aws"
+      # Added version constraint for reproducibility and maintainability
+      version = ">= 5.0"
     }
     helm = {
       source  = "hashicorp/helm"
@@ -28,10 +30,18 @@ terraform {
 
 variable "coder_proxy_name" {
   type = string
+  validation {
+    condition     = length(var.coder_proxy_name) > 0
+    error_message = "Coder proxy name must not be empty"
+  }
 }
 
 variable "coder_proxy_display_name" {
   type = string
+  validation {
+    condition     = length(var.coder_proxy_display_name) > 0
+    error_message = "Coder proxy display name must not be empty"
+  }
 }
 
 variable "coder_proxy_icon" {
@@ -70,6 +80,10 @@ variable "cloudflare_api_token" {
 
 variable "namespace" {
   type = string
+  validation {
+    condition     = length(var.namespace) > 0
+    error_message = "Namespace must not be empty"
+  }
 }
 
 variable "helm_timeout" {
@@ -192,14 +206,26 @@ variable "pod_anti_affinity_preferred_during_scheduling_ignored_during_execution
 
 variable "primary_access_url" {
   type = string
+  validation {
+    condition     = can(regex("^https?://", var.primary_access_url))
+    error_message = "Primary access URL must start with http:// or https://"
+  }
 }
 
 variable "proxy_access_url" {
   type = string
+  validation {
+    condition     = can(regex("^https?://", var.proxy_access_url))
+    error_message = "Proxy access URL must start with http:// or https://"
+  }
 }
 
 variable "proxy_wildcard_url" {
   type = string
+  validation {
+    condition     = length(var.proxy_wildcard_url) > 0
+    error_message = "Proxy wildcard URL must not be empty"
+  }
 }
 
 variable "termination_grace_period_seconds" {
@@ -295,7 +321,8 @@ locals {
         labelSelector = {
           matchLabels = try(v.pod_affinity_term.label_selector.match_labels, {})
         }
-        topologyKey = try(v.pod_affinity_term.topology_key, {})
+        # Removed try() - topologyKey is required string field
+        topologyKey = v.pod_affinity_term.topology_key
       }
     }
   ]
@@ -319,12 +346,19 @@ resource "helm_release" "coder-proxy" {
   chart            = "coder"
   repository       = "https://helm.coder.com/v2"
   create_namespace = false
-  upgrade_install  = true
   skip_crds        = false
   wait             = true
   wait_for_jobs    = true
   version          = var.helm_version
   timeout          = var.helm_timeout
+
+  # Ensure secrets exist before helm install
+  depends_on = [kubernetes_secret.coder-proxy-key]
+
+  lifecycle {
+    # Recreate on version change for clean upgrades
+    create_before_destroy = true
+  }
 
   values = [yamlencode({
     coder = {
@@ -337,9 +371,10 @@ resource "helm_release" "coder-proxy" {
       workspaceProxy = true
       env            = local.env_vars
       tls = {
+        # Use try() to handle conditional module reference safely
         secretNames = [
           var.ssl_cert_config.create_secret ?
-          module.acme-cloudflare-ssl.kubernetes_secret_name :
+          try(module.acme-cloudflare-ssl[0].kubernetes_secret_name, var.ssl_cert_config.name) :
           var.ssl_cert_config.name
         ]
       }

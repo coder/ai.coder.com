@@ -22,12 +22,22 @@ variable "tags" {
 
 variable "service_actions" {
   type    = list(string)
-  default = []
+  default = ["sts:AssumeRole"]
+  # Added validation to ensure actions list is not empty for proper error handling
+  validation {
+    condition     = length(var.service_actions) > 0
+    error_message = "Service actions must contain at least one action"
+  }
 }
 
 variable "service_principals" {
   type    = list(string)
   default = []
+  # Added validation to ensure principals list is not empty for proper error handling
+  validation {
+    condition     = length(var.service_principals) > 0
+    error_message = "Service principals must contain at least one principal"
+  }
 }
 
 variable "policy_arns" {
@@ -38,6 +48,8 @@ variable "policy_arns" {
 
 data "aws_iam_policy_document" "sts" {
   statement {
+    # Added effect for explicit policy intent and better error handling
+    effect  = "Allow"
     actions = var.service_actions
     principals {
       type        = "Service"

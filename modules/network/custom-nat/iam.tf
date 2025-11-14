@@ -13,8 +13,10 @@ data "aws_iam_policy_document" "main" {
       "ec2:AttachNetworkInterface",
       "ec2:ModifyNetworkInterfaceAttribute",
     ]
+    # Scoped to specific network interfaces with Name tag for least privilege
     resources = [
-      "*",
+      "arn:aws:ec2:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:network-interface/*",
+      "arn:aws:ec2:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:instance/*"
     ]
     condition {
       test     = "StringEquals"
@@ -33,8 +35,10 @@ data "aws_iam_policy_document" "main" {
         "ec2:AssociateAddress",
         "ec2:DisassociateAddress",
       ]
+      # Include all EIP allocation IDs instead of just the first one for proper error handling
       resources = [
-        "arn:aws:ec2:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:elastic-ip/${var.eip_allocation_ids[0]}",
+        for eip_id in var.eip_allocation_ids :
+        "arn:aws:ec2:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:elastic-ip/${eip_id}"
       ]
     }
   }

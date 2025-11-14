@@ -16,6 +16,11 @@ variable "vpc_id" {
 
 variable "cidr_block" {
   type = string
+  # Added validation because invalid CIDR block causes AWS subnet creation errors
+  validation {
+    condition     = can(cidrhost(var.cidr_block, 0))
+    error_message = "cidr_block must be a valid IPv4 CIDR block."
+  }
 }
 
 variable "availability_zone" {
@@ -29,6 +34,11 @@ variable "private_dns_hostname_type_on_launch" {
 
 variable "eni_id" {
   type = string
+  # Added validation because invalid ENI ID causes AWS route table creation errors
+  validation {
+    condition     = can(regex("^eni-[a-z0-9]+$", var.eni_id))
+    error_message = "eni_id must be a valid AWS ENI ID (format: eni-xxxxxxxxx)."
+  }
 }
 
 variable "subnet_tags" {
