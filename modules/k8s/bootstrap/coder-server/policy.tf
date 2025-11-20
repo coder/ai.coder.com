@@ -33,11 +33,30 @@ data "aws_iam_policy_document" "provisioner-policy" {
       "ec2:ReleaseHosts"
     ]
     resources = [
-      "arn:aws:ec2:${local.region}:${local.account_id}:*",
-      "arn:aws:ec2:${local.region}:${local.account_id}:*/*",
-      "arn:aws:ec2:${local.region}:${local.account_id}:*:*",
-      "arn:aws:ec2:${local.region}::image/*"
+      "arn:aws:ec2:${local.region}:${local.account_id}:dedicated-host/*"
     ]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/ManagedBy"
+      values   = ["coder"]
+    }
+  }
+
+  statement {
+    sid    = "EC2ManageHostLifecycleExisting"
+    effect = "Allow"
+    actions = [
+      "ec2:ModifyHosts",
+      "ec2:ReleaseHosts"
+    ]
+    resources = [
+      "arn:aws:ec2:${local.region}:${local.account_id}:dedicated-host/*"
+    ]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/ManagedBy"
+      values   = ["coder"]
+    }
   }
 
   statement {

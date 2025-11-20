@@ -1,0 +1,6 @@
+# Backend configuration for Coder demo environment
+# Copy this to terraform.tfvars and fill in your values
+
+region       = "us-east-2"
+profile      = "YOUR_AWS_PROFILE"
+project_name = "YOUR_PROJECT_NAME"

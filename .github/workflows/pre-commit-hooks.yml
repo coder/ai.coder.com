@@ -1,0 +1,56 @@
+# Optional: Pre-commit hooks workflow
+# This provides guidance for setting up local pre-commit hooks
+
+name: Pre-commit Validation
+
+on:
+  pull_request:
+    paths:
+      - '.pre-commit-config.yaml'
+      - '.github/workflows/pre-commit-hooks.yml'
+
+jobs:
+  validate-pre-commit:
+    name: Validate Pre-commit Configuration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install pre-commit
+        run: |
+          pip install pre-commit
+          pre-commit --version
+
+      - name: Run pre-commit on all files
+        run: pre-commit run --all-files
+        continue-on-error: true
+
+      - name: Show pre-commit setup instructions
+        if: always()
+        run: |
+          echo "## 📋 Setting up Pre-commit Hooks Locally"
+          echo ""
+          echo "Pre-commit hooks help catch secrets BEFORE they reach GitHub."
+          echo ""
+          echo "### Installation:"
+          echo "\`\`\`bash"
+          echo "# Install pre-commit"
+          echo "pip install pre-commit"
+          echo ""
+          echo "# Install the git hooks"
+          echo "pre-commit install"
+          echo ""
+          echo "# (Optional) Run against all files"
+          echo "pre-commit run --all-files"
+          echo "\`\`\`"
+          echo ""
+          echo "### What it does:"
+          echo "- Scans for secrets before each commit"
+          echo "- Validates Terraform formatting"
+          echo "- Checks for merge conflicts"
+          echo "- Prevents large files from being committed"

@@ -1,0 +1,107 @@
+# Gitleaks configuration file
+# https://github.com/gitleaks/gitleaks
+
+title = "Gitleaks Configuration for Coder Infrastructure"
+
+[extend]
+# useDefault will extend the base configuration with all default gitleaks rules
+useDefault = true
+
+[allowlist]
+description = "Allowlist for non-sensitive patterns"
+
+# Ignore test/example values
+regexes = [
+  '''test[_-]?(token|key|secret|password)''',  # Test credentials
+  '''example[_-]?(token|key|secret)''',
+  '''dummy[_-]?(token|key|secret)''',
+  '''fake[_-]?(token|key|secret)''',
+  '''YOUR[_-]''',  # Placeholder values like YOUR_API_KEY
+  '''REPLACE[_-]''',
+  '''CHANGEME''',
+  '''TODO''',
+]
+
+# Ignore certain file paths
+paths = [
+  '''\.git/''',
+  '''\.terraform/''',
+  '''node_modules/''',
+  '''vendor/''',
+  '''\.(tfstate|tfstate\.backup)$''',
+  '''\.example$''',  # Example configuration files
+  '''\.md$''',  # Documentation files (review these manually)
+  '''go\.sum$''',
+  '''package-lock\.json$''',
+]
+
+# Ignore certain commits (if needed, add commit SHAs here)
+commits = []
+
+# Custom rules for infrastructure-specific secrets
+[[rules]]
+id = "terraform-sensitive-variable"
+description = "Terraform sensitive variable not marked as sensitive"
+regex = '''variable\s+"([^"]+)"\s+\{[^}]*default\s+=\s+["']([^"']{8,})["'][^}]*\}'''
+tags = ["terraform", "sensitive"]
+
+[[rules]]
+id = "aws-account-id"
+description = "AWS Account ID"
+regex = '''\d{12}'''
+tags = ["aws", "account-id"]
+# Note: Account IDs aren't secrets, but good to track
+[rules.allowlist]
+regexes = [
+  '''(region|zone|ami|snapshot|volume)-\d{12}''',  # Not account IDs
+]
+
+[[rules]]
+id = "coder-access-url"
+description = "Coder access URL with potential secrets"
+regex = '''coder_access_url\s*=\s*["\']https?://[^"\']*:[^"\'@]*@'''
+tags = ["coder", "url", "credentials"]
+
+[[rules]]
+id = "database-connection-string"
+description = "Database connection string with credentials"
+regex = '''postgres://([^:]+):([^@]+)@'''
+tags = ["database", "credentials"]
+[rules.allowlist]
+regexes = [
+  '''postgres://\w+@localhost''',  # Local connections without password
+  '''mode=memory''',  # In-memory databases
+]
+
+[[rules]]
+id = "route53-zone-id"
+description = "Route53 Hosted Zone ID"
+regex = '''Z[A-Z0-9]{12,}'''
+tags = ["aws", "route53"]
+# These are semi-sensitive; track but don't necessarily block
+
+[[rules]]
+id = "oidc-provider-arn"
+description = "OIDC Provider ARN containing account ID"
+regex = '''arn:aws:iam::\d{12}:oidc-provider'''
+tags = ["aws", "oidc", "arn"]
+
+[[rules]]
+id = "kubernetes-secret-value"
+description = "Kubernetes secret value in manifest"
+regex = '''(apiVersion:\s*v1\s+kind:\s*Secret.*data:.*\n\s+\w+:\s+)([A-Za-z0-9+/=]{16,})'''
+tags = ["kubernetes", "secret", "base64"]
+
+# Entropy-based detection for high-entropy strings (likely secrets)
+[[rules]]
+id = "high-entropy-string"
+description = "High entropy string (possible secret)"
+regex = '''['\"]([A-Za-z0-9+/=]{32,})['\"]'''
+entropy = 4.5  # Minimum entropy threshold
+tags = ["entropy", "generic"]
+[rules.allowlist]
+paths = [
+  '''\.lock$''',
+  '''\.sum$''',
+  '''\.json$''',
+]

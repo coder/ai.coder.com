@@ -114,8 +114,8 @@ variable "image_pull_secrets" {
 
 variable "replica_count" {
   type = number
-  # Changed from 0 to 1 because zero replicas results in no running server pods
-  default = 1
+  # reverted back to 0 as this is a demo deployment by default
+  default = 0
 }
 
 variable "env_vars" {

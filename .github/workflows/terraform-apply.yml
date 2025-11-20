@@ -1,0 +1,111 @@
+name: Terraform Apply
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'infra/aws/**/*.tf'
+      - 'infra/aws/**/*.tfvars'
+      - '.github/workflows/terraform-*.yml'
+  workflow_dispatch:
+    inputs:
+      module:
+        description: 'Specific module to apply (leave empty for all changed)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  detect-changes:
+    name: Detect Changed Modules
+    runs-on: ubuntu-latest
+    outputs:
+      modules: ${{ steps.detect.outputs.modules }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect changed Terraform modules
+        id: detect
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ -n "${{ inputs.module }}" ]; then
+            # Manual trigger with specific module
+            MODULES=$(echo '["${{ inputs.module }}"]')
+            echo "Manual module specified: $MODULES"
+            echo "modules=$MODULES" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Get changed files from the last commit
+          CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD | grep -E '^infra/aws/.*\.tf(vars)?$' || true)
+
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "No Terraform files changed"
+            echo "modules=[]" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Extract unique module directories
+          MODULES=$(echo "$CHANGED_FILES" | xargs -n1 dirname | sort -u | jq -R -s -c 'split("\n")[:-1]')
+          echo "Changed modules: $MODULES"
+          echo "modules=$MODULES" >> $GITHUB_OUTPUT
+
+  terraform-apply:
+    name: Apply - ${{ matrix.module }}
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.modules != '[]'
+    strategy:
+      matrix:
+        module: ${{ fromJson(needs.detect-changes.outputs.modules) }}
+      fail-fast: false
+      max-parallel: 1  # Apply modules one at a time to avoid conflicts
+    defaults:
+      run:
+        working-directory: ${{ matrix.module }}
+    environment:
+      name: production-demo
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-2
+          role-session-name: GitHubActions-TerraformApply
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.6"
+
+      - name: Terraform Init
+        env:
+          TF_CLI_ARGS_init: >-
+            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}"
+            -backend-config="dynamodb_table=${{ secrets.TF_STATE_LOCK_TABLE }}"
+            -backend-config="region=us-east-2"
+            -backend-config="encrypt=true"
+        run: terraform init -input=false
+
+      - name: Terraform Plan
+        run: terraform plan -no-color -input=false -out=tfplan
+
+      - name: Terraform Apply
+        run: terraform apply -no-color -input=false tfplan
+
+      - name: Upload Terraform State (backup)
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: terraform-state-${{ hashFiles(format('{0}/**', matrix.module)) }}
+          path: ${{ matrix.module }}/.terraform/
+          retention-days: 7

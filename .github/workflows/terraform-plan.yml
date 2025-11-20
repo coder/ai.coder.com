@@ -1,0 +1,140 @@
+name: Terraform Plan
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'infra/aws/**/*.tf'
+      - 'infra/aws/**/*.tfvars'
+      - '.github/workflows/terraform-*.yml'
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+jobs:
+  detect-changes:
+    name: Detect Changed Modules
+    runs-on: ubuntu-latest
+    outputs:
+      modules: ${{ steps.detect.outputs.modules }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed Terraform modules
+        id: detect
+        run: |
+          # Get changed files
+          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -E '^infra/aws/.*\.tf(vars)?$' || true)
+
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "No Terraform files changed"
+            echo "modules=[]" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Extract unique module directories
+          MODULES=$(echo "$CHANGED_FILES" | xargs -n1 dirname | sort -u | jq -R -s -c 'split("\n")[:-1]')
+          echo "Changed modules: $MODULES"
+          echo "modules=$MODULES" >> $GITHUB_OUTPUT
+
+  terraform-plan:
+    name: Plan - ${{ matrix.module }}
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.modules != '[]'
+    strategy:
+      matrix:
+        module: ${{ fromJson(needs.detect-changes.outputs.modules) }}
+      fail-fast: false
+    defaults:
+      run:
+        working-directory: ${{ matrix.module }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-2
+          role-session-name: GitHubActions-TerraformPlan
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.6"
+
+      - name: Terraform Format Check
+        id: fmt
+        run: terraform fmt -check -recursive
+        continue-on-error: true
+
+      - name: Terraform Init
+        id: init
+        env:
+          TF_CLI_ARGS_init: >-
+            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}"
+            -backend-config="dynamodb_table=${{ secrets.TF_STATE_LOCK_TABLE }}"
+            -backend-config="region=us-east-2"
+            -backend-config="encrypt=true"
+        run: terraform init -input=false
+
+      - name: Terraform Validate
+        id: validate
+        run: terraform validate -no-color
+
+      - name: Terraform Plan
+        id: plan
+        run: |
+          terraform plan -no-color -input=false -out=tfplan
+          terraform show -no-color tfplan > plan.txt
+        continue-on-error: true
+
+      - name: Comment PR with Plan
+        uses: actions/github-script@v7
+        if: github.event_name == 'pull_request'
+        env:
+          PLAN: ${{ steps.plan.outputs.stdout }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const module = '${{ matrix.module }}';
+            const plan = fs.existsSync('${{ matrix.module }}/plan.txt')
+              ? fs.readFileSync('${{ matrix.module }}/plan.txt', 'utf8')
+              : 'Plan output not available';
+
+            const output = `### Terraform Plan: \`${module}\`
+
+            #### Format and Style 🖌 \`${{ steps.fmt.outcome }}\`
+            #### Initialization ⚙️ \`${{ steps.init.outcome }}\`
+            #### Validation 🤖 \`${{ steps.validate.outcome }}\`
+            #### Plan 📖 \`${{ steps.plan.outcome }}\`
+
+            <details><summary>Show Plan</summary>
+
+            \`\`\`terraform
+            ${plan.slice(0, 65000)}
+            \`\`\`
+
+            </details>
+
+            *Pusher: @${{ github.actor }}, Action: \`${{ github.event_name }}\`, Workflow: \`${{ github.workflow }}\`*`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            });
+
+      - name: Fail if plan failed
+        if: steps.plan.outcome == 'failure'
+        run: exit 1

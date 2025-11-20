@@ -1,0 +1,7 @@
+# ACM Certificate configuration for Coder
+# Copy this to terraform.tfvars and fill in your values
+
+cluster_region  = "us-east-2"
+cluster_profile = "YOUR_AWS_PROFILE"
+domain_name     = "YOUR_DOMAIN.com"
+hosted_zone_id  = "YOUR_ROUTE53_ZONE_ID"

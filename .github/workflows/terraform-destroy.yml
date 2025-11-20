@@ -1,0 +1,68 @@
+name: Terraform Destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      module:
+        description: 'Module to destroy (e.g., infra/aws/us-east-2/eks)'
+        required: true
+        type: string
+      confirm:
+        description: 'Type "destroy" to confirm'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  terraform-destroy:
+    name: Destroy - ${{ inputs.module }}
+    runs-on: ubuntu-latest
+    if: inputs.confirm == 'destroy'
+    defaults:
+      run:
+        working-directory: ${{ inputs.module }}
+    environment:
+      name: production-demo
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-2
+          role-session-name: GitHubActions-TerraformDestroy
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.6"
+
+      - name: Terraform Init
+        env:
+          TF_CLI_ARGS_init: >-
+            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}"
+            -backend-config="dynamodb_table=${{ secrets.TF_STATE_LOCK_TABLE }}"
+            -backend-config="region=us-east-2"
+            -backend-config="encrypt=true"
+        run: terraform init -input=false
+
+      - name: Terraform Plan Destroy
+        run: terraform plan -destroy -no-color -input=false -out=tfplan
+
+      - name: Terraform Destroy
+        run: terraform apply -no-color -input=false tfplan
+
+  validation-failed:
+    name: Validation Failed
+    runs-on: ubuntu-latest
+    if: inputs.confirm != 'destroy'
+    steps:
+      - name: Confirmation not provided
+        run: |
+          echo "::error::Destroy confirmation not provided. You must type 'destroy' to confirm."
+          exit 1
