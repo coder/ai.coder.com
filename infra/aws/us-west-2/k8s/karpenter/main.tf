@@ -238,13 +238,13 @@ module "nodepools" {
   for_each = { for np in local.nodepool_configs : np.name => np }
   source   = "../../../../../modules/k8s/objects/nodepool"
 
-  name                               = each.value.name
-  node_labels                        = each.value.node_labels
-  node_taints                        = each.value.node_taints
-  node_requirements                  = each.value.node_requirements
-  node_class_ref_name                = each.value.node_class_ref_name
-  disruption_consolidate_after       = lookup(each.value, "disruption_consolidate_after", "1m")
-  disruption_consolidation_policy    = lookup(each.value, "disruption_consolidation_policy", "WhenEmpty")
+  name                            = each.value.name
+  node_labels                     = each.value.node_labels
+  node_taints                     = each.value.node_taints
+  node_requirements               = each.value.node_requirements
+  node_class_ref_name             = each.value.node_class_ref_name
+  disruption_consolidate_after    = lookup(each.value, "disruption_consolidate_after", "1m")
+  disruption_consolidation_policy = lookup(each.value, "disruption_consolidation_policy", "WhenEmpty")
 
   depends_on = [module.karpenter-addon]
 }

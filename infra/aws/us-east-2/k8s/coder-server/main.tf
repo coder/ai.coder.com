@@ -20,7 +20,7 @@ terraform {
       source = "hashicorp/tls"
     }
   }
-  backend "s3" {}
+  # backend "s3" {}  # Commented out for local state during initial deployment
 }
 
 variable "cluster_name" {
@@ -208,7 +208,7 @@ module "coder-server" {
   namespace                       = "coder"
   acme_registration_email         = var.acme_registration_email
   acme_days_until_renewal         = 90
-  replica_count                   = 2
+  replica_count                   = 1 # HA requires Enterprise license
   helm_version                    = var.addon_version
   image_repo                      = var.image_repo
   image_tag                       = var.image_tag
@@ -237,10 +237,18 @@ module "coder-server" {
   github_external_auth_secret_client_id     = var.coder_github_external_auth_secret_client_id
   github_external_auth_secret_client_secret = var.coder_github_external_auth_secret_client_secret
   tags                                      = {}
+  env_vars = {
+    # Disable redirect since NLB terminates TLS and forwards plain HTTP to backend
+    # Without this, Coder sees HTTP and redirects to HTTPS, causing infinite redirect loop
+    CODER_REDIRECT_TO_ACCESS_URL = "false"
+  }
   service_annotations = {
-    "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type" = "instance"
-    "service.beta.kubernetes.io/aws-load-balancer-scheme"          = "internet-facing"
-    "service.beta.kubernetes.io/aws-load-balancer-attributes"      = "deletion_protection.enabled=true"
+    "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type"  = "instance"
+    "service.beta.kubernetes.io/aws-load-balancer-scheme"           = "internet-facing"
+    "service.beta.kubernetes.io/aws-load-balancer-attributes"       = "deletion_protection.enabled=true"
+    "service.beta.kubernetes.io/aws-load-balancer-ssl-cert"         = "arn:aws:acm:us-east-2:716194723392:certificate/a710c3f2-6e5d-4e42-9212-fb6a09087d26"
+    "service.beta.kubernetes.io/aws-load-balancer-ssl-ports"        = "443"
+    "service.beta.kubernetes.io/aws-load-balancer-backend-protocol" = "tcp"
   }
   node_selector = {
     "node.coder.io/managed-by" = "karpenter"

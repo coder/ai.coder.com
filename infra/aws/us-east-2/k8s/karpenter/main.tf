@@ -183,7 +183,7 @@ module "karpenter-addon" {
     block_device_mappings = [{
       device_name = "/dev/xvda"
       ebs = {
-        volume_size = "1400Gi"
+        volume_size = "500Gi" // Decreased from 1400Gi to save costs; felt overkill for coder-server nodes
         volume_type = "gp3"
       }
       }, {
@@ -198,6 +198,7 @@ module "karpenter-addon" {
     subnet_selector_tags = local.provisioner_subnet_tags
     sg_selector_tags     = local.provisioner_sg_tags
   }]
+  nodepool_configs = local.nodepool_configs
 }
 
 # import {

@@ -5,13 +5,13 @@ on:
     branches:
       - main
     paths:
-      - 'infra/aws/**/*.tf'
-      - 'infra/aws/**/*.tfvars'
-      - '.github/workflows/terraform-*.yml'
+      - "infra/aws/**/*.tf"
+      - "infra/aws/**/*.tfvars"
+      - ".github/workflows/terraform-*.yml"
   workflow_dispatch:
     inputs:
       module:
-        description: 'Specific module to apply (leave empty for all changed)'
+        description: "Specific module to apply (leave empty for all changed)"
         required: false
         type: string
 
@@ -65,7 +65,7 @@ jobs:
       matrix:
         module: ${{ fromJson(needs.detect-changes.outputs.modules) }}
       fail-fast: false
-      max-parallel: 1  # Apply modules one at a time to avoid conflicts
+      max-parallel: 1 # Apply modules one at a time to avoid conflicts
     defaults:
       run:
         working-directory: ${{ matrix.module }}

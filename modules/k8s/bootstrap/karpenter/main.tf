@@ -103,7 +103,7 @@ variable "ec2nodeclass_configs" {
     block_device_mappings = optional(list(object({
       device_name = string
       ebs = object({
-        volume_size           = string
+        volume_size           = string # Kubernetes-style size with unit (e.g. "1400Gi", "50Gi")
         volume_type           = string
         encrypted             = optional(bool, false)
         delete_on_termination = optional(bool, true)
@@ -256,7 +256,13 @@ resource "helm_release" "karpenter" {
     settings = {
       clusterName = var.cluster_name
       featureGates = {
+        # Cost optimization - consolidate workloads to better-priced spot instances
         spotToSpotConsolidation = true
+        # Future features - currently disabled
+        staticCapacity   = false # New capacity management feature
+        reservedCapacity = false # For Reserved Instance support
+        nodeRepair       = false # Experimental - automatic node repair
+        nodeOverlay      = false # Experimental - network overlay support
       }
       interruptionQueue = module.karpenter.queue_name
     }
@@ -280,16 +286,22 @@ resource "kubernetes_manifest" "ec2nodeclass" {
   manifest   = yamldecode(module.ec2nodeclass[count.index].manifest)
 }
 
-# module "nodepool" {
-#     count = length(local.nodepool_configs)
-#     source = "../objects/nodepool"
-#     name = local.nodepool_configs[count.index].name
-#     node_labels = local.nodepool_configs[count.index].node_labels
-#     node_taints = local.nodepool_configs[count.index].node_taints
-#     node_requirements = local.nodepool_configs[count.index].node_requirements
-#     node_class_ref_name = local.nodepool_configs[count.index].node_class_ref_name
-#     node_expires_after = local.nodepool_configs[count.index].node_expires_after
-#     disruption_consolidation_policy = local.nodepool_configs[count.index].disruption_consolidation_policy
-#     disruption_consolidate_after = local.nodepool_configs[count.index].disruption_consolidate_after
-# }
+module "nodepool" {
+  count                           = length(var.nodepool_configs)
+  source                          = "../../objects/nodepool"
+  name                            = var.nodepool_configs[count.index].name
+  node_labels                     = var.nodepool_configs[count.index].node_labels
+  node_taints                     = var.nodepool_configs[count.index].node_taints
+  node_requirements               = var.nodepool_configs[count.index].node_requirements
+  node_class_ref_name             = var.nodepool_configs[count.index].node_class_ref_name
+  node_expires_after              = var.nodepool_configs[count.index].node_expires_after
+  disruption_consolidation_policy = var.nodepool_configs[count.index].disruption_consolidation_policy
+  disruption_consolidate_after    = var.nodepool_configs[count.index].disruption_consolidate_after
+}
+
+resource "kubernetes_manifest" "nodepool" {
+  depends_on = [helm_release.karpenter]
+  count      = length(var.nodepool_configs)
+  manifest   = yamldecode(module.nodepool[count.index].manifest)
+}
 

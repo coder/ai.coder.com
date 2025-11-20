@@ -7,6 +7,7 @@ This directory uses remote S3 backend for state management, but **backend config
 ## Local Setup
 
 1. **Get backend configuration from teammate** or **retrieve from AWS**:
+
    ```bash
    # Get S3 bucket name (it contains the account ID)
    aws s3 ls | grep terraform-state
@@ -24,6 +25,7 @@ This directory uses remote S3 backend for state management, but **backend config
    ```
 
    Create `backend.tf`:
+
    ```hcl
    terraform {
      backend "s3" {
@@ -62,6 +64,7 @@ These are configured in: Repository Settings > Secrets and variables > Actions
 Instead of creating backend.tf, you can use a config file:
 
 1. Create `backend.conf` (gitignored):
+
    ```
    bucket         = "YOUR-BUCKET-NAME"
    dynamodb_table = "YOUR-TABLE-NAME"
@@ -86,12 +89,14 @@ Instead of creating backend.tf, you can use a config file:
 This repository has automated secret scanning to prevent accidental exposure of credentials:
 
 ### GitHub Actions (Automated)
+
 - **Gitleaks** - Scans every PR and push for secrets
 - **TruffleHog** - Additional verification layer
 - **Custom Pattern Matching** - Catches common secret patterns
 - **Auto-Revert** - Automatically reverts commits to main with secrets
 
 ### Pre-commit Hooks (Local)
+
 Catch secrets before they reach GitHub:
 
 ```bash
@@ -106,6 +111,7 @@ pre-commit run --all-files
 ```
 
 ### What Gets Detected
+
 - AWS Access Keys (AKIA...)
 - API Keys and Tokens
 - Private Keys (RSA, SSH, etc.)
@@ -115,6 +121,7 @@ pre-commit run --all-files
 - High-entropy strings (likely secrets)
 
 ### If Secrets Are Detected
+
 1. **PR is blocked** - Cannot merge until secrets are removed
 2. **Automatic notification** - PR comment explains the issue
 3. **Required actions**:

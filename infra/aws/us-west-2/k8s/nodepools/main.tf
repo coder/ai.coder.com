@@ -289,7 +289,7 @@ resource "kubernetes_manifest" "coder_workspaces_nodepool" {
           }
         }
         spec = {
-          expireAfter = "336h"  # 14 days for workspace nodes
+          expireAfter = "336h" # 14 days for workspace nodes
           nodeClassRef = {
             group = "eks.amazonaws.com"
             kind  = "NodeClass"

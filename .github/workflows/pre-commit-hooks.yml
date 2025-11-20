@@ -6,8 +6,8 @@ name: Pre-commit Validation
 on:
   pull_request:
     paths:
-      - '.pre-commit-config.yaml'
-      - '.github/workflows/pre-commit-hooks.yml'
+      - ".pre-commit-config.yaml"
+      - ".github/workflows/pre-commit-hooks.yml"
 
 jobs:
   validate-pre-commit:
@@ -19,7 +19,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Install pre-commit
         run: |

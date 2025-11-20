@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       module:
-        description: 'Module to destroy (e.g., infra/aws/us-east-2/eks)'
+        description: "Module to destroy (e.g., infra/aws/us-east-2/eks)"
         required: true
         type: string
       confirm:

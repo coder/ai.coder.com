@@ -27,7 +27,7 @@ variable "block_device_mappings" {
   type = list(object({
     device_name = string
     ebs = object({
-      volume_size           = number # Changed from string to number because AWS EBS volume sizes are numeric GiB values
+      volume_size           = string # Kubernetes-style size with unit (e.g. "1400Gi", "50Gi")
       volume_type           = string
       encrypted             = optional(bool, false)
       delete_on_termination = optional(bool, true)

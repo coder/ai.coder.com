@@ -5,9 +5,9 @@ on:
     branches:
       - main
     paths:
-      - 'infra/aws/**/*.tf'
-      - 'infra/aws/**/*.tfvars'
-      - '.github/workflows/terraform-*.yml'
+      - "infra/aws/**/*.tf"
+      - "infra/aws/**/*.tfvars"
+      - ".github/workflows/terraform-*.yml"
 
 permissions:
   contents: read
