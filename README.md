@@ -1,32 +1,24 @@
-# AI Demo Environment (ai.coder.com)
+# Coder Demo Environment (coderdemo.io)
 
-Welcome to the AI Demo Environment's Github repository!
+Welcome to the Coder Demo Environment's Github repository!
 
-This project is used by ["ai.coder.com"](https://ai.coder.com), allowing users to experiment with the latest AI features in Coder and create demoes for them.
+This project powers ["coderdemo.io"](https://coderdemo.io), a demonstration environment showcasing Coder's cloud development capabilities and features.
 
 ---
 
-## Getting Hand's On
-
-> [!IMPORTANT] Before accessing the deployment, make sure you've been invited to our "coder-contrib" Github organization. If not, reach out to `jullian@coder.com` and send your Github handle to be added in. Otherwise, if you're an internal user, you should already have access to to the environment.
+## Getting Started
 
 ### Accessing the Deployment:
 
-Get Started Here 👉 [https://ai.coder.com](https://ai.coder.com)
+Get Started Here 👉 [https://coderdemo.io](https://coderdemo.io)
 
 **Login Flow**
 
-- Non-Coder Employee
+1. Click "Sign in with GitHub"
+2. Authorize the Coder Demo GitHub App
+3. Start creating workspaces!
 
-1. Select "GitHub"
-
-2. Login with your Github account (that has access to the coder-contrib Github Organization).
-
-- Coder Employee
-
-1. Select "Okta"
-
-2. Login with your Github account (that has access to the coder-contrib Github Organization).
+> [!NOTE] This is a demo environment. For production Coder deployments, refer to the [official Coder documentation](https://coder.com/docs).
 
 ---
 
@@ -102,7 +94,7 @@ If you don't have an existing network infrastructure, then you can start with de
 
 Additionally, if you don't have an existing cluster infrastructure, then you can start with deploying the [`eks-cluster` module](./modules/compute/cluster).
 
-Lastly, for Coder's backend database, you can refer to our deployment in [`./aidev/infra/aws/us-east-2/rds`](./aidev/infra/aws/us-east-2/rds) to see how to deploy it.
+Lastly, for Coder's backend database, you can refer to our deployment in [`./infra/aws/us-east-2/rds`](./infra/aws/us-east-2/rds) to see how to deploy it.
 
 We just an [`aws_db_instance`](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/db_instance) that uses Postgres.
 
