@@ -5,7 +5,7 @@ terraform {
     }
     helm = {
       source  = "hashicorp/helm"
-      version = "2.17.0"
+      version = "3.1.1"
     }
     kubernetes = {
       source = "hashicorp/kubernetes"
@@ -176,7 +176,7 @@ data "aws_eks_cluster_auth" "this" {
 }
 
 provider "helm" {
-  kubernetes {
+  kubernetes = {
     host                   = data.aws_eks_cluster.this.endpoint
     cluster_ca_certificate = base64decode(data.aws_eks_cluster.this.certificate_authority[0].data)
     token                  = data.aws_eks_cluster_auth.this.token
@@ -241,14 +241,19 @@ module "coder-server" {
     # Disable redirect since NLB terminates TLS and forwards plain HTTP to backend
     # Without this, Coder sees HTTP and redirects to HTTPS, causing infinite redirect loop
     CODER_REDIRECT_TO_ACCESS_URL = "false"
+    # Disable TLS on Coder itself since NLB terminates TLS
+    CODER_TLS_ENABLE = "false"
+    # Mark auth cookies as secure since users access via HTTPS
+    CODER_SECURE_AUTH_COOKIE = "true"
   }
   service_annotations = {
     "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type"  = "instance"
     "service.beta.kubernetes.io/aws-load-balancer-scheme"           = "internet-facing"
-    "service.beta.kubernetes.io/aws-load-balancer-attributes"       = "deletion_protection.enabled=true"
+    "service.beta.kubernetes.io/aws-load-balancer-attributes"       = "deletion_protection.enabled=false,load_balancing.cross_zone.enabled=true"
     "service.beta.kubernetes.io/aws-load-balancer-ssl-cert"         = "arn:aws:acm:us-east-2:716194723392:certificate/a710c3f2-6e5d-4e42-9212-fb6a09087d26"
     "service.beta.kubernetes.io/aws-load-balancer-ssl-ports"        = "443"
     "service.beta.kubernetes.io/aws-load-balancer-backend-protocol" = "tcp"
+    "service.beta.kubernetes.io/aws-load-balancer-subnets"          = "subnet-086ee53d98b570184,subnet-008f9ccbd5e78bc20,subnet-01d77185b269eab1d"
   }
   node_selector = {
     "node.coder.io/managed-by" = "karpenter"
@@ -287,4 +292,24 @@ module "coder-server" {
       topology_key = "kubernetes.io/hostname"
     }
   }]
+}
+
+# Fix service HTTPS port to forward to HTTP backend (port 8080)
+# since Coder has TLS disabled and only listens on HTTP
+resource "null_resource" "patch_coder_service" {
+  depends_on = [module.coder-server]
+
+  triggers = {
+    # Re-run patch whenever Coder configuration changes
+    always_run = timestamp()
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      sleep 10
+      kubectl patch svc coder -n coder --type='json' \
+        -p='[{"op": "replace", "path": "/spec/ports/1/targetPort", "value": "http"}]' \
+        2>/dev/null || true
+    EOT
+  }
 }
