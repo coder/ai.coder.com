@@ -253,10 +253,10 @@ module "coder-server" {
     "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type"  = "instance"
     "service.beta.kubernetes.io/aws-load-balancer-scheme"           = "internet-facing"
     "service.beta.kubernetes.io/aws-load-balancer-attributes"       = "deletion_protection.enabled=false,load_balancing.cross_zone.enabled=true"
-    "service.beta.kubernetes.io/aws-load-balancer-ssl-cert"         = data.aws_acm_certificate.coder.arn
+    "service.beta.kubernetes.io/aws-load-balancer-ssl-cert"         = "arn:aws:acm:xxx-xxxxxx-X:XXXXXX:certificate/xxxxx2-xxxx-xxxx-xxxx-xxxxxx"
     "service.beta.kubernetes.io/aws-load-balancer-ssl-ports"        = "443"
     "service.beta.kubernetes.io/aws-load-balancer-backend-protocol" = "tcp"
-    # Subnets will be auto-detected by Load Balancer Controller using kubernetes.io/role/elb=1 tag
+    "service.beta.kubernetes.io/aws-load-balancer-subnets"          = "subnet-xxxxxx,subnet-xxxxxx,subnet-xxxxxx"
   }
   node_selector = {
     "node.coder.io/managed-by" = "karpenter"
