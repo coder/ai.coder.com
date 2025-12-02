@@ -14,8 +14,7 @@ terraform {
       source = "hashicorp/null"
     }
   }
-  # Using local backend for testing
-  # backend "s3" {}
+  backend "s3" {}
 }
 
 variable "cluster_name" {
@@ -183,7 +182,15 @@ locals {
     node_requirements = concat(local.global_node_reqs, [{
       key      = "node.kubernetes.io/instance-type"
       operator = "In"
-      values   = ["c6a.32xlarge", "c5a.32xlarge", "c6a.16xlarge", "c5a.16xlarge"]
+      values = [
+        # Small demos (5-10 users) - Most cost-effective
+        "c6a.4xlarge", "c5a.4xlarge", # 16 vCPU / 32 GB  - ~$0.18/hr spot
+        "c6a.8xlarge", "c5a.8xlarge", # 32 vCPU / 64 GB  - ~$0.37/hr spot
+        # Medium demos (10-20 users)
+        "c6a.16xlarge", "c5a.16xlarge", # 64 vCPU / 128 GB - ~$0.74/hr spot
+        # Large demos (20-40 users)
+        "c6a.32xlarge", "c5a.32xlarge" # 128 vCPU / 256 GB - ~$1.47/hr spot
+      ]
     }])
     node_class_ref_name          = "coder-ws-class"
     disruption_consolidate_after = "30m"
@@ -216,13 +223,13 @@ module "karpenter-addon" {
     block_device_mappings = [{
       device_name = "/dev/xvda"
       ebs = {
-        volume_size = 1400
+        volume_size = "500G"
         volume_type = "gp3"
       }
       }, {
       device_name = "/dev/xvdb"
       ebs = {
-        volume_size = 50
+        volume_size = "50G"
         volume_type = "gp3"
       }
     }]

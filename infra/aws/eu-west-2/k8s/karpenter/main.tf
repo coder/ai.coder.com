@@ -181,7 +181,7 @@ module "karpenter-addon" {
     block_device_mappings = [{
       device_name = "/dev/xvda"
       ebs = {
-        volume_size = "1400Gi"
+        volume_size = "500Gi"
         volume_type = "gp3"
       }
       }, {

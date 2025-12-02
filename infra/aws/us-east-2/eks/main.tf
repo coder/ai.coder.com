@@ -30,7 +30,7 @@ variable "cluster_version" {
 
 variable "cluster_instance_type" {
   description = "EKS Instance Size/Type"
-  default     = "t3.xlarge"
+  default     = "t4g.xlarge"
   type        = string
 }
 

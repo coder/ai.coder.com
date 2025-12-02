@@ -577,6 +577,7 @@ resource "helm_release" "coder-server" {
   chart            = "coder"
   repository       = "https://helm.coder.com/v2"
   create_namespace = false
+  upgrade_install  = true
   skip_crds        = false
   wait             = true
   wait_for_jobs    = true

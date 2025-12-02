@@ -41,11 +41,6 @@ variable "addon_version" {
   default = "v1.18.2"
 }
 
-variable "cloudflare_api_token" {
-  type      = string
-  sensitive = true
-}
-
 provider "aws" {
   region  = var.cluster_region
   profile = var.cluster_profile
@@ -78,7 +73,6 @@ module "cert-manager" {
   cluster_name              = var.cluster_name
   cluster_oidc_provider_arn = var.cluster_oidc_provider_arn
 
-  namespace               = var.addon_namespace
-  helm_version            = var.addon_version
-  cloudflare_token_secret = var.cloudflare_api_token
+  namespace    = var.addon_namespace
+  helm_version = var.addon_version
 }

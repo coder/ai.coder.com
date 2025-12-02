@@ -30,7 +30,7 @@ variable "cluster_version" {
 
 variable "cluster_instance_type" {
   description = "EKS Instance Size/Type"
-  default     = "t3.xlarge"
+  default     = "t4g.medium" # ARM Graviton for cost optimization
   type        = string
 }
 
@@ -179,7 +179,7 @@ module "cluster" {
     system = {
       min_size     = 0
       max_size     = 10
-      desired_size = 0 # Cant be modified after creation. Override from AWS Console
+      desired_size = 1 # Cant be modified after creation. Override from AWS Console
       labels       = local.cluster_asg_node_labels
 
       instance_types = [var.cluster_instance_type]

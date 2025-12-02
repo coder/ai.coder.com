@@ -622,17 +622,31 @@ This section documents expected behaviors in the demo environment that optimize 
 - No security risk (just UX delay)
 - Users who bookmark or click links use HTTPS directly
 
-**Workarounds:**
+**Why HSTS is NOT configured:**
 
-- Always share URLs as `https://coderdemo.io`
-- Bookmark uses HTTPS automatically
-- Browser remembers HTTPS after first visit
+HSTS (HTTP Strict Transport Security) headers would help eliminate the "not secure" warning by making browsers automatically use HTTPS after the first visit. However, **Coder's HSTS feature does not work when behind a reverse proxy.**
 
-**To eliminate (if needed):**
+**Investigation findings:**
 
-- Option A: Add CloudFront with HTTP→HTTPS redirect
-- Option B: Switch to ALB (loses NLB benefits)
-- Option C: Configure port 80 forwarding in Coder service
+- Coder supports HSTS via `CODER_STRICT_TRANSPORT_SECURITY` environment variable
+- However, Coder only sends HSTS headers when it directly terminates TLS (`CODER_TLS_ENABLE=true`)
+- When behind an NLB/reverse proxy with `CODER_TLS_ENABLE=false`, Coder sees incoming HTTP traffic
+- Coder's help states: "This header should only be set if the server is accessed via HTTPS"
+- Since Coder doesn't detect it's behind an HTTPS proxy, it won't send HSTS headers
+
+**Workaround not possible without:**
+
+- Switching to ALB (which can do HTTP→HTTPS redirect at load balancer level)
+- Having Coder terminate TLS directly (loses NLB benefits)
+- Waiting for Coder to add reverse-proxy awareness for HSTS feature
+- Using CloudFront in front of NLB for HTTP→HTTPS redirect
+
+**Alternative mitigation options:**
+
+- Option A: Add CloudFront with HTTP→HTTPS redirect (adds complexity and cost)
+- Option B: Switch to ALB (loses NLB benefits: lower latency, source IP preservation)
+- Option C: Configure port 80 forwarding in Coder service (complex, not standard)
+- Option D: Accept current behavior (recommended for demo environment)
 
 ### Summary of Expected Load Times
 
@@ -640,8 +654,11 @@ This section documents expected behaviors in the demo environment that optimize 
 | ------------------------- | --------------- | -------------------------------------------------- |
 | **First visit (HTTP)**    | 7-13 seconds    | HTTP:80 timeout (2-3s) + Aurora cold start (5-10s) |
 | **First visit (HTTPS)**   | 5-10 seconds    | Aurora cold start only                             |
-| **After warm-up**         | <100ms          | Instant, everything cached                         |
+| **Return visit (HTTP)**   | 7-13 seconds    | HTTP:80 timeout (2-3s) + Aurora cold start (5-10s) |
+| **After warm-up (HTTPS)** | <100ms          | Instant, everything cached                         |
 | **Bookmarked/HTTPS link** | <100ms or 5-10s | Instant if warm, cold start if idle                |
+
+**Note:** Always share URLs as `https://coderdemo.io` to avoid the 2-3 second HTTP:80 timeout delay.
 
 ---
 
@@ -783,7 +800,11 @@ modules/
 
 ## Changelog
 
-- **2025-11-26**: Updated to reflect Aurora Serverless v2 configuration; added "Known Behaviors" section documenting cold start and HTTP redirect behavior for demo environment
+- **2025-11-26**:
+  - Updated to reflect Aurora Serverless v2 configuration
+  - Added "Known Behaviors" section documenting cold start and HTTP redirect behavior
+  - Investigated and documented why HSTS cannot be configured when Coder is behind reverse proxy
+  - Documented alternative mitigation options for HTTP→HTTPS redirect delay
 - **2025-11-25**: Initial architecture diagram created
 
 ---

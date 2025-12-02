@@ -31,6 +31,7 @@ resource "helm_release" "metrics-server" {
   chart            = "metrics-server"
   repository       = "https://kubernetes-sigs.github.io/metrics-server/"
   create_namespace = true
+  upgrade_install  = true
   skip_crds        = false
   wait             = true
   wait_for_jobs    = true

@@ -121,7 +121,7 @@ resource "aws_rds_cluster" "coder" {
   }
 }
 
-# Aurora Serverless v2 Instance for Coder (Multi-AZ with 2 instances)
+# Aurora Serverless v2 Instance for Coder (Single writer instance)
 resource "aws_rds_cluster_instance" "coder_writer" {
   identifier           = "${var.name}-aurora-coder-writer"
   cluster_identifier   = aws_rds_cluster.coder.id
@@ -133,20 +133,6 @@ resource "aws_rds_cluster_instance" "coder_writer" {
 
   tags = {
     Name = "${var.name}-aurora-coder-writer"
-  }
-}
-
-resource "aws_rds_cluster_instance" "coder_reader" {
-  identifier           = "${var.name}-aurora-coder-reader"
-  cluster_identifier   = aws_rds_cluster.coder.id
-  instance_class       = "db.serverless"
-  engine               = aws_rds_cluster.coder.engine
-  engine_version       = "15.8"
-  publicly_accessible  = false
-  db_subnet_group_name = aws_db_subnet_group.db_subnet_group.name
-
-  tags = {
-    Name = "${var.name}-aurora-coder-reader"
   }
 }
 
@@ -198,6 +184,15 @@ data "aws_vpc" "this" {
 resource "aws_vpc_security_group_ingress_rule" "postgres" {
   security_group_id = aws_security_group.allow-port-5432.id
   cidr_ipv4         = data.aws_vpc.this.cidr_block
+  ip_protocol       = "tcp"
+  from_port         = 5432
+  to_port           = 5432
+}
+
+# Allow access from us-west-2 VPC for multi-region deployment
+resource "aws_vpc_security_group_ingress_rule" "postgres_usw2" {
+  security_group_id = aws_security_group.allow-port-5432.id
+  cidr_ipv4         = "10.1.0.0/16"
   ip_protocol       = "tcp"
   from_port         = 5432
   to_port           = 5432

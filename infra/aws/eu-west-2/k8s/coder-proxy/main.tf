@@ -101,11 +101,6 @@ variable "kubernetes_create_ssl_secret" {
   default = true
 }
 
-variable "cloudflare_api_token" {
-  type      = string
-  sensitive = true
-}
-
 provider "aws" {
   region  = var.cluster_region
   profile = var.cluster_profile
@@ -161,7 +156,6 @@ module "coder-proxy" {
   proxy_token_config = {
     name = "coder-proxy"
   }
-  cloudflare_api_token = var.cloudflare_api_token
   ssl_cert_config = {
     name          = var.kubernetes_ssl_secret_name
     create_secret = var.kubernetes_create_ssl_secret

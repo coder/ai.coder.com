@@ -86,13 +86,13 @@ resource "helm_release" "ebs-controller" {
   chart            = "aws-ebs-csi-driver"
   repository       = "https://kubernetes-sigs.github.io/aws-ebs-csi-driver"
   create_namespace = true
-  # Removed upgrade_install because it's not a valid helm_release attribute
-  skip_crds     = false
-  replace       = var.replace
-  wait          = true
-  wait_for_jobs = true
-  version       = var.chart_version
-  timeout       = 120 # in seconds
+  upgrade_install  = true
+  skip_crds        = false
+  replace          = var.replace
+  wait             = true
+  wait_for_jobs    = true
+  version          = var.chart_version
+  timeout          = 120 # in seconds
 
   values = [yamlencode({
     controller = {

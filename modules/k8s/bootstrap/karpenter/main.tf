@@ -220,12 +220,12 @@ resource "helm_release" "karpenter" {
   chart            = "karpenter"
   repository       = "oci://public.ecr.aws/karpenter"
   create_namespace = true
-  # Removed invalid upgrade_install attribute
-  skip_crds     = false
-  wait          = true
-  wait_for_jobs = true
-  version       = var.chart_version
-  timeout       = 120 # in seconds
+  upgrade_install  = true
+  skip_crds        = false
+  wait             = true
+  wait_for_jobs    = true
+  version          = var.chart_version
+  timeout          = 120 # in seconds
 
   # Added lifecycle management for proper upgrade handling
   lifecycle {

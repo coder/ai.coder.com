@@ -5,16 +5,19 @@ terraform.tfstate*
 tf.plan
 tfplan
 *.tfplan
+*.log
 
 # Backend configuration (contains sensitive IDs)
 backend.tf
 backend.tfvars
 *.backend.tfvars
+backend.hcl
+*.backend.hcl
 
 # Terraform variable files (may contain sensitive IDs, ARNs, domains)
 *.tfvars
 !*.tfvars.example
-
+terraform.tfvars.example
 # Helm + Kubernetes
 infra/aws/us-east-2/apps/coder-ws/experiment/prometheus.yaml
 infra/aws/us-east-2/apps/coder-devel/build-and-push
