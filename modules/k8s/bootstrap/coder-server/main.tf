@@ -223,7 +223,6 @@ variable "ssl_cert_config" {
   }
 }
 
-
 variable "db_secret_name" {
   type    = string
   default = "postgres"
@@ -766,33 +765,6 @@ module "acme-cloudflare-ssl" {
   acme_days_until_renewal = var.acme_days_until_renewal
   acme_revoke_certificate = var.acme_revoke_certificate
   cloudflare_api_token    = var.cloudflare_api_token
-}
-
-resource "kubernetes_manifest" "certificate" {
-
-  count  = var.ssl_cert_config.create_secret ? 1 : 0
-
-  field_manager {
-    force_conflicts = true
-  }
-  manifest = {
-    apiVersion = "cert-manager.io/v1"
-    kind       = "Certificate"
-    metadata = {
-      labels    = var.cert_labels
-      name      = var.cert_name
-      namespace = kubernetes_namespace.this.metadata[0].name
-    }
-    spec = {
-      commonName = local.common_name
-      dnsNames = [local.common_name, local.wildcard_name]
-      issuerRef = {
-        kind = "ClusterIssuer"
-        name = issuer
-      }
-      secretName = var.ssl_cert_config.name
-    }
-  }
 }
 
 resource "kubernetes_service" "prometheus" {
