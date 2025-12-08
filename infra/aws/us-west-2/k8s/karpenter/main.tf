@@ -5,7 +5,7 @@ terraform {
     }
     helm = {
       source  = "hashicorp/helm"
-      version = "2.17.0"
+      version = ">= 3.1.1"
     }
     kubernetes = {
       source = "hashicorp/kubernetes"
@@ -54,7 +54,7 @@ data "aws_eks_cluster_auth" "this" {
 }
 
 provider "helm" {
-  kubernetes {
+  kubernetes = {
     host                   = data.aws_eks_cluster.this.endpoint
     cluster_ca_certificate = base64decode(data.aws_eks_cluster.this.certificate_authority[0].data)
     token                  = data.aws_eks_cluster_auth.this.token
@@ -175,23 +175,23 @@ module "karpenter-addon" {
     }, {
     name                 = "coder-ws-class"
     subnet_selector_tags = local.ws_all_subnet_tags
-    # ami_alias = "al2023@latest" # Use /dev/xvda
-    ami_alias        = "bottlerocket@latest" # Use /dev/xvda + /dev/xvdb
     sg_selector_tags = local.ws_all_sg_tags
+    ami_alias = "al2023@latest" # Use /dev/xvda
+    user_data        = <<-EOF
+    apiVersion: node.eks.aws/v1alpha1
+    kind: NodeConfig
+    spec:
+      kubelet:
+        config:
+          registryPullQPS: 30
+    EOF
     block_device_mappings = [{
       device_name = "/dev/xvda"
       ebs = {
-        volume_size = "1400Gi"
+        volume_size = "500Gi"
         volume_type = "gp3"
       }
-      }, {
-      device_name = "/dev/xvdb"
-      ebs = {
-        volume_size = "50Gi"
-        volume_type = "gp3"
-      }
-    }]
-    }, {
+    }]}, {
     name                 = "coder-provisioner-class"
     subnet_selector_tags = local.provisioner_subnet_tags
     sg_selector_tags     = local.provisioner_sg_tags
