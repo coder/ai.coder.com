@@ -5,7 +5,7 @@ terraform {
     }
     helm = {
       source  = "hashicorp/helm"
-      version = "2.17.0"
+      version = ">= 2.17.0"
     }
     kubernetes = {
       source = "hashicorp/kubernetes"
@@ -255,20 +255,36 @@ resource "kubernetes_secret" "coder-proxy-key" {
 
 locals {
   common_name = trimprefix(trimprefix(var.proxy_access_url, "https://"), "http://")
+  wildcard_name = trimprefix(trimprefix(var.proxy_wildcard_url, "https://"), "http://")
 }
 
-module "acme-cloudflare-ssl" {
-  source = "../acme-cloudflare-ssl"
+resource "kubernetes_manifest" "certificate" {
+
   count  = var.ssl_cert_config.create_secret ? 1 : 0
 
-  dns_names               = [local.common_name, var.proxy_wildcard_url]
-  common_name             = local.common_name
-  kubernetes_secret_name  = var.ssl_cert_config.name
-  kubernetes_namespace    = kubernetes_namespace.this.metadata[0].name
-  acme_registration_email = var.acme_registration_email
-  acme_days_until_renewal = var.acme_days_until_renewal
-  acme_revoke_certificate = var.acme_revoke_certificate
-  cloudflare_api_token    = var.cloudflare_api_token
+  field_manager {
+    force_conflicts = true
+  }
+  manifest = {
+    apiVersion = "cert-manager.io/v1"
+    kind       = "Certificate"
+    metadata = {
+      labels    = {} # var.cert_labels
+      name      = var.ssl_cert_config.name
+      namespace = kubernetes_namespace.this.metadata[0].name
+    }
+    spec = {
+      secretName = var.ssl_cert_config.name
+      commonName = local.common_name
+      dnsNames = [local.common_name, local.wildcard_name]
+      duration = "${var.acme_days_until_renewal * 24}h"
+      renewBefore = "8h"
+      issuerRef = {
+        kind = "ClusterIssuer"
+        name = "issuer"
+      }
+    }
+  }
 }
 
 locals {
@@ -337,11 +353,7 @@ resource "helm_release" "coder-proxy" {
       workspaceProxy = true
       env            = local.env_vars
       tls = {
-        secretNames = [
-          var.ssl_cert_config.create_secret ?
-          module.acme-cloudflare-ssl.kubernetes_secret_name :
-          var.ssl_cert_config.name
-        ]
+        secretNames = [ var.ssl_cert_config.name ]
       }
       service = {
         enable                = true
