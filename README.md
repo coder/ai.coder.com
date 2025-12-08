@@ -380,21 +380,21 @@ You can deploy the above manually yourself following your own preferred methods.
 
 Otherwise, you can leverage our K8s app TF modules to automatically generate the manifests:
 
-#### [`lb-controller`](./modules/k8s/apps/lb-controller)
+#### [`lb-controller`](./modules/k8s/bootstrap/lb-controller)
 
-#### [`ebs-controller`](./modules/k8s/apps/ebs-controller)
+#### [`ebs-controller`](./modules/k8s/bootstrap/ebs-controller)
 
-#### [`metrics-server`](./modules/k8s/apps/metrics-server)
+#### [`metrics-server`](./modules/k8s/bootstrap/metrics-server)
 
-#### [`karpenter`](./modules/k8s/apps/karpenter)
+#### [`karpenter`](./modules/k8s/bootstrap/karpenter)
 
-#### [`cert-manager`](./modules/k8s/apps/cert-manager)
+#### [`cert-manager`](./modules/k8s/bootstrap/cert-manager)
 
-#### [`coder-server`](./modules/k8s/apps/coder-server)
+#### [`coder-server`](./modules/k8s/bootstrap/coder-server)
 
-#### [`coder-proxy`](./modules/k8s/apps/coder-proxy)
+#### [`coder-proxy`](./modules/k8s/bootstrap/coder-proxy)
 
-#### [`coder-ws`](./modules/k8s/apps/coder-ws)
+#### [`coder-provisioner`](./modules/k8s/bootstrap/coder-provisioner)
 
 ## How-It-Works
 
