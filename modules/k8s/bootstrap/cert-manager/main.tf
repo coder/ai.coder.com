@@ -81,7 +81,7 @@ variable "cloudflare_token_secret" {
 }
 
 variable "cloudflare_token_secret_email" {
-  type = string
+  type      = string
   sensitive = true
 }
 
@@ -225,13 +225,13 @@ resource "kubernetes_manifest" "default-cluster-issuer" {
     apiVersion = "cert-manager.io/v1"
     kind       = "ClusterIssuer"
     metadata = {
-      labels    = {}
-      name      = "issuer"
+      labels = {}
+      name   = "issuer"
     }
     spec = {
       acme = {
         privateKeySecretRef = {
-          name = var.issuer_private_key_secret_name 
+          name = var.issuer_private_key_secret_name
         }
         server = var.acme_server_url
         solvers = [

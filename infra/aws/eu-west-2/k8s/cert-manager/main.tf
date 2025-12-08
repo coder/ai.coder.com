@@ -47,7 +47,7 @@ variable "cloudflare_api_token" {
 }
 
 variable "cloudflare_email" {
-  type = string
+  type      = string
   sensitive = true
 }
 
@@ -83,8 +83,8 @@ module "cert-manager" {
   cluster_name              = var.cluster_name
   cluster_oidc_provider_arn = var.cluster_oidc_provider_arn
 
-  namespace               = var.addon_namespace
-  helm_version            = var.addon_version
-  cloudflare_token_secret = var.cloudflare_api_token
-  cloudflare_token_secret_email  = var.cloudflare_email
+  namespace                     = var.addon_namespace
+  helm_version                  = var.addon_version
+  cloudflare_token_secret       = var.cloudflare_api_token
+  cloudflare_token_secret_email = var.cloudflare_email
 }

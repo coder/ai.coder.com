@@ -320,7 +320,7 @@ resource "helm_release" "coder-provisioner" {
       }
       podAnnotations = {
         "prometheus.io/scrape" = "true"
-        "prometheus.io/port" = "2112"
+        "prometheus.io/port"   = "2112"
       }
       env = local.env_vars
       securityContext = {

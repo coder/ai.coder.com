@@ -234,7 +234,7 @@ resource "kubernetes_manifest" "this" {
                 name            = "store"
                 image           = "${var.image_repo}:${var.image_tag}"
                 imagePullPolicy = "IfNotPresent"
-                command = ["bash", "-c", "pip install -r /tmp/${var.fetch_and_store_script_pip_file_name} && python /tmp/${var.fetch_and_store_script_file_name}"]
+                command         = ["bash", "-c", "pip install -r /tmp/${var.fetch_and_store_script_pip_file_name} && python /tmp/${var.fetch_and_store_script_file_name}"]
                 resources = {
                   limits = {
                     cpu               = "2"
@@ -267,7 +267,7 @@ resource "kubernetes_manifest" "this" {
                   name      = kubernetes_config_map.script.metadata[0].name
                   mountPath = "/tmp/${var.fetch_and_store_script_file_name}"
                   subPath   = var.fetch_and_store_script_file_name
-                },{
+                  }, {
                   name      = kubernetes_config_map.pip.metadata[0].name
                   mountPath = "/tmp/${var.fetch_and_store_script_pip_file_name}"
                   subPath   = var.fetch_and_store_script_pip_file_name
@@ -283,7 +283,7 @@ resource "kubernetes_manifest" "this" {
                     path = var.fetch_and_store_script_file_name
                   }]
                 }
-              },{
+                }, {
                 name = kubernetes_config_map.pip.metadata[0].name
                 configMap = {
                   name        = kubernetes_config_map.pip.metadata[0].name

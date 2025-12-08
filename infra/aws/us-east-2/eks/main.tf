@@ -35,19 +35,19 @@ variable "cluster_instance_type" {
 }
 
 variable "vpc_id" {
-  type        = string
+  type      = string
   sensitive = true
 }
 
 variable "private_subnet_ids" {
-  type        = list(string)
-  default = []
+  type      = list(string)
+  default   = []
   sensitive = true
 }
 
 variable "public_subnet_ids" {
-  type        = list(string)
-  default = []
+  type      = list(string)
+  default   = []
   sensitive = true
 }
 
@@ -126,10 +126,10 @@ module "eks" {
     vpc-cni = {
       most_recent = true
       configuration_values = jsonencode({
-          enableNetworkPolicy = "true"
-          nodeAgent = {
-              enablePolicyEventLogs = "true"
-          }
+        enableNetworkPolicy = "true"
+        nodeAgent = {
+          enablePolicyEventLogs = "true"
+        }
       })
     }
   }

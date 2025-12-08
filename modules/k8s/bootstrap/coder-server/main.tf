@@ -359,7 +359,7 @@ variable "coder_github_allowed_orgs" {
 }
 
 variable "prometheus_port" {
-  type = number
+  type    = number
   default = 2112
 }
 
@@ -442,7 +442,7 @@ locals {
     CODER_PROMETHEUS_ENABLE              = true
     CODER_PROMETHEUS_COLLECT_AGENT_STATS = true
     CODER_PROMETHEUS_COLLECT_DB_METRICS  = true
-    CODER_PROMETHEUS_ADDRESS = "127.0.0.1:${var.prometheus_port}"
+    CODER_PROMETHEUS_ADDRESS             = "127.0.0.1:${var.prometheus_port}"
 
     CODER_AIBRIDGE_ENABLED = var.openai_llm_endpoint != "" || var.anthropic_llm_endpoint != ""
 
@@ -641,7 +641,7 @@ resource "helm_release" "coder-server" {
       }
       podAnnotations = {
         "prometheus.io/scrape" = "true"
-        "prometheus.io/port" = "2112"
+        "prometheus.io/port"   = "2112"
       }
       service = {
         enable                = true
@@ -774,17 +774,17 @@ resource "kubernetes_service" "prometheus" {
     # labels    = local.app_labels
   }
   spec {
-    type                    = "ClusterIP"
+    type       = "ClusterIP"
     cluster_ip = "None"
     port {
       name        = "prom-http"
       protocol    = "TCP"
       port        = 2112
-      target_port = "${var.prometheus_port}"
+      target_port = var.prometheus_port
     }
     selector = {
-        "app.kubernetes.io/instance" = "coder-v2"
-        "app.kubernetes.io/name"     = "coder"
+      "app.kubernetes.io/instance" = "coder-v2"
+      "app.kubernetes.io/name"     = "coder"
     }
   }
 }

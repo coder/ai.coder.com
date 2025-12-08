@@ -166,10 +166,10 @@ module "cluster" {
     vpc-cni = {
       most_recent = true
       configuration_values = jsonencode({
-          enableNetworkPolicy = "true"
-          nodeAgent = {
-              enablePolicyEventLogs = "true"
-          }
+        enableNetworkPolicy = "true"
+        nodeAgent = {
+          enablePolicyEventLogs = "true"
+        }
       })
     }
   }

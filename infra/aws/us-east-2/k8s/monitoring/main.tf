@@ -237,21 +237,21 @@ variable "grafana_admin_password" {
 }
 
 variable "grafana_root_domain" {
-    type = string
+  type = string
 }
 
 variable "grafana_subdomain" {
-    type = string
+  type = string
 }
 
 variable "grafana_cert_name" {
-    type = string
-    default = "grafana-certs"
+  type    = string
+  default = "grafana-certs"
 }
 
 variable "grafana_cert_mnt_path" {
-    type = string
-    default = "/etc/ssl/certs"
+  type    = string
+  default = "/etc/ssl/certs"
 }
 
 locals {
@@ -262,9 +262,9 @@ locals {
   provisionerd_selector = "pod=~`coder-provisioner.*`, namespace=~`(coder-ws|coder-ws-experiment|coder-ws-demo)`"
 
   # workspaces_selector     = "namespace=`coder-ws*`"
-  workspaces_selector = "pod!~`coder.*`, namespace=~`(coder-ws|coder-ws-experiment|coder-ws-demo)`"
+  workspaces_selector     = "pod!~`coder.*`, namespace=~`(coder-ws|coder-ws-experiment|coder-ws-demo)`"
   non_workspaces_selector = "namespace=~`(coder|coder-ws|coder-ws-experiment|coder-ws-demo)`"
-  
+
   dashboard_timerange = "12h"
   dashboard_refresh   = "30s"
 }
@@ -300,11 +300,11 @@ module "monitoring" {
   grafana_db_host        = var.grafana_db_host
   grafana_admin_username = var.grafana_admin_username
   grafana_admin_password = var.grafana_admin_password
-  grafana_root_domain = var.grafana_root_domain
-  grafana_subdomain = var.grafana_subdomain
-  grafana_cert_name = var.grafana_cert_name
-  grafana_cert_mnt_path = var.grafana_cert_mnt_path
-  grafana_replicas = 2
+  grafana_root_domain    = var.grafana_root_domain
+  grafana_subdomain      = var.grafana_subdomain
+  grafana_cert_name      = var.grafana_cert_name
+  grafana_cert_mnt_path  = var.grafana_cert_mnt_path
+  grafana_replicas       = 2
   grafana_service_annotations = {
     "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type" = "instance"
     "service.beta.kubernetes.io/aws-load-balancer-scheme"          = "internet-facing"
@@ -313,20 +313,20 @@ module "monitoring" {
 
   dashboards = [
     {
-      name = "coder-dashboard-status"
+      name      = "coder-dashboard-status"
       localPath = "${local.dashboards-path}/status.json"
       args = {
-        HELM_NAMESPACE = var.addon_namespace
-        CODERD_SELECTOR = local.coderd_selector
+        HELM_NAMESPACE        = var.addon_namespace
+        CODERD_SELECTOR       = local.coderd_selector
         PROVISIONERD_SELECTOR = local.provisionerd_selector
-        WORKSPACES_SELECTOR = local.workspaces_selector
-        PROMETHEUS_JOB = "${var.addon_namespace}/prometheus/server"
-        LOKI_JOB = "${var.addon_namespace}/loki"
-        GRAFANA_AGENT_JOB = "${var.addon_namespace}/grafana-agent/grafana-agent"
+        WORKSPACES_SELECTOR   = local.workspaces_selector
+        PROMETHEUS_JOB        = "${var.addon_namespace}/prometheus/server"
+        LOKI_JOB              = "${var.addon_namespace}/loki"
+        GRAFANA_AGENT_JOB     = "${var.addon_namespace}/grafana-agent/grafana-agent"
       }
     },
     {
-      name = "coder-dashboard-coderd"
+      name      = "coder-dashboard-coderd"
       localPath = "${local.dashboards-path}/coderd.json"
       args = {
         DASHBOARD_TIMERANGE = local.dashboard_timerange
@@ -335,7 +335,7 @@ module "monitoring" {
       }
     },
     {
-      name = "coder-dashboard-provisionerd"
+      name      = "coder-dashboard-provisionerd"
       localPath = "${local.dashboards-path}/provisionerd.json"
       args = {
         DASHBOARD_TIMERANGE     = local.dashboard_timerange
@@ -345,7 +345,7 @@ module "monitoring" {
       }
     },
     {
-      name = "coder-dashboard-workspaces"
+      name      = "coder-dashboard-workspaces"
       localPath = "${local.dashboards-path}/workspaces.json"
       args = {
         DASHBOARD_TIMERANGE     = local.dashboard_timerange
@@ -355,17 +355,17 @@ module "monitoring" {
       }
     },
     {
-      name = "coder-dashboard-workspace-detail"
+      name      = "coder-dashboard-workspace-detail"
       localPath = "${local.dashboards-path}/workspace_detail.json"
       args = {
-        DASHBOARD_TIMERANGE = local.dashboard_timerange
-        DASHBOARD_REFRESH   = local.dashboard_refresh
+        DASHBOARD_TIMERANGE     = local.dashboard_timerange
+        DASHBOARD_REFRESH       = local.dashboard_refresh
         WORKSPACES_SELECTOR     = local.workspaces_selector
         NON_WORKSPACES_SELECTOR = local.non_workspaces_selector
       }
     },
     {
-      name = "coder-dashboard-prebuilds"
+      name      = "coder-dashboard-prebuilds"
       localPath = "${local.dashboards-path}/prebuilds.json"
       args = {
         DASHBOARD_TIMERANGE = local.dashboard_timerange
@@ -373,9 +373,9 @@ module "monitoring" {
       }
     },
     {
-      name = "coder-dashboard-aibridge"
+      name      = "coder-dashboard-aibridge"
       localPath = "${local.dashboards-path}/aibridge.json"
-      args = {}
+      args      = {}
     },
     # {
     #   name = "coder-dashboard-proxyd"

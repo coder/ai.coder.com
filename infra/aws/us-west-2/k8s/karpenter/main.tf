@@ -175,9 +175,9 @@ module "karpenter-addon" {
     }, {
     name                 = "coder-ws-class"
     subnet_selector_tags = local.ws_all_subnet_tags
-    sg_selector_tags = local.ws_all_sg_tags
-    ami_alias = "al2023@latest" # Use /dev/xvda
-    user_data        = <<-EOF
+    sg_selector_tags     = local.ws_all_sg_tags
+    ami_alias            = "al2023@latest" # Use /dev/xvda
+    user_data            = <<-EOF
     apiVersion: node.eks.aws/v1alpha1
     kind: NodeConfig
     spec:
@@ -191,7 +191,7 @@ module "karpenter-addon" {
         volume_size = "500Gi"
         volume_type = "gp3"
       }
-    }]}, {
+    }] }, {
     name                 = "coder-provisioner-class"
     subnet_selector_tags = local.provisioner_subnet_tags
     sg_selector_tags     = local.provisioner_sg_tags

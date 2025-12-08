@@ -36,13 +36,13 @@ variable "loki_s3_bucket_name" {
 }
 
 variable "loki_s3_bucket_tags" {
-  type = map(string)
+  type    = map(string)
   default = {}
 }
 
 resource "aws_s3_bucket" "loki" {
   bucket = var.loki_s3_bucket_name
-  tags = var.loki_s3_bucket_tags
+  tags   = var.loki_s3_bucket_tags
 }
 
 resource "aws_s3_bucket_lifecycle_configuration" "loki" {

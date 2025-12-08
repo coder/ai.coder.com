@@ -254,13 +254,13 @@ resource "kubernetes_secret" "coder-proxy-key" {
 }
 
 locals {
-  common_name = trimprefix(trimprefix(var.proxy_access_url, "https://"), "http://")
+  common_name   = trimprefix(trimprefix(var.proxy_access_url, "https://"), "http://")
   wildcard_name = trimprefix(trimprefix(var.proxy_wildcard_url, "https://"), "http://")
 }
 
 resource "kubernetes_manifest" "certificate" {
 
-  count  = var.ssl_cert_config.create_secret ? 1 : 0
+  count = var.ssl_cert_config.create_secret ? 1 : 0
 
   field_manager {
     force_conflicts = true
@@ -274,10 +274,10 @@ resource "kubernetes_manifest" "certificate" {
       namespace = kubernetes_namespace.this.metadata[0].name
     }
     spec = {
-      secretName = var.ssl_cert_config.name
-      commonName = local.common_name
-      dnsNames = [local.common_name, local.wildcard_name]
-      duration = "${var.acme_days_until_renewal * 24}h"
+      secretName  = var.ssl_cert_config.name
+      commonName  = local.common_name
+      dnsNames    = [local.common_name, local.wildcard_name]
+      duration    = "${var.acme_days_until_renewal * 24}h"
       renewBefore = "8h"
       issuerRef = {
         kind = "ClusterIssuer"
@@ -353,7 +353,7 @@ resource "helm_release" "coder-proxy" {
       workspaceProxy = true
       env            = local.env_vars
       tls = {
-        secretNames = [ var.ssl_cert_config.name ]
+        secretNames = [var.ssl_cert_config.name]
       }
       service = {
         enable                = true
