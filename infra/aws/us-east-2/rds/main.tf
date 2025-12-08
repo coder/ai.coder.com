@@ -33,6 +33,15 @@ variable "litellm_password" {
   sensitive = true
 }
 
+variable "grafana_username" {
+  type = string
+}
+
+variable "grafana_password" {
+  type      = string
+  sensitive = true
+}
+
 variable "name" {
   description = "Name of resource and tag prefix"
   type        = string
@@ -131,6 +140,30 @@ resource "aws_db_instance" "litellm" {
 
   tags = {
     Name = "litellm"
+  }
+  lifecycle {
+    ignore_changes = [
+      snapshot_identifier
+    ]
+  }
+}
+
+resource "aws_db_instance" "grafana" {
+  identifier             = "grafana"
+  instance_class         = "db.m5.large"
+  allocated_storage      = 50
+  engine                 = "postgres"
+  engine_version         = "15.12"
+  username               = var.grafana_username
+  password               = var.grafana_password
+  db_name                = "grafana"
+  db_subnet_group_name   = aws_db_subnet_group.db_subnet_group.name
+  vpc_security_group_ids = [aws_security_group.allow-port-5432.id]
+  publicly_accessible    = false
+  skip_final_snapshot    = false
+
+  tags = {
+    Name = "grafana"
   }
   lifecycle {
     ignore_changes = [
