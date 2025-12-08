@@ -5,7 +5,7 @@ terraform {
     }
     helm = {
       source  = "hashicorp/helm"
-      version = "2.17.0"
+      version = ">= 2.17.0"
     }
     kubernetes = {
       source = "hashicorp/kubernetes"
@@ -61,6 +61,10 @@ variable "helm_version" {
   default = "v1.18.2"
 }
 
+##
+# ACME Certificate Inputs
+##
+
 variable "cloudflare_token_secret_name" {
   type    = string
   default = "cloudflare-token"
@@ -74,6 +78,21 @@ variable "cloudflare_token_secret_key" {
 variable "cloudflare_token_secret" {
   type      = string
   sensitive = true
+}
+
+variable "cloudflare_token_secret_email" {
+  type = string
+  sensitive = true
+}
+
+variable "issuer_private_key_secret_name" {
+  type    = string
+  default = "issuer-account-key"
+}
+
+variable "acme_server_url" {
+  type    = string
+  default = "https://acme-v02.api.letsencrypt.org/directory"
 }
 
 variable "tags" {
@@ -189,5 +208,46 @@ resource "kubernetes_secret" "cloudflare" {
   }
   data = {
     "${var.cloudflare_token_secret_key}" = var.cloudflare_token_secret
+  }
+}
+
+resource "kubernetes_manifest" "default-cluster-issuer" {
+
+  depends_on = [
+    helm_release.cert-manager,
+    kubernetes_secret.cloudflare
+  ]
+
+  field_manager {
+    force_conflicts = true
+  }
+  manifest = {
+    apiVersion = "cert-manager.io/v1"
+    kind       = "ClusterIssuer"
+    metadata = {
+      labels    = {}
+      name      = "issuer"
+    }
+    spec = {
+      acme = {
+        privateKeySecretRef = {
+          name = var.issuer_private_key_secret_name 
+        }
+        server = var.acme_server_url
+        solvers = [
+          {
+            dns01 = {
+              cloudflare = {
+                apiTokenSecretRef = {
+                  key  = var.cloudflare_token_secret_key
+                  name = kubernetes_secret.cloudflare.metadata[0].name
+                }
+                email = var.cloudflare_token_secret_email
+              }
+            }
+          }
+        ]
+      }
+    }
   }
 }
