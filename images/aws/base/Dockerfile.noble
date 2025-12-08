@@ -15,31 +15,40 @@ RUN apt update && \
 RUN curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \
     curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | gpg --dearmor -o /etc/apt/keyrings/githubcli-archive-keyring.gpg
 
-
 # Add Apt repos
 RUN echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_24.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list && \
     echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list && \
     add-apt-repository "ppa:git-core/ppa"
 
+# Update Apt
+RUN apt update -y
+
 # Install baseline packages
-RUN apt update && \
-    apt install -y --no-install-recommends --no-install-suggests \
+RUN apt install -y --no-install-recommends --no-install-suggests \
         git gh vim tmux \
-        openssh-client \
+        openssh-client iproute2 iptables tcpdump \
         lsof jq \
         locales \
         sudo man \
         unzip \
-        nodejs && \
-    rm -rf /var/lib/apt/lists/*
+        nodejs \
+        python3.12 python3.12-venv
 
 # Playwright Testing Dependencies
-RUN apt update && \
-    apt install -y --no-install-recommends --no-install-suggests \
+RUN apt install -y --no-install-recommends --no-install-suggests \
         libnss3 libnspr4 \
         libatk1.0-0 libatk-bridge2.0-0 libatspi2.0-0 \
-        libx11-6 libxcomposite1 libxdamage1 libxext6 libxfixes3 libxrandr2 libgbm1 libxkbcommon0 libasound2t64 && \
-    rm -rf /var/lib/apt/lists/*
+        libx11-6 libxcomposite1 libxdamage1 libxext6 libxfixes3 libxrandr2 libgbm1 libxkbcommon0 libasound2t64
+
+# Clean List.
+RUN rm -rf /var/lib/apt/lists/*
+
+# Install Coder's AgentAPI
+RUN curl -fsSL https://github.com/coder/agentapi/releases/latest/download/agentapi-linux-amd64 | tee /usr/local/bin/agentapi >/dev/null && \
+    chmod +x /usr/local/bin/agentapi
+
+# Install Coder Boundary
+RUN curl -fsSL https://raw.githubusercontent.com/coder/boundary/main/install.sh | bash
 
 # Generate the desired locale (en_US.UTF-8)
 RUN locale-gen en_US.UTF-8
@@ -62,6 +71,31 @@ USER coder
 
 ENV HOME=/home/coder
 ENV PATH=$PATH:$HOME/bin
+ENV PATH=$PATH:$HOME/.local/bin
 WORKDIR $HOME
 
+ARG PLAYWRIGHT_VER=latest
+ARG DESKTOP_COMMANDER_VER=latest
+ARG HTTP_SERVER_VER=latest
+ARG CLAUDE_CODE_VER=latest
+ARG GOOSE_VERSION=""
+
 RUN npm config set prefix=$HOME
+RUN curl -fsSL https://raw.githubusercontent.com/filebrowser/get/master/get.sh | bash
+
+RUN npm install -g \
+  @playwright/mcp@$PLAYWRIGHT_VER \
+  @wonderwhy-er/desktop-commander@$DESKTOP_COMMANDER_VER \
+  http-server@$HTTP_SERVER_VER && \
+  npx playwright install chrome
+
+# Install Claude Code
+RUN curl -fsSL https://claude.ai/install.sh | bash
+
+# Install Goose
+RUN curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | GOOSE_VERSION=$GOOSE_VERSION CONFIGURE=false bash
+
+# Install VS Code Web
+RUN mkdir -p "/tmp/vscode-web" && \
+    curl -fsSL "https://vscode.download.prss.microsoft.com/dbazure/download/stable/$(curl -fsSL https://update.code.visualstudio.com/api/commits/stable/server-linux-x64-web | cut -d '"' -f 2)/vscode-server-linux-x64-web.tar.gz" | \
+    tar -xz -C "/tmp/vscode-web" --strip-components 1
