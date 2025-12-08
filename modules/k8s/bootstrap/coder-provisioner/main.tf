@@ -5,7 +5,7 @@ terraform {
     }
     helm = {
       source  = "hashicorp/helm"
-      version = "2.17.0"
+      version = ">= 2.17.0"
     }
     kubernetes = {
       source = "hashicorp/kubernetes"
@@ -136,8 +136,8 @@ variable "resource_limits" {
     memory = string
   })
   default = {
-    cpu    = "500m"
-    memory = "1Gi"
+    cpu    = "1000m"
+    memory = "2Gi"
   }
 }
 
@@ -317,6 +317,10 @@ resource "helm_release" "coder-provisioner" {
         annotations = merge({
           "eks.amazonaws.com/role-arn" = module.provisioner-oidc-role.role_arn
         }, var.provisioner_service_account_annotations)
+      }
+      podAnnotations = {
+        "prometheus.io/scrape" = "true"
+        "prometheus.io/port" = "2112"
       }
       env = local.env_vars
       securityContext = {
