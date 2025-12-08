@@ -5,7 +5,7 @@ terraform {
     }
     helm = {
       source  = "hashicorp/helm"
-      version = "2.17.0"
+      version = ">= 3.1.1"
     }
   }
   backend "s3" {}
@@ -124,7 +124,7 @@ module "litellm" {
     cpu    = "2"
     memory = "4Gi"
   }
-  replicas                    = 4
+  replicas                    = 8
   aws_ingress_certificate_arn = var.aws_ingress_certificate_arn
   db_url                      = var.db_url
   litellm_salt_key            = var.litellm_salt_key
