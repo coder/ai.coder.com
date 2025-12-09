@@ -30,7 +30,7 @@ variable "dns_names" {
 }
 
 output "manifest" {
-  value = yamlencode({
+  value = {
     apiVersion = "cert-manager.io/v1"
     kind       = "Certificate"
     metadata = {
@@ -46,5 +46,5 @@ output "manifest" {
       commonName = var.common_name
       dnsNames   = var.dns_names
     }
-  })
+  }
 }

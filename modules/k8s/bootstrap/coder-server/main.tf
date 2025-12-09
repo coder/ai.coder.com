@@ -5,7 +5,7 @@ terraform {
     }
     helm = {
       source  = "hashicorp/helm"
-      version = "2.17.0"
+      version = ">= 2.17.0"
     }
     kubernetes = {
       source = "hashicorp/kubernetes"
@@ -223,7 +223,6 @@ variable "ssl_cert_config" {
   }
 }
 
-
 variable "db_secret_name" {
   type    = string
   default = "postgres"
@@ -359,6 +358,45 @@ variable "coder_github_allowed_orgs" {
   default = []
 }
 
+variable "prometheus_port" {
+  type    = number
+  default = 2112
+}
+
+variable "openai_llm_endpoint" {
+  type      = string
+  sensitive = true
+  default   = ""
+}
+
+variable "openai_llm_secret_name" {
+  type    = string
+  default = "coder-openai-llm-key"
+}
+
+variable "openai_llm_key" {
+  type      = string
+  sensitive = true
+  default   = ""
+}
+
+variable "anthropic_llm_endpoint" {
+  type      = string
+  sensitive = true
+  default   = ""
+}
+
+variable "anthropic_llm_secret_name" {
+  type    = string
+  default = "coder-anthropic-llm-key"
+}
+
+variable "anthropic_llm_key" {
+  type      = string
+  sensitive = true
+  default   = ""
+}
+
 variable "tags" {
   type    = map(string)
   default = {}
@@ -386,8 +424,8 @@ locals {
     CODER_OAUTH2_GITHUB_DEVICE_FLOW                                                                              = false
     "${local.github_allow_everyone ? "CODER_OAUTH2_GITHUB_ALLOW_EVERYONE" : "CODER_OAUTH2_GITHUB_ALLOWED_ORGS"}" = "${local.github_allow_everyone ? "true" : join(",", var.coder_github_allowed_orgs)}"
 
-    CODER_EXTERNAL_AUTH_0_ID   = var.github_external_auth_config.id
-    CODER_EXTERNAL_AUTH_0_TYPE = var.github_external_auth_config.type
+    CODER_EXTERNAL_AUTH_0_ID   = "primary-github"
+    CODER_EXTERNAL_AUTH_0_TYPE = "github"
 
     CODER_ENABLE_TERRAFORM_DEBUG_MODE = true
     CODER_TRACE_LOGS                  = true
@@ -404,6 +442,9 @@ locals {
     CODER_PROMETHEUS_ENABLE              = true
     CODER_PROMETHEUS_COLLECT_AGENT_STATS = true
     CODER_PROMETHEUS_COLLECT_DB_METRICS  = true
+    CODER_PROMETHEUS_ADDRESS             = "127.0.0.1:${var.prometheus_port}"
+
+    CODER_AIBRIDGE_ENABLED = var.openai_llm_endpoint != "" || var.anthropic_llm_endpoint != ""
 
     # Experimental Coder Features
     CODER_EXPERIMENTS = join(",", var.coder_experiments)
@@ -412,7 +453,7 @@ locals {
   }
   env_vars = concat([
     for k, v in merge(local.primary_env_vars, var.env_vars) : { name = k, value = tostring(v) }
-    ], [{
+    ], concat([{
       name = "CODER_PG_CONNECTION_URL"
       valueFrom = {
         secretKeyRef = {
@@ -464,19 +505,53 @@ locals {
       name = "CODER_EXTERNAL_AUTH_0_CLIENT_ID"
       valueFrom = {
         secretKeyRef = {
-          name = var.github_external_auth_secret_name
-          key  = var.github_external_auth_secret_client_id_key
+          name = var.oauth_secret_name
+          key  = var.oauth_secret_client_id_key
         }
       }
       }, {
       name = "CODER_EXTERNAL_AUTH_0_CLIENT_SECRET"
       valueFrom = {
         secretKeyRef = {
-          name = var.github_external_auth_secret_name
-          key  = var.github_external_auth_secret_client_secret_key
+          name = var.oauth_secret_name
+          key  = var.oauth_secret_client_secret_key
         }
       }
-  }])
+      },
+      ], concat(var.anthropic_llm_endpoint != "" ? [{
+        name = "CODER_AIBRIDGE_ANTHROPIC_KEY"
+        valueFrom = {
+          secretKeyRef = {
+            name = var.anthropic_llm_secret_name
+            key  = "key"
+          }
+        }
+        }, {
+        name = "CODER_AIBRIDGE_ANTHROPIC_BASE_URL"
+        valueFrom = {
+          secretKeyRef = {
+            name = var.anthropic_llm_secret_name
+            key  = "base_url"
+          }
+        }
+      }] : [],
+      var.openai_llm_endpoint != "" ? [{
+        name = "CODER_AIBRIDGE_OPENAI_KEY"
+        valueFrom = {
+          secretKeyRef = {
+            name = var.openai_llm_secret_name
+            key  = "key"
+          }
+        }
+        }, {
+        name = "CODER_AIBRIDGE_OPENAI_BASE_URL"
+        valueFrom = {
+          secretKeyRef = {
+            name = var.openai_llm_secret_name
+            key  = "base_url"
+          }
+        }
+  }] : [])))
   pod_anti_affinity_preferred_during_scheduling_ignored_during_execution = [
     for k, v in var.pod_anti_affinity_preferred_during_scheduling_ignored_during_execution : {
       weight = v.weight
@@ -564,6 +639,10 @@ resource "helm_release" "coder-server" {
       tls = {
         secretNames = [var.ssl_cert_config.name]
       }
+      podAnnotations = {
+        "prometheus.io/scrape" = "true"
+        "prometheus.io/port"   = "2112"
+      }
       service = {
         enable                = true
         type                  = "LoadBalancer"
@@ -643,6 +722,32 @@ resource "kubernetes_secret" "external_auth" {
   type = "Opaque"
 }
 
+resource "kubernetes_secret" "openai-llm-secret" {
+  count = var.openai_llm_endpoint != "" ? 1 : 0
+  metadata {
+    name      = var.openai_llm_secret_name
+    namespace = kubernetes_namespace.this.metadata[0].name
+  }
+  data = {
+    base_url = var.openai_llm_endpoint
+    key      = var.openai_llm_key
+  }
+  type = "Opaque"
+}
+
+resource "kubernetes_secret" "anthropic-llm-secret" {
+  count = var.anthropic_llm_endpoint != "" ? 1 : 0
+  metadata {
+    name      = var.anthropic_llm_secret_name
+    namespace = kubernetes_namespace.this.metadata[0].name
+  }
+  data = {
+    base_url = var.anthropic_llm_endpoint
+    key      = var.anthropic_llm_key
+  }
+  type = "Opaque"
+}
+
 locals {
   common_name   = trimprefix(trimprefix(var.primary_access_url, "https://"), "http://")
   wildcard_name = trimprefix(trimprefix(var.wildcard_access_url, "https://"), "http://")
@@ -660,4 +765,26 @@ module "acme-cloudflare-ssl" {
   acme_days_until_renewal = var.acme_days_until_renewal
   acme_revoke_certificate = var.acme_revoke_certificate
   cloudflare_api_token    = var.cloudflare_api_token
+}
+
+resource "kubernetes_service" "prometheus" {
+  metadata {
+    name      = "coder-prometheus"
+    namespace = kubernetes_namespace.this.metadata[0].name
+    # labels    = local.app_labels
+  }
+  spec {
+    type       = "ClusterIP"
+    cluster_ip = "None"
+    port {
+      name        = "prom-http"
+      protocol    = "TCP"
+      port        = 2112
+      target_port = var.prometheus_port
+    }
+    selector = {
+      "app.kubernetes.io/instance" = "coder-v2"
+      "app.kubernetes.io/name"     = "coder"
+    }
+  }
 }

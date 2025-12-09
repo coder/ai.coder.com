@@ -43,14 +43,15 @@ module "vpc" {
   cidr            = "10.0.0.0/16"
   azs             = ["${var.region}a", "${var.region}b", "${var.region}c"]
   private_subnets = ["10.0.20.0/24", "10.0.21.0/24", "10.0.23.0/24"]
-  public_subnets  = ["10.0.10.0/24", "10.0.11.0/24"]
+  public_subnets  = ["10.0.10.0/24", "10.0.11.0/24", "10.0.12.0/24"]
 
   private_subnet_tags = {
-    "kubernetes.io/cluster/coder" : "shared"
+    "kubernetes.io/cluster/${var.cluster_name}" : "owned"
   }
 
   public_subnet_tags = {
     "kubernetes.io/role/elb" : 1
+    "kubernetes.io/cluster/${var.cluster_name}" : "owned"
   }
 }
 
@@ -79,11 +80,8 @@ module "fck-nat" {
 
 locals {
   global_subnet_tags = {
-    "kubernetes.io/cluster/coder" = "shared"
+    "kubernetes.io/cluster/${var.cluster_name}" = "owned"
   }
-}
-
-locals {
   coder_server_tags = merge(local.global_subnet_tags, {
     "subnet.coder.io/coder-server/owned-by" = var.cluster_name
   })

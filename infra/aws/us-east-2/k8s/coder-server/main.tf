@@ -5,7 +5,7 @@ terraform {
     }
     helm = {
       source  = "hashicorp/helm"
-      version = "2.17.0"
+      version = ">= 3.1.1"
     }
     kubernetes = {
       source = "hashicorp/kubernetes"
@@ -162,6 +162,26 @@ variable "oidc_email_domain" {
   type = string
 }
 
+variable "anthropic_llm_endpoint" {
+  type      = string
+  sensitive = true
+}
+
+variable "anthropic_llm_key" {
+  type      = string
+  sensitive = true
+}
+
+variable "openai_llm_endpoint" {
+  type      = string
+  sensitive = true
+}
+
+variable "openai_llm_key" {
+  type      = string
+  sensitive = true
+}
+
 provider "aws" {
   region  = var.cluster_region
   profile = var.cluster_profile
@@ -176,7 +196,7 @@ data "aws_eks_cluster_auth" "this" {
 }
 
 provider "helm" {
-  kubernetes {
+  kubernetes = {
     host                   = data.aws_eks_cluster.this.endpoint
     cluster_ca_certificate = base64decode(data.aws_eks_cluster.this.certificate_authority[0].data)
     token                  = data.aws_eks_cluster_auth.this.token
@@ -204,7 +224,6 @@ module "coder-server" {
   cluster_name              = var.cluster_name
   cluster_oidc_provider_arn = var.cluster_oidc_provider_arn
 
-
   namespace                       = "coder"
   acme_registration_email         = var.acme_registration_email
   acme_days_until_renewal         = 90
@@ -218,6 +237,10 @@ module "coder-server" {
   coder_experiments               = var.coder_experiments
   coder_builtin_provisioner_count = var.coder_builtin_provisioner_count
   coder_github_allowed_orgs       = var.coder_github_allowed_orgs
+  anthropic_llm_endpoint          = var.anthropic_llm_endpoint
+  anthropic_llm_key               = var.anthropic_llm_key
+  openai_llm_endpoint             = var.openai_llm_endpoint
+  openai_llm_key                  = var.openai_llm_key
   ssl_cert_config = {
     name          = var.kubernetes_ssl_secret_name
     create_secret = var.kubernetes_create_ssl_secret

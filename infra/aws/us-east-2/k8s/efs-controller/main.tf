@@ -31,17 +31,17 @@ variable "cluster_oidc_provider_arn" {
   type = string
 }
 
+variable "addon_version" {
+  type    = string
+  default = "3.2.4"
+}
+
 variable "addon_namespace" {
   type    = string
   default = "default"
 }
 
-variable "addon_version" {
-  type    = string
-  default = "1.13.2"
-}
-
-variable "use_cert_manager" {
+variable "addon_replace" {
   type    = bool
   default = false
 }
@@ -67,18 +67,12 @@ provider "helm" {
   }
 }
 
-module "lb-controller" {
-  source                    = "../../../../../modules/k8s/bootstrap/lb-controller"
+module "efs-controller" {
+  source                    = "../../../../../modules/k8s/bootstrap/efs-controller"
   cluster_name              = data.aws_eks_cluster.this.name
   cluster_oidc_provider_arn = var.cluster_oidc_provider_arn
 
-  namespace           = var.addon_namespace
-  chart_version       = var.addon_version
-  enable_cert_manager = var.use_cert_manager
-  service_target_eni_sg_tags = {
-    Name = "aidemo-node"
-  }
-  cluster_asg_node_labels = { # var.karpenter_node_labels
-    "node.amazonaws.io/managed-by" = "asg"
-  }
+  namespace     = var.addon_namespace
+  chart_version = var.addon_version
+  replace       = var.addon_replace
 }

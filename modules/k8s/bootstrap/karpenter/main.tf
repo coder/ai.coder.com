@@ -2,7 +2,7 @@ terraform {
   required_providers {
     helm = {
       source  = "hashicorp/helm"
-      version = "2.17.0"
+      version = ">= 2.17.0"
     }
     kubernetes = {
       source = "hashicorp/kubernetes"
@@ -96,6 +96,7 @@ variable "ec2nodeclass_configs" {
     ami_alias            = optional(string, "al2023@latest")
     subnet_selector_tags = map(string)
     sg_selector_tags     = map(string)
+    user_data            = optional(string, "")
     block_device_mappings = optional(list(object({
       device_name = string
       ebs = object({
@@ -259,6 +260,7 @@ module "ec2nodeclass" {
   subnet_selector_tags  = var.ec2nodeclass_configs[count.index].subnet_selector_tags
   sg_selector_tags      = var.ec2nodeclass_configs[count.index].sg_selector_tags
   block_device_mappings = var.ec2nodeclass_configs[count.index].block_device_mappings
+  user_data             = var.ec2nodeclass_configs[count.index].user_data
 }
 
 resource "kubernetes_manifest" "ec2nodeclass" {

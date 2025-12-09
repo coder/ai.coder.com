@@ -10,7 +10,8 @@ data "aws_iam_policy_document" "provisioner-policy" {
       "ec2:DescribeInstances",
       "ec2:RebootInstances",
       "ec2:ModifyInstanceAttribute",
-      "ec2:DescribeInstanceAttribute"
+      "ec2:DescribeInstanceAttribute",
+      "ec2:MonitorInstances"
     ]
     resources = [
       "arn:aws:ec2:${local.region}:${local.account_id}:*",

@@ -5,7 +5,7 @@ terraform {
     }
     helm = {
       source  = "hashicorp/helm"
-      version = "2.17.0"
+      version = "3.1.1"
     }
     kubernetes = {
       source = "hashicorp/kubernetes"
@@ -46,6 +46,11 @@ variable "cloudflare_api_token" {
   sensitive = true
 }
 
+variable "cloudflare_email" {
+  type      = string
+  sensitive = true
+}
+
 provider "aws" {
   region  = var.cluster_region
   profile = var.cluster_profile
@@ -60,7 +65,7 @@ data "aws_eks_cluster_auth" "this" {
 }
 
 provider "helm" {
-  kubernetes {
+  kubernetes = {
     host                   = data.aws_eks_cluster.this.endpoint
     cluster_ca_certificate = base64decode(data.aws_eks_cluster.this.certificate_authority[0].data)
     token                  = data.aws_eks_cluster_auth.this.token
@@ -78,7 +83,8 @@ module "cert-manager" {
   cluster_name              = var.cluster_name
   cluster_oidc_provider_arn = var.cluster_oidc_provider_arn
 
-  namespace               = var.addon_namespace
-  helm_version            = var.addon_version
-  cloudflare_token_secret = var.cloudflare_api_token
+  namespace                     = var.addon_namespace
+  helm_version                  = var.addon_version
+  cloudflare_token_secret       = var.cloudflare_api_token
+  cloudflare_token_secret_email = var.cloudflare_email
 }

@@ -46,7 +46,12 @@ variable "image_tag" {
 
 variable "fetch_and_store_script_file_name" {
   type    = string
-  default = "fetch-and-store.sh"
+  default = "fetch-and-store.py"
+}
+
+variable "fetch_and_store_script_pip_file_name" {
+  type    = string
+  default = "requirements.txt"
 }
 
 variable "tags" {
@@ -140,9 +145,9 @@ resource "kubernetes_role_binding" "this" {
   }
 }
 
-resource "kubernetes_config_map" "this" {
+resource "kubernetes_config_map" "script" {
   metadata {
-    name      = var.name
+    name      = "python-fetch-and-store"
     namespace = kubernetes_namespace.this.metadata[0].name
     labels    = local.app_labels
   }
@@ -151,7 +156,21 @@ resource "kubernetes_config_map" "this" {
   }
 }
 
+resource "kubernetes_config_map" "pip" {
+  metadata {
+    name      = "python-pip-requirements"
+    namespace = kubernetes_namespace.this.metadata[0].name
+    labels    = local.app_labels
+  }
+  data = {
+    "${var.fetch_and_store_script_pip_file_name}" = file("${path.module}/scripts/${var.fetch_and_store_script_pip_file_name}")
+  }
+}
+
 resource "kubernetes_manifest" "this" {
+  field_manager {
+    force_conflicts = true
+  }
   manifest = {
     apiVersion = "batch/v1"
     kind       = "CronJob"
@@ -193,7 +212,7 @@ resource "kubernetes_manifest" "this" {
                 command         = split(" ", "dockerd -H tcp://127.0.0.1:2375")
                 env = [{
                   name  = "DOCKER_HOST"
-                  value = "localhost:2375"
+                  value = "tcp://localhost:2375"
                 }]
                 resources = {
                   limits = {
@@ -215,7 +234,7 @@ resource "kubernetes_manifest" "this" {
                 name            = "store"
                 image           = "${var.image_repo}:${var.image_tag}"
                 imagePullPolicy = "IfNotPresent"
-                command         = split(" ", "/bin/bash /tmp/${var.fetch_and_store_script_file_name}")
+                command         = ["bash", "-c", "pip install -r /tmp/${var.fetch_and_store_script_pip_file_name} && python /tmp/${var.fetch_and_store_script_file_name}"]
                 resources = {
                   limits = {
                     cpu               = "2"
@@ -230,7 +249,13 @@ resource "kubernetes_manifest" "this" {
                 }
                 env = [{
                   name  = "DOCKER_HOST"
-                  value = "localhost:2375"
+                  value = "tcp://localhost:2375"
+                  }, {
+                  name  = "DESIRED_TAG"
+                  value = "latest"
+                  }, {
+                  name  = "GIT_URL"
+                  value = "https://github.com/coder/coder"
                   }, {
                   name  = "AWS_ACCOUNT_ID"
                   value = data.aws_caller_identity.this.account_id
@@ -239,137 +264,40 @@ resource "kubernetes_manifest" "this" {
                   value = data.aws_region.this.region
                 }]
                 volumeMounts = [{
-                  name      = kubernetes_config_map.this.metadata[0].name
+                  name      = kubernetes_config_map.script.metadata[0].name
                   mountPath = "/tmp/${var.fetch_and_store_script_file_name}"
                   subPath   = var.fetch_and_store_script_file_name
+                  }, {
+                  name      = kubernetes_config_map.pip.metadata[0].name
+                  mountPath = "/tmp/${var.fetch_and_store_script_pip_file_name}"
+                  subPath   = var.fetch_and_store_script_pip_file_name
                 }]
               }]
               volumes = [{
-                name = kubernetes_config_map.this.metadata[0].name
+                name = kubernetes_config_map.script.metadata[0].name
                 configMap = {
-                  name        = kubernetes_config_map.this.metadata[0].name
+                  name        = kubernetes_config_map.script.metadata[0].name
                   defaultMode = 511 # Equivalent to 777
                   items = [{
                     key  = var.fetch_and_store_script_file_name
                     path = var.fetch_and_store_script_file_name
                   }]
                 }
+                }, {
+                name = kubernetes_config_map.pip.metadata[0].name
+                configMap = {
+                  name        = kubernetes_config_map.pip.metadata[0].name
+                  defaultMode = 511 # Equivalent to 777
+                  items = [{
+                    key  = var.fetch_and_store_script_pip_file_name
+                    path = var.fetch_and_store_script_pip_file_name
+                  }]
+                }
               }]
             }
           }
-
-
         }
       }
     }
   }
 }
-
-# resource "kubernetes_cron_job_v1" "this" {
-#     metadata {
-#         name = var.name
-#         namespace = kubernetes_namespace.this.metadata[0].name
-#         labels = local.app_labels
-#     }
-#     spec {
-#         timezone = "America/Vancouver"
-#         successful_jobs_history_limit = 0
-#         failed_jobs_history_limit = 1
-#         concurrency_policy = "Replace"
-#         schedule = "0 0 * * 1"
-#         job_template {
-#             metadata {
-#                 labels = local.app_labels
-#             }
-#             spec {
-#                 parallelism = 1
-#                 template {
-#                     metadata {
-#                         labels = local.app_labels
-#                     }
-#                     spec {
-#                         service_account_name = kubernetes_service_account.this.metadata[0].name
-#                         restart_policy = "OnFailure"
-#                         init_container {
-#                             name = "fetch"
-#                             image = "ghcr.io/coder/coder-preview:latest"
-#                             image_pull_policy = "IfNotPresent"
-#                             command = split(" ",  "/bin/sh -c exit 0")
-#                         }
-#                         init_container {
-#                             name = "docker-sidecar"
-#                             image = "docker:dind"
-#                             # restart_policy = "Always"
-#                             image_pull_policy = "IfNotPresent"
-#                             command = split(" ",  "dockerd -H tcp://127.0.0.1:2375")
-#                             env {
-#                                 name = "DOCKER_HOST"
-#                                 value = "localhost:2375"
-#                             }
-#                             resources {
-#                                 requests = {
-#                                     ephemeral-storage = "5Gi"
-#                                 }
-#                                 limits = {
-#                                     ephemeral-storage = "10Gi"
-#                                     memory = "2048Mi"
-#                                     cpu = "1000m"
-#                                 }
-#                             }
-#                             security_context {
-#                                 privileged = true
-#                                 run_as_user = 0
-#                             }
-#                         }
-#                         container {
-#                             name  = "store"
-#                             image = "${var.image_repo}:${var.image_tag}"
-#                             image_pull_policy = "IfNotPresent"
-#                             command = split(" ", "/bin/sh /tmp/${var.fetch_and_store_script_file_name}")
-#                             env {
-#                                 name = "DOCKER_HOST"
-#                                 value = "localhost:2375"
-#                             }
-#                             env {
-#                                 name = "AWS_ACCOUNT_ID"
-#                                 value = data.aws_caller_identity.this.account_id
-#                             }
-#                             env {
-#                                 name = "AWS_REGION"
-#                                 value = data.aws_region.this.region
-#                             }
-#                             volume_mount {
-#                                 name = kubernetes_config_map.this.metadata[0].name
-#                                 mount_path = "/tmp/${var.fetch_and_store_script_file_name}"
-#                                 sub_path = var.fetch_and_store_script_file_name
-#                             }
-#                             resources {
-#                                 requests = {
-#                                     ephemeral-storage = "10Gi"
-#                                     memory = "1024Mi"
-#                                     cpu = "1000m"
-#                                 }
-#                                 limits = {
-#                                     ephemeral-storage = "20Gi"
-#                                     memory = "9216Mi"
-#                                     cpu = "2000m"
-#                                 }
-#                             }
-#                         }
-#                         volume {
-#                             name = kubernetes_config_map.this.metadata[0].name
-#                             config_map {
-#                                 name = kubernetes_config_map.this.metadata[0].name
-#                                 default_mode = "0777"
-#                                 items {
-#                                     key = var.fetch_and_store_script_file_name
-#                                     path = var.fetch_and_store_script_file_name
-#                                 }
-#                             }
-#                         }
-#                     }
-#                 }
-#             }
-#         }
-#     }
-# }

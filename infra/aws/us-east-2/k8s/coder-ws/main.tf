@@ -5,7 +5,7 @@ terraform {
     }
     helm = {
       source  = "hashicorp/helm"
-      version = "2.17.0"
+      version = ">= 3.1.1"
     }
     kubernetes = {
       source = "hashicorp/kubernetes"
@@ -98,7 +98,7 @@ data "aws_eks_cluster_auth" "this" {
 }
 
 provider "helm" {
-  kubernetes {
+  kubernetes = {
     host                   = data.aws_eks_cluster.this.endpoint
     cluster_ca_certificate = base64decode(data.aws_eks_cluster.this.certificate_authority[0].data)
     token                  = data.aws_eks_cluster_auth.this.token
@@ -150,25 +150,12 @@ module "default-ws" {
   replica_count                    = 6
   primary_access_url               = var.coder_access_url
   env_vars = {
-    CODER_PROMETHEUS_ENABLE              = "false"
-    CODER_PROMETHEUS_COLLECT_AGENT_STATS = "false"
-    CODER_PROMETHEUS_COLLECT_DB_METRICS  = "false"
+    CODER_PROMETHEUS_ENABLE              = "true"
+    CODER_PROMETHEUS_COLLECT_AGENT_STATS = "true"
+    CODER_PROMETHEUS_COLLECT_DB_METRICS  = "true"
   }
   node_selector = local.node_selector
   tolerations   = local.tolerations
-}
-
-module "default-ws-litellm-rotate-key" {
-  depends_on = [module.default-ws]
-  source     = "../../../../../modules/k8s/bootstrap/litellm-rotate-key"
-
-  cluster_name              = var.cluster_name
-  cluster_oidc_provider_arn = var.cluster_oidc_provider_arn
-  namespace                 = "coder-ws"
-  image_repo                = var.rotate_key_image_repo
-  image_tag                 = var.rotate_key_image_tag
-  secret_id                 = var.aws_secret_id
-  secret_region             = var.aws_secret_region
 }
 
 module "experiment-ws" {
@@ -196,19 +183,6 @@ module "experiment-ws" {
   tolerations   = local.tolerations
 }
 
-module "experiment-ws-litellm-rotate-key" {
-  depends_on = [module.experiment-ws]
-  source     = "../../../../../modules/k8s/bootstrap/litellm-rotate-key"
-
-  cluster_name              = var.cluster_name
-  cluster_oidc_provider_arn = var.cluster_oidc_provider_arn
-  namespace                 = "coder-ws-experiment"
-  image_repo                = var.rotate_key_image_repo
-  image_tag                 = var.rotate_key_image_tag
-  secret_id                 = var.aws_secret_id
-  secret_region             = var.aws_secret_region
-}
-
 module "demo-ws" {
   source = "../../../../../modules/k8s/bootstrap/coder-provisioner"
 
@@ -226,23 +200,10 @@ module "demo-ws" {
   replica_count                    = 2
   primary_access_url               = var.coder_access_url
   env_vars = {
-    CODER_PROMETHEUS_ENABLE              = "false"
-    CODER_PROMETHEUS_COLLECT_AGENT_STATS = "false"
-    CODER_PROMETHEUS_COLLECT_DB_METRICS  = "false"
+    CODER_PROMETHEUS_ENABLE              = "true"
+    CODER_PROMETHEUS_COLLECT_AGENT_STATS = "true"
+    CODER_PROMETHEUS_COLLECT_DB_METRICS  = "true"
   }
   node_selector = local.node_selector
   tolerations   = local.tolerations
-}
-
-module "demo-ws-litellm-rotate-key" {
-  depends_on = [module.demo-ws]
-  source     = "../../../../../modules/k8s/bootstrap/litellm-rotate-key"
-
-  cluster_name              = var.cluster_name
-  cluster_oidc_provider_arn = var.cluster_oidc_provider_arn
-  namespace                 = "coder-ws-demo"
-  image_repo                = var.rotate_key_image_repo
-  image_tag                 = var.rotate_key_image_tag
-  secret_id                 = var.aws_secret_id
-  secret_region             = var.aws_secret_region
 }
