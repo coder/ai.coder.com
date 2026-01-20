@@ -4,8 +4,12 @@
 
 1. Create a new AWS account
 2. Login as a user with AdministratorAccess
-3. [Purchase/Register](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/domain-register.html#domain-register-procedure-section) a domain in Route53
-4. Fill the `coder.env` file with the following environment variables:
+3. Setup your local machine to have an [AWS profile](https://docs.aws.amazon.com/cli/v1/userguide/cli-configure-files.html)
+
+>[!NOTE] When running `aws login` or `aws configure`, this will automatically setup a `default` profile for you.
+
+4. [Purchase/Register](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/domain-register.html#domain-register-procedure-section) a domain in Route53
+5. Fill the `coder.env` file with the following environment variables:
 
 ```.env
 CODER_AWS_PROFILE=<AWS Profile Name>
@@ -13,9 +17,9 @@ CODER_DOMAIN_NAME=<Route53 Domain Name>
 CODER_LICENSE=<Coder License Key> (Optional)
 ```
 
-4. Run `./0-initialize.sh`
-5. Run `set -a && source coder.env && set +a && ./1-plan-n-deploy.sh`
-6. Run `set -a && source coder.env && set +a && ./2-clean.sh`
+6. Run `./0-initialize.sh`
+7. Run `set -a && source coder.env && set +a && ./1-plan-n-deploy.sh`
+8. Run `set -a && source coder.env && set +a && ./2-clean.sh`
 
 # Logging In
 
