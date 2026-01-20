@@ -1,4 +1,5 @@
->[!IMPORTANT] This deployment will take around 30min ~ 1hr to setup everything (AWS resources, K8s Addons, and Coder)
+> [!IMPORTANT] 
+> This deployment will take around 30min ~ 1hr to setup everything (AWS resources, K8s Addons, and Coder)
 
 # Getting Started
 
@@ -6,9 +7,15 @@
 2. Login as a user with AdministratorAccess
 3. Setup your local machine to have an [AWS profile](https://docs.aws.amazon.com/cli/v1/userguide/cli-configure-files.html)
 
->[!NOTE] When running `aws login` or `aws configure`, this will automatically setup a `default` profile for you.
+>[!NOTE] 
+> When running `aws login` or `aws configure`, this will automatically setup a `default` profile for you.
 
-4. [Purchase/Register](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/domain-register.html#domain-register-procedure-section) a domain in Route53
+4. [Purchase/Register](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/domain-register.html#domain-register-procedure-section) a domain in Route53 and tie it to a public hosted zone.
+
+> [!IMPORTANT] 
+> When purchasing, it will create an associated hosted zone in a few minutes. Make sure to wait until this is available. 
+> If using an existing domain + hosted zone, cleanup any A/AAAA/CNAME/TXT records.
+
 5. Fill the `coder.env` file with the following environment variables:
 
 ```.env
@@ -58,9 +65,11 @@ Password: Th1s1sN0TS3CuR3!!
 
 - To verify the status of resources tied to CRDs, you can inspect the following:
     - Service (check the aws-load-balancer-controller deployment for logs)
+    - ClusterIssuer
     - Certificate
     - CertificateRequests
     - Order
+    - ClusterSecretStore
     - ExternalSecrets
     - PushSecrets
     - NodePool
