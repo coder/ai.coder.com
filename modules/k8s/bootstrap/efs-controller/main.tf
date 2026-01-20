@@ -14,7 +14,7 @@ terraform {
 }
 
 ##
-# https://github.com/kubernetes-sigs/aws-ebs-csi-driver/blob/master/docs/install.md
+# https://github.com/kubernetes-sigs/aws-efs-csi-driver/blob/master/docs/install.md
 ##
 
 variable "cluster_name" {
@@ -48,11 +48,6 @@ variable "service_account_annotations" {
   default = {}
 }
 
-variable "node_selector" {
-  type = map(string)
-  default = {}
-}
-
 variable "replace" {
   type    = bool
   default = false
@@ -61,7 +56,7 @@ variable "replace" {
 data "aws_region" "this" {}
 
 locals {
-  role_name = var.role_name == "" ? "ebs-controller-${data.aws_region.this.region}" : var.role_name
+  role_name = var.role_name == "" ? "efs-controller-${data.aws_region.this.region}" : var.role_name
 }
 
 module "oidc-role" {
@@ -69,7 +64,7 @@ module "oidc-role" {
   name         = local.role_name
   cluster_name = var.cluster_name
   policy_arns = {
-    "AmazonEBSCSIDriverPolicy" = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
+    "AmazonEFSCSIDriverPolicy" = "arn:aws:iam::aws:policy/service-role/AmazonEFSCSIDriverPolicy"
   }
   cluster_policy_arns = {
     "AmazonEKSClusterAdminPolicy" = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
@@ -80,11 +75,11 @@ module "oidc-role" {
   tags = var.tags
 }
 
-resource "helm_release" "ebs-controller" {
-  name             = "aws-ebs-csi-driver"
+resource "helm_release" "efs-controller" {
+  name             = "aws-efs-csi-driver"
   namespace        = var.namespace
-  chart            = "aws-ebs-csi-driver"
-  repository       = "https://kubernetes-sigs.github.io/aws-ebs-csi-driver"
+  chart            = "aws-efs-csi-driver"
+  repository       = "https://kubernetes-sigs.github.io/aws-efs-csi-driver/"
   create_namespace = true
   upgrade_install  = true
   skip_crds        = false
@@ -97,12 +92,11 @@ resource "helm_release" "ebs-controller" {
   values = [yamlencode({
     controller = {
       serviceAccount = {
-        # https://github.com/kubernetes-sigs/aws-ebs-csi-driver/blob/master/docs/install.md
+        # https://github.com/kubernetes-sigs/aws-efs-csi-driver/blob/master/docs/install.md
         annotations = merge({
           "eks.amazonaws.com/role-arn" = module.oidc-role.role_arn
         }, var.service_account_annotations)
       }
-      nodeSelector = {}
     }
   })]
 }

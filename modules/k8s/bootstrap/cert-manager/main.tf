@@ -13,7 +13,6 @@ terraform {
   }
 }
 
-
 variable "cluster_name" {
   type = string
 }
@@ -62,28 +61,17 @@ variable "helm_version" {
 }
 
 ##
-# ACME Certificate Inputs
+# Create Default Resources?
 ##
 
-variable "cloudflare_token_secret_name" {
-  type    = string
-  default = "cloudflare-token"
+variable "create_default_cluster_issuer" {
+  type = bool
+  default = true
 }
 
-variable "cloudflare_token_secret_key" {
-  type    = string
-  default = "token.key"
-}
-
-variable "cloudflare_token_secret" {
-  type      = string
-  sensitive = true
-}
-
-variable "cloudflare_token_secret_email" {
-  type      = string
-  sensitive = true
-}
+##
+# ACME Certificate Inputs
+##
 
 variable "issuer_private_key_secret_name" {
   type    = string
@@ -161,6 +149,25 @@ resource "helm_release" "cert-manager" {
   })]
 }
 
+##
+# Use Route53 for the DNS01 Challenge Provider
+##
+
+variable "use_route53" {
+  type = bool
+  default = false
+}
+
+variable "route53_region" {
+  type = string
+  default = "us-east-2"
+}
+
+variable "route53_sa_role" {
+  type = string
+  default = ""
+}
+
 resource "kubernetes_service_account" "route53" {
   metadata {
     name      = "cert-manager-acme-dns01-route53"
@@ -201,6 +208,37 @@ resource "kubernetes_role_binding" "route53" {
   }
 }
 
+##
+# Use CloudFlare for the DNS01 Challenge Provider
+##
+
+variable "use_cloudflare" {
+  type = bool
+  default = true
+}
+
+variable "cloudflare_token_secret_name" {
+  type    = string
+  default = "cloudflare-token"
+}
+
+variable "cloudflare_token_secret_key" {
+  type    = string
+  default = "token.key"
+}
+
+variable "cloudflare_token_secret" {
+  type      = string
+  sensitive = true
+  default = ""
+}
+
+variable "cloudflare_token_secret_email" {
+  type      = string
+  sensitive = true
+  default = ""
+}
+
 resource "kubernetes_secret" "cloudflare" {
   metadata {
     name      = var.cloudflare_token_secret_name
@@ -211,12 +249,44 @@ resource "kubernetes_secret" "cloudflare" {
   }
 }
 
-resource "kubernetes_manifest" "default-cluster-issuer" {
+# ----------------
+
+locals {
+  dns01_cf = {
+    cloudflare = {
+      apiTokenSecretRef = {
+        key  = var.cloudflare_token_secret_key
+        name = kubernetes_secret.cloudflare.metadata[0].name
+      }
+      email = var.cloudflare_token_secret_email
+    }
+  }
+  dns01_r53 = {
+    route53 = {
+      region = var.route53_region
+      auth = {
+        kubernetes = {
+          serviceAccountRef = {
+            name = kubernetes_service_account.route53.metadata[0].name
+          }
+        }
+      }
+    }
+  }
+}
+
+##
+# Setup the default Cluster Issuer
+##
+
+resource "kubernetes_manifest" "default-issuer" {
 
   depends_on = [
     helm_release.cert-manager,
     kubernetes_secret.cloudflare
   ]
+
+  count = var.create_default_cluster_issuer ? 1 : 0
 
   field_manager {
     force_conflicts = true

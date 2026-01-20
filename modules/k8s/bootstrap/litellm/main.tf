@@ -3,38 +3,30 @@ terraform {
     aws = {
       source = "hashicorp/aws"
     }
+    helm = {
+      source  = "hashicorp/helm"
+      version = "3.1.1"
+    }
     kubernetes = {
       source = "hashicorp/kubernetes"
+      version = "3.0.1"
     }
   }
 }
 
 variable "cluster_name" {
   type = string
+  default = "aidemo-eks"
 }
 
-variable "cluster_oidc_provider_arn" {
+variable "cluster_region" {
   type = string
+  default = "us-east-2"
 }
 
-variable "role_name" {
+variable "cluster_profile" {
   type    = string
-  default = ""
-}
-
-variable "policy_name" {
-  type    = string
-  default = ""
-}
-
-variable "policy_resource_region" {
-  type    = string
-  default = ""
-}
-
-variable "policy_resource_account" {
-  type    = string
-  default = ""
+  default = "demo-coder"
 }
 
 variable "namespace" {
@@ -42,145 +34,293 @@ variable "namespace" {
   default = "litellm"
 }
 
-variable "name" {
+variable "chart_version" {
   type    = string
-  default = "litellm"
+  default = "0.1.830"
+}
+
+variable "cluster_oidc_provider_arn" {
+  type = string
+}
+
+provider "aws" {
+  region  = var.cluster_region
+  profile = var.cluster_profile
+}
+
+data "aws_eks_cluster" "this" {
+  name = var.cluster_name
+}
+
+data "aws_eks_cluster_auth" "this" {
+  name = var.cluster_name
+}
+
+variable "registry_config" {
+  type = object({
+    url = optional(string, "oci://ghcr.io")
+    username = string
+    password = string
+  })
+  sensitive = true
+}
+
+provider "helm" {
+  kubernetes = {
+    host                   = data.aws_eks_cluster.this.endpoint
+    cluster_ca_certificate = base64decode(data.aws_eks_cluster.this.certificate_authority[0].data)
+    token                  = data.aws_eks_cluster_auth.this.token
+  }
+  registries = [{
+    url      = nonsensitive(var.registry_config.url)
+    username = nonsensitive(var.registry_config.username)
+    password = var.registry_config.password
+  }]
+}
+
+variable "tags" {
+  type = map(string)
+  default = {}
 }
 
 variable "replicas" {
   type    = number
-  default = 0
+  default = 1
 }
 
-variable "image_repo" {
-  type    = string
-  default = "ghcr.io/berriai/litellm"
-}
-
-variable "image_tag" {
-  type    = string
-  default = "v1.72.6-stable"
-}
-
-variable "app_container_port" {
-  type    = number
-  default = 4000
-}
-
-variable "host_name" {
-  type = string
-}
-
-variable "resource_requests" {
+variable "image_config" {
   type = object({
-    cpu    = string
-    memory = string
+    repo = optional(string, "ghcr.io/berriai/litellm-database")
+    pull_policy = optional(string, "IfNotPresent")
+    tag = optional(string, "main-latest")
   })
-  default = {
-    cpu    = "250m"
-    memory = "512Mi"
-  }
-}
-
-variable "resource_limits" {
-  type = object({
-    cpu    = string
-    memory = string
-  })
-  default = {
-    cpu    = "500m"
-    memory = "1Gi"
-  }
-}
-
-variable "aws_ingress_certificate_arn" {
-  type      = string
-  sensitive = true
-}
-
-variable "aws_bedrock_region" {
-  type    = string
-  default = "us-east-2"
-}
-
-variable "db_url_secret_name" {
-  type    = string
-  default = "url"
-}
-
-variable "db_url_secret_key" {
-  type    = string
-  default = "postgres.env"
-}
-
-variable "db_url" {
-  type      = string
-  sensitive = true
-}
-
-variable "redis_host_secret_name" {
-  type    = string
-  default = "redis.env"
-}
-
-variable "redis_host_secret_key" {
-  type    = string
-  default = "host"
-}
-
-variable "redis_password_secret_key" {
-  type    = string
-  default = "password"
-}
-
-variable "redis_host" {
-  type      = string
-  sensitive = true
-}
-
-variable "redis_password" {
-  type      = string
-  sensitive = true
-}
-
-variable "litellm_key_secret_name" {
-  type    = string
-  default = "litellm.env"
-}
-
-variable "litellm_key_master_secret_key" {
-  type    = string
-  default = "master"
-}
-
-variable "litellm_key_salt_secret_key" {
-  type    = string
-  default = "salt"
-}
-
-variable "litellm_salt_key" {
-  type      = string
-  sensitive = true
+  default = {}
 }
 
 variable "litellm_master_key" {
-  type      = string
+  type = string
+  sensitive = true
+
+  validation {
+    condition     = startswith(var.litellm_master_key, "sk-")
+    error_message = "The LiteLLM master key must start with 'sk-'."
+  } 
+}
+
+variable "litellm_master_secret_name" {
+  type = string
+  default = "masterkey"
+}
+
+variable "db_config" {
+  type = object({
+    use_existing = optional(bool, false)
+    secret_name = optional(string, "postgres")
+    db_name = optional(string, "litellm")
+    username      = optional(string, "litellm")
+    admin_password = optional(string, "NoTaGrEaTpAsSwOrD")
+    user_password  = optional(string, "NoTaGrEaTpAsSwOrD")
+    endpoint = optional(string, "localhost")
+  })
+  default = {
+    use_existing = false
+    secret_name = "postgres"
+    db_name = "litellm"
+    username = "litellm"
+    admin_password = "NoTaGrEaTpAsSwOrD"
+    user_password = "NoTaGrEaTpAsSwOrD"
+    endpoint = "localhost"
+  }
   sensitive = true
 }
 
-variable "gcloud_auth_secret_name" {
-  type    = string
-  default = "gcloud-auth"
+variable "service_account_annotations" {
+  type = map(string)
+  default = {}
 }
 
-variable "gcloud_auth_secret_key" {
-  type    = string
-  default = "service_account.json"
+variable "service_lb_class" {
+  type = string
+  default = "service.k8s.aws/nlb"
 }
 
-variable "gcloud_auth_file_path" {
+variable "service_annotations" {
+  type = map(string)
+  default = {}
+}
+
+variable "service_port" {
+  type    = number
+  default = 80
+}
+
+variable "health_port" {
+  type    = number
+  default = 8081
+}
+
+variable "proxy_config" {
+  type = any
+  default = {}
+}
+
+variable "env_vars" {
+  type = map(string)
+  default = {}
+}
+
+variable "volumes" {
+  type = list(any)
+  default = []
+}
+
+variable "volume_mounts" {
+  type = list(any)
+  default = []
+}
+
+variable "autoscaling_min_replicas" {
+  type    = number
+  default = 1
+}
+
+variable "autoscaling_max_replicas" {
+  type    = number
+  default = 5
+}
+
+variable "autoscaling_target_cpu_use" {
+  type    = number
+  description = "The target CPU utilization percentage for autoscaling."
+  default = 80
+}
+
+variable "autoscaling_target_memory_use" {
+  type    = number
+  description = "The target memory utilization percentage for autoscaling."
+  default = 80
+}
+
+variable "node_selector" {
+  type = map(string)
+  default = {}
+}
+
+variable "tolerations" {
+  type = any
+  default = {}
+}
+
+variable "affinity" {
+  type = any
+  default = {}
+}
+
+module "oidc-role" {
+  source       = "../../../security/role/access-entry"
+  name         = "LiteLLM-Bedrock"
+  cluster_name = var.cluster_name
+  policy_arns = {
+    "AmazonBedrockLimitedAccess" = "arn:aws:iam::aws:policy/AmazonBedrockLimitedAccess"
+  }
+  cluster_policy_arns = {
+    "AmazonEKSClusterAdminPolicy" = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+  }
+  oidc_principals = {
+    "${var.cluster_oidc_provider_arn}" = ["system:serviceaccount:*:*"]
+  }
+  tags = var.tags
+}
+
+resource "kubernetes_namespace_v1" "litellm" {
+  metadata {
+    name = var.namespace
+  }
+}
+
+resource "kubernetes_secret_v1" "master-key" {
+  metadata {
+    name      = var.litellm_master_secret_name
+    namespace = kubernetes_namespace_v1.litellm.metadata[0].name
+  }
+  data = {
+    password = var.litellm_master_key
+  }
+  type = "Opaque"
+}
+
+resource "kubernetes_secret_v1" "db-auth" {
+  metadata {
+    name      = nonsensitive(var.db_config.secret_name)
+    namespace = kubernetes_namespace_v1.litellm.metadata[0].name
+  }
+  data = {
+    username = nonsensitive(var.db_config.username)
+    postgres-password = var.db_config.admin_password
+    password = var.db_config.user_password
+    endpoint = var.db_config.endpoint
+  }
+  type = "Opaque"
+}
+
+variable "access_url" {
   type    = string
-  default = "/tmp"
+  default = ""
+}
+
+variable "ssl_cert_config" {
+  type = object({
+    create_secret = optional(bool, true)
+    name = optional(string, "ssl-certs")
+    days_until_renewal = optional(number, 30)
+  })
+  default = {
+    create_secret = true
+    name = "ssl-certs"
+    days_until_renewal = 30
+  }
+}
+
+locals {
+  common_name = replace(replace(var.access_url, "https://", ""), "http://", "")
+}
+
+resource "kubernetes_manifest" "cert" {
+
+  count = var.ssl_cert_config.create_secret ? 1 : 0
+
+  field_manager {
+    force_conflicts = true
+  }
+  manifest = {
+    apiVersion = "cert-manager.io/v1"
+    kind       = "Certificate"
+    metadata = {
+      labels    = {} # var.cert_labels
+      name      = var.ssl_cert_config.name
+      namespace = kubernetes_namespace_v1.litellm.metadata[0].name
+    }
+    spec = {
+      secretName  = var.ssl_cert_config.name
+      commonName  = local.common_name
+      dnsNames    = [local.common_name]
+      duration    = "${var.ssl_cert_config.days_until_renewal * 24}h"
+      renewBefore = "8h"
+      additionalOutputFormats = [{
+        type = "CombinedPEM"
+      },{
+        type = "DER"
+      }]
+      issuerRef = {
+        kind = "ClusterIssuer"
+        name = "issuer"
+      }
+    }
+  }
+}
+
+locals {
+  ssl_volume = var.ssl_cert_config.create_secret ? {} : {}
 }
 
 variable "gcloud_auth" {
@@ -188,345 +328,182 @@ variable "gcloud_auth" {
   sensitive = true
 }
 
-variable "litellm_config_name" {
-  type    = string
-  default = "config-yaml"
-}
-
-variable "litellm_config_key" {
-  type    = string
-  default = "config.yaml"
-}
-
-variable "litellm_config_middleware_name" {
-  type    = string
-  default = "strip-header-middleware-py"
-}
-
-variable "litellm_config_middleware_key" {
-  type    = string
-  default = "strip_header_middleware.py"
-}
-
-variable "tags" {
-  type    = map(string)
-  default = {}
-}
-
-data "aws_region" "this" {}
-
-data "aws_caller_identity" "this" {}
-
-locals {
-  app_labels = {
-    "app.kubernetes.io/name" : var.name
-    "app.kubernetes.io/part-of" : var.name
+resource "kubernetes_secret_v1" "gcloud" {
+  metadata {
+    name      = "gcloud-auth"
+    namespace = kubernetes_namespace_v1.litellm.metadata[0].name
+    labels    = {}
+  }
+  data = {
+    "service_account.json" = var.gcloud_auth
   }
 }
 
-resource "kubernetes_namespace" "this" {
-  metadata {
-    name = var.namespace
-  }
-}
+resource "helm_release" "litellm" {
+  name             = "litellm"
+  namespace        = var.namespace
+  chart            = "litellm-helm"
+  repository       = "oci://ghcr.io/berriai"
+  create_namespace = true
+  upgrade_install  = true
+  skip_crds        = false
+  replace          = true
+  wait             = true
+  wait_for_jobs    = true
+  reuse_values     = false
+  version          = var.chart_version
+  timeout          = 120 # in seconds
 
-resource "kubernetes_ingress_v1" "this" {
-  metadata {
-    name      = var.name
-    namespace = kubernetes_namespace.this.metadata[0].name
-    annotations = {
-      "alb.ingress.kubernetes.io/certificate-arn"           = var.aws_ingress_certificate_arn
-      "alb.ingress.kubernetes.io/group.order"               = 10
-      "alb.ingress.kubernetes.io/listen-ports"              = "[{\"HTTPS\":443}]"
-      "alb.ingress.kubernetes.io/scheme"                    = "internet-facing"
-      "alb.ingress.kubernetes.io/unhealthy-threshold-count" = 3
+  values = [yamlencode({
+    replicaCount = var.replicas
+    image = {
+      repository = var.image_config.repo
+      pullPolicy = var.image_config.pull_policy
+      tag = var.image_config.tag
     }
-    labels = local.app_labels
-  }
-  spec {
-    ingress_class_name = "alb"
-    rule {
-      host = var.host_name
-      http {
-        path {
-          backend {
-            service {
-              name = var.name
-              port {
-                number = 80
-              }
-            }
-          }
-          path      = "/"
-          path_type = "Prefix"
+    imagePullSecrets = []
+    nameOverride = "litellm"
+    fullnameOverride = ""
+    serviceAccount = {
+      create = true
+      automount = true
+      annotations = merge({
+        "eks.amazonaws.com/role-arn" = module.oidc-role.role_arn
+      }, var.service_account_annotations)
+    }
+    service = {
+      type = "LoadBalancer"
+      loadBalancerClass = var.service_lb_class
+      port = var.service_port
+      annotations = var.service_annotations
+    }
+    separateHealthApp = true
+    separateHealthPort = var.health_port
+
+    masterkeySecretName = kubernetes_secret_v1.master-key.metadata[0].name
+    masterkeySecretKey = "password"
+
+    proxyConfigMap = {
+      create = true
+    }
+
+    proxy_config = var.proxy_config
+
+    autoscaling = {
+      enabled = true
+      minReplicas = var.autoscaling_min_replicas
+      maxReplicas = var.autoscaling_max_replicas
+      targetCPUUtilizationPercentage = var.autoscaling_target_cpu_use
+      targetMemoryUtilizationPercentage = var.autoscaling_target_memory_use
+    }
+
+    nodeSelector = var.node_selector
+    tolerations = var.tolerations
+    affinity = var.affinity
+
+    db = {
+      deployStandalone = var.db_config.endpoint == "localhost"
+      useExisting = nonsensitive(var.db_config.use_existing)
+      database = nonsensitive(var.db_config.db_name)
+      url = "postgresql://$(DATABASE_USERNAME):$(DATABASE_PASSWORD)@$(DATABASE_HOST)/$(DATABASE_NAME)"
+      secret = {
+        name = kubernetes_secret_v1.db-auth.metadata[0].name
+        usernameKey = "username"
+        passwordKey = "password"
+        # Optional: when set, DATABASE_HOST will be sourced from this secret key instead of db.endpoint
+        endpointKey = "endpoint"
+      }
+      useStackgresOperator = false
+    }
+
+    # Settings for Bitnami postgresql chart (if db.deployStandalone is true, ignored otherwise)
+    postgresql = {
+      architecture = "standalone"
+      auth = {
+        username = var.db_config.username
+        database = "litellm"
+        enablePostgresUser = true
+
+        # A secret is created by this chart (litellm-helm) with the credentials that the new Postgres instance should use.
+        existingSecret = kubernetes_secret_v1.db-auth.metadata[0].name
+        secretKeys = {
+          adminPasswordKey = "postgres-password"
+          userPasswordKey = "password"
         }
       }
     }
-  }
-}
 
-resource "kubernetes_service" "this" {
-  metadata {
-    name      = var.name
-    namespace = kubernetes_namespace.this.metadata[0].name
-    labels    = local.app_labels
-  }
-  spec {
-    type                    = "NodePort"
-    internal_traffic_policy = "Cluster"
-    ip_families             = ["IPv4"]
-    ip_family_policy        = "SingleStack"
-    port {
-      name        = "http"
-      protocol    = "TCP"
-      port        = 80
-      target_port = "http"
+    redis = {
+      enabled = false
+      architecture = "standalone"
     }
-    selector = {
-      app = var.name
-    }
-  }
-}
 
-locals {
-  policy_name = var.policy_name == "" ? "LiteLLM-BR-${data.aws_region.this.region}" : var.policy_name
-  role_name   = var.role_name == "" ? "litellm-br-${data.aws_region.this.region}" : var.role_name
-}
+    migrationJob = {
+      enabled = true # Enable or disable the schema migration Job
+      retries = 3 # Number of retries for the Job in case of failure
+      backoffLimit = 4 # Backoff limit for Job restarts
+      disableSchemaUpdate = false # Skip schema migrations for specific environments. When True, the job will exit with code 0.
+      annotations = {}
+      ttlSecondsAfterFinished = 120
+      resources = {}
+      #  requests:
+      #    cpu: 100m
+      #    memory: 100Mi
+      extraContainers = []
 
-module "bedrock-policy" {
-  source      = "../../../security/policy"
-  name        = local.policy_name
-  path        = "/"
-  description = "LiteLLM Bedrock IAM Policy"
-  policy_json = data.aws_iam_policy_document.bedrock-policy.json
-}
-
-module "bedrock-oidc-role" {
-  source = "../../../security/role/access-entry"
-  name   = local.role_name
-  policy_arns = {
-    "BedrockPolicy" = module.bedrock-policy.policy_arn
-  }
-  cluster_name        = var.cluster_name
-  cluster_policy_arns = {}
-  oidc_principals = {
-    "${var.cluster_oidc_provider_arn}" = ["system:serviceaccount:*:*"]
-  }
-  tags = var.tags
-}
-
-resource "kubernetes_service_account" "litellm" {
-  metadata {
-    name      = var.name
-    namespace = kubernetes_namespace.this.metadata[0].name
-    annotations = {
-      "eks.amazonaws.com/role-arn" : module.bedrock-oidc-role.role_arn
-    }
-    labels = local.app_labels
-  }
-}
-
-resource "kubernetes_secret" "postgres" {
-  metadata {
-    name      = var.db_url_secret_name
-    namespace = kubernetes_namespace.this.metadata[0].name
-    labels    = local.app_labels
-  }
-  data = {
-    "${var.db_url_secret_key}" = var.db_url
-  }
-}
-
-resource "kubernetes_secret" "redis" {
-  metadata {
-    name      = var.redis_host_secret_name
-    namespace = kubernetes_namespace.this.metadata[0].name
-    labels    = local.app_labels
-  }
-  data = {
-    "${var.redis_host_secret_key}"     = var.redis_host
-    "${var.redis_password_secret_key}" = var.redis_password
-  }
-}
-
-resource "kubernetes_secret" "key" {
-  metadata {
-    name      = var.litellm_key_secret_name
-    namespace = kubernetes_namespace.this.metadata[0].name
-    labels    = local.app_labels
-  }
-  data = {
-    "${var.litellm_key_master_secret_key}" = var.litellm_master_key
-    "${var.litellm_key_salt_secret_key}"   = var.litellm_salt_key
-  }
-}
-
-resource "kubernetes_secret" "gcloud" {
-  metadata {
-    name      = var.gcloud_auth_secret_name
-    namespace = kubernetes_namespace.this.metadata[0].name
-    labels    = local.app_labels
-  }
-  data = {
-    "${var.gcloud_auth_secret_key}" = var.gcloud_auth
-  }
-}
-
-resource "kubernetes_config_map" "config" {
-  metadata {
-    name      = var.litellm_config_name
-    namespace = kubernetes_namespace.this.metadata[0].name
-    labels    = local.app_labels
-  }
-  data = {
-    "${var.litellm_config_key}" = templatefile("${path.module}/scripts/${var.litellm_config_key}", {
-      GCP_CRED_PATH = "${var.gcloud_auth_file_path}/${var.gcloud_auth_secret_key}"
-    })
-  }
-}
-
-resource "kubernetes_config_map" "middleware" {
-  metadata {
-    name      = var.litellm_config_middleware_name
-    namespace = kubernetes_namespace.this.metadata[0].name
-    labels    = local.app_labels
-  }
-  data = {
-    "${var.litellm_config_middleware_key}" = templatefile("${path.module}/scripts/${var.litellm_config_middleware_key}", {})
-  }
-}
-
-locals {
-  primary_env_vars = {
-    AWS_REGION_NAME   = var.aws_bedrock_region
-    DOCS_URL          = "/swagger"
-    LITELLM_LOG       = "ERROR"
-    LITELLM_LOG_LEVEL = "ERROR"
-    LITELLM_MODE      = "PRODUCTION"
-    REDIS_PORT        = "6379"
-    REDIS_SSL         = "True"
-  }
-  secret_env_vars = {
-    DATABASE_URL = {
-      name = var.db_url_secret_name
-      key  = var.db_url_secret_key
-    }
-    LITELLM_MASTER_KEY = {
-      name = var.litellm_key_secret_name
-      key  = var.litellm_key_master_secret_key
-    }
-    LITELLM_SALT_KEY = {
-      name = var.litellm_key_secret_name
-      key  = var.litellm_key_salt_secret_key
-    }
-    REDIS_HOST = {
-      name = var.redis_host_secret_name
-      key  = var.redis_host_secret_key
-    }
-    REDIS_PASSWORD = {
-      name = var.redis_host_secret_name
-      key  = var.redis_password_secret_key
-    }
-  }
-}
-
-resource "kubernetes_deployment" "litellm" {
-  metadata {
-    name      = var.name
-    namespace = kubernetes_namespace.this.metadata[0].name
-    labels = merge(local.app_labels, {
-      app = var.name
-    })
-  }
-  spec {
-    replicas = var.replicas
-    strategy {
-      type = "RollingUpdate"
-    }
-    selector {
-      match_labels = {
-        app = var.name
-      }
-    }
-    template {
-      metadata {
-        annotations = {}
-        labels = {
-          app = var.name
+      # Hook configuration
+      hooks = {
+        argocd = {
+          enabled = false
         }
-      }
-      spec {
-        service_account_name = kubernetes_service_account.litellm.metadata[0].name
-        container {
-          name    = var.name
-          image   = "${var.image_repo}:${var.image_tag}"
-          command = split(" ", "litellm --port ${var.app_container_port} --config /app/${var.litellm_config_key} --detailed_debug")
-          dynamic "env" {
-            for_each = local.primary_env_vars
-            content {
-              name  = env.key
-              value = tostring(env.value)
-            }
-          }
-          dynamic "env" {
-            for_each = local.secret_env_vars
-            content {
-              name = env.key
-              value_from {
-                secret_key_ref {
-                  name = env.value.name
-                  key  = env.value.key
-                }
-              }
-            }
-          }
-          port {
-            container_port = var.app_container_port
-            name           = "http"
-            protocol       = "TCP"
-          }
-          resources {
-            limits   = var.resource_limits
-            requests = var.resource_requests
-          }
-          volume_mount {
-            mount_path = "/app/${var.litellm_config_key}"
-            name       = kubernetes_config_map.config.metadata[0].name
-            read_only  = false
-            sub_path   = var.litellm_config_key
-          }
-          volume_mount {
-            mount_path = "/app/${var.litellm_config_middleware_key}"
-            name       = kubernetes_config_map.middleware.metadata[0].name
-            read_only  = false
-            sub_path   = var.litellm_config_middleware_key
-          }
-          volume_mount {
-            mount_path = var.gcloud_auth_file_path
-            name       = kubernetes_secret.gcloud.metadata[0].name
-            read_only  = true
-            sub_path   = ""
-          }
-        }
-        volume {
-          name = kubernetes_config_map.config.metadata[0].name
-          config_map {
-            name = kubernetes_config_map.config.metadata[0].name
-          }
-        }
-        volume {
-          name = kubernetes_config_map.middleware.metadata[0].name
-          config_map {
-            name = kubernetes_config_map.middleware.metadata[0].name
-          }
-        }
-        volume {
-          name = kubernetes_secret.gcloud.metadata[0].name
-          secret {
-            secret_name = kubernetes_secret.gcloud.metadata[0].name
-          }
+        helm = {
+          enabled = false
         }
       }
     }
-  }
+
+
+    envVars = merge({ 
+      NO_DOCS = "False"
+    }, merge(var.access_url != "" ? {
+      # PROXY_BASE_URL = "${var.access_url}"
+    } : {}, var.ssl_cert_config.create_secret ? {
+      SSL_CERT_FILE = "/tmp/ssl/${local.common_name}/tls-combined.pem"
+      SSL_KEYFILE_PATH = "/tmp/ssl/${local.common_name}/tls.key"
+      SSL_CERTFILE_PATH = "/tmp/ssl/${local.common_name}/tls.crt"
+      SSL_VERIFY = "False"
+    } : {}))
+    
+    extraEnvVars = {}
+
+    # Additional volumes on the output Deployment definition.
+    volumes = [{
+      name = kubernetes_manifest.cert[0].manifest.metadata.name
+      secret = {
+        secretName = kubernetes_manifest.cert[0].manifest.metadata.name
+        optional = false
+      }
+    },{
+      name = kubernetes_secret_v1.gcloud.metadata[0].name
+      secret = {
+        secretName = kubernetes_secret_v1.gcloud.metadata[0].name
+        optional = false
+      }
+    }]
+
+    # Additional volumeMounts on the output Deployment definition.
+    volumeMounts = [{
+      name     = kubernetes_manifest.cert[0].manifest.metadata.name
+      mountPath = "/tmp/ssl/${local.common_name}"
+      readOnly  = true
+    },{
+      name     = kubernetes_secret_v1.gcloud.metadata[0].name
+      mountPath = "/tmp/gcloud/"
+      readOnly  = true
+    },]
+  })]
+}
+
+output "namespace" {
+  value       = kubernetes_namespace_v1.litellm.metadata[0].name
 }

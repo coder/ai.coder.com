@@ -5,7 +5,7 @@ terraform {
     }
     helm = {
       source  = "hashicorp/helm"
-      version = "2.17.0"
+      version = ">= 2.17.0"
     }
     kubernetes = {
       source = "hashicorp/kubernetes"
@@ -79,6 +79,22 @@ variable "cluster_asg_node_labels" {
   default = {}
 }
 
+variable "vpc_id" {
+  description = "(Optional). Set this when your pods can't use the IMDS to auto-determine this"
+  type = string
+  default = ""
+}
+
+variable "node_selector" {
+  type    = map(string)
+  default = {}
+}
+
+variable "create_alb_class" {
+  type = bool
+  default = true
+}
+
 data "aws_region" "this" {}
 
 data "aws_caller_identity" "this" {}
@@ -133,7 +149,7 @@ resource "helm_release" "lb-controller" {
   wait             = true
   wait_for_jobs    = true
   version          = var.chart_version
-  timeout          = 120 # in seconds
+  timeout          = 300 # in seconds
 
   values = [yamlencode({
     clusterName = var.cluster_name
@@ -145,13 +161,19 @@ resource "helm_release" "lb-controller" {
       automountServiceAccountToken = true
       imagePullSecrets             = []
     }
+    vpcId = var.vpc_id
     enableCertManager      = var.enable_cert_manager
-    nodeSelector           = var.cluster_asg_node_labels
+    nodeSelector           = var.node_selector
     serviceTargetENISGTags = local.service_target_eni_sg_tags
+    serviceMutatorWebhookConfig = {
+      # Ref - https://github.com/awslabs/data-on-eks/issues/458
+      failurePolicy = "Ignore"
+    }
   })]
 }
 
 resource "kubernetes_manifest" "alb-class-params" {
+  count = var.create_alb_class ? 1 : 0
   depends_on = [helm_release.lb-controller]
   manifest = {
     apiVersion = "elbv2.k8s.aws/v1beta1"
@@ -166,7 +188,8 @@ resource "kubernetes_manifest" "alb-class-params" {
 }
 
 resource "kubernetes_manifest" "alb-class" {
-  depends_on = [helm_release.lb-controller, kubernetes_manifest.alb-class-params]
+  count = var.create_alb_class ? 1 : 0
+  depends_on = [helm_release.lb-controller, kubernetes_manifest.alb-class-params[0]]
   manifest = {
     apiVersion = "networking.k8s.io/v1"
     kind       = "IngressClass"

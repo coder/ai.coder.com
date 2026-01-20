@@ -21,6 +21,10 @@ variable "cluster_oidc_provider_arn" {
   type = string
 }
 
+variable "cluster_oidc_provider" {
+  type = string
+}
+
 variable "namespace" {
   type    = string
   default = "karpenter"
@@ -89,6 +93,16 @@ variable "karpenter_node_role_tags" {
   default = {}
 }
 
+variable "iam_role_use_name_prefix" {
+  type = bool
+  default = true
+}
+
+variable "node_iam_role_use_name_prefix" {
+  type = bool
+  default = true
+}
+
 variable "ec2nodeclass_configs" {
   type = list(object({
     name                 = string
@@ -143,9 +157,9 @@ locals {
   std_karpenter_format             = "${var.cluster_name}-kptr-${data.aws_region.this.region}"
   karpenter_queue_name             = var.karpenter_queue_name == "" ? "${var.cluster_name}-kptr" : var.karpenter_queue_name
   karpenter_queue_rule_name        = var.karpenter_queue_rule_name == "" ? "${var.cluster_name}-kptr" : var.karpenter_queue_rule_name
-  karpenter_controller_role_name   = var.karpenter_controller_role_name == "" ? local.std_karpenter_format : var.karpenter_controller_role_name
+  karpenter_controller_role_name   = var.karpenter_controller_role_name == "" ? "${local.std_karpenter_format}-ctrl" : var.karpenter_controller_role_name
   karpenter_controller_policy_name = var.karpenter_controller_policy_name == "" ? local.std_karpenter_format : var.karpenter_controller_policy_name
-  karpenter_node_role_name         = var.karpenter_node_role_name == "" ? local.std_karpenter_format : var.karpenter_node_role_name
+  karpenter_node_role_name         = var.karpenter_node_role_name == "" ? "${local.std_karpenter_format}-node" : var.karpenter_node_role_name
 }
 
 data "aws_iam_policy_document" "sts" {
@@ -163,9 +177,36 @@ resource "aws_iam_policy" "sts" {
   policy      = data.aws_iam_policy_document.sts.json
 }
 
+data "aws_iam_policy_document" "kptr_ctrl_assume_role_policy" {
+  statement {
+    effect = "Allow"
+
+    principals {
+      type        = "Federated"
+      identifiers = [var.cluster_oidc_provider_arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "${var.cluster_oidc_provider}:sub"
+      values   = ["system:serviceaccount:karpenter:karpenter"]
+    }
+
+    # https://aws.amazon.com/premiumsupport/knowledge-center/eks-troubleshoot-oidc-and-irsa/?nc1=h_ls
+    condition {
+      test     = "StringEquals"
+      variable = "${var.cluster_oidc_provider}:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+  }
+}
+
 module "karpenter" {
   source  = "terraform-aws-modules/eks/aws//modules/karpenter"
-  version = "20.34.0" # "21.3.1"
+  # version = "20.34.0" # "21.3.1"
+  version = "21.14.0"
 
   cluster_name     = var.cluster_name
   queue_name       = local.karpenter_queue_name
@@ -174,8 +215,11 @@ module "karpenter" {
   # Karpenter Controller Role
   create_iam_role          = true
   iam_role_name            = local.karpenter_controller_role_name
-  iam_role_use_name_prefix = true
+  iam_role_use_name_prefix = var.iam_role_use_name_prefix
   iam_role_policies        = var.karpenter_controller_role_policies
+  iam_role_source_assume_policy_documents = [
+    data.aws_iam_policy_document.kptr_ctrl_assume_role_policy.json,
+  ]
 
   # Karpenter Controller Policies
   iam_policy_use_name_prefix = true
@@ -189,17 +233,20 @@ module "karpenter" {
   # Karpenter Node Role
   create_node_iam_role          = true
   node_iam_role_name            = local.karpenter_node_role_name
-  node_iam_role_use_name_prefix = true
+  node_iam_role_use_name_prefix = var.node_iam_role_use_name_prefix
   node_iam_role_additional_policies = merge({
     AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
     STSAssumeRole                = aws_iam_policy.sts.arn
   }, var.karpenter_node_role_policies)
 
-  enable_irsa             = true
-  enable_pod_identity     = false
+  create_pod_identity_association = false
   enable_spot_termination = true
 
-  irsa_oidc_provider_arn = var.cluster_oidc_provider_arn
+  ### DEPRECATED in v21.
+  # enable_irsa             = true
+  # irsa_oidc_provider_arn = var.cluster_oidc_provider_arn
+  # enable_pod_identity     = false
+
 
   # tags = merge(var.tags, var.karpenter_tags)
   # iam_role_tags = merge(var.tags, var.karpenter_role_tags)
@@ -224,12 +271,12 @@ resource "helm_release" "karpenter" {
     controller = {
       resources = {
         limits = {
-          cpu    = "500m"
-          memory = "512Mi"
+          cpu    = "1000m"
+          memory = "2Gi"
         }
         requests = {
-          cpu    = "100m"
-          memory = "256Mi"
+          cpu    = "500m"
+          memory = "1Gi"
         }
       }
     }

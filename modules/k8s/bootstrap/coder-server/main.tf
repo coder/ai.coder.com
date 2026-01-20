@@ -51,27 +51,11 @@ variable "role_name" {
 # TLS/SSL Inputs
 ##
 
-variable "acme_registration_email" {
-  type    = string
-  default = ""
-}
-
-variable "acme_days_until_renewal" {
-  type    = number
-  default = 30
-}
-
-variable "acme_revoke_certificate" {
-  type    = bool
-  default = true
-}
-
 variable "cloudflare_api_token" {
   type      = string
   default   = ""
   sensitive = true
 }
-
 
 ##
 # Kubernetes Inputs
@@ -83,7 +67,7 @@ variable "namespace" {
 
 variable "helm_timeout" {
   type    = number
-  default = 120 # In Seconds
+  default = 300 # In Seconds
 }
 
 variable "helm_version" {
@@ -215,10 +199,14 @@ variable "termination_grace_period_seconds" {
 variable "ssl_cert_config" {
   type = object({
     name          = string
+    caissuer        = optional(string, "issuer")
+    secretissuer    = optional(string, "issuer")
     create_secret = optional(bool, true)
   })
   default = {
     name          = "coder-tls"
+    caissuer        = "issuer"
+    secretissuer        = "issuer"
     create_secret = true
   }
 }
@@ -238,6 +226,11 @@ variable "db_secret_url" {
   sensitive = true
 }
 
+variable "enable_oidc" {
+  type = bool
+  default = true
+}
+
 variable "oidc_config" {
   type = object({
     sign_in_text = string
@@ -245,6 +238,12 @@ variable "oidc_config" {
     scopes       = list(string)
     email_domain = string
   })
+  default = {
+    sign_in_text = ""
+    icon_url     = ""
+    scopes       = []
+    email_domain = ""
+  }
 }
 
 variable "oidc_secret_name" {
@@ -260,6 +259,7 @@ variable "oidc_secret_issuer_url_key" {
 variable "oidc_secret_issuer_url" {
   type      = string
   sensitive = true
+  default = ""
 }
 
 variable "oidc_secret_client_id_key" {
@@ -270,6 +270,7 @@ variable "oidc_secret_client_id_key" {
 variable "oidc_secret_client_id" {
   type      = string
   sensitive = true
+  default = ""
 }
 
 variable "oidc_secret_client_secret_key" {
@@ -280,6 +281,12 @@ variable "oidc_secret_client_secret_key" {
 variable "oidc_secret_client_secret" {
   type      = string
   sensitive = true
+  default = ""
+}
+
+variable "enable_oauth" {
+  type = bool
+  default = true
 }
 
 variable "oauth_secret_name" {
@@ -295,6 +302,7 @@ variable "oauth_secret_client_id_key" {
 variable "oauth_secret_client_id" {
   type      = string
   sensitive = true
+  default = ""
 }
 
 variable "oauth_secret_client_secret_key" {
@@ -305,6 +313,12 @@ variable "oauth_secret_client_secret_key" {
 variable "oauth_secret_client_secret" {
   type      = string
   sensitive = true
+  default = ""
+}
+
+variable "enable_github_external_auth" {
+  type = bool
+  default = true
 }
 
 variable "github_external_auth_config" {
@@ -331,6 +345,7 @@ variable "github_external_auth_secret_client_id_key" {
 variable "github_external_auth_secret_client_id" {
   type      = string
   sensitive = true
+  default = ""
 }
 
 variable "github_external_auth_secret_client_secret_key" {
@@ -341,6 +356,7 @@ variable "github_external_auth_secret_client_secret_key" {
 variable "github_external_auth_secret_client_secret" {
   type      = string
   sensitive = true
+  default = ""
 }
 
 variable "coder_builtin_provisioner_count" {
@@ -407,25 +423,78 @@ data "aws_region" "this" {}
 data "aws_caller_identity" "this" {}
 
 locals {
+  oidc_secret_issuer_url = var.enable_oidc ? {
+    name = "CODER_OIDC_ISSUER_URL"
+    valueFrom = {
+      secretKeyRef = {
+        name = var.oidc_secret_name
+        key  = var.oidc_secret_issuer_url_key
+      }
+    }
+  } : null
+  oidc_client_id = var.enable_oidc ? {
+    name = "CODER_OIDC_CLIENT_ID"
+    valueFrom = {
+      secretKeyRef = {
+        name = var.oidc_secret_name
+        key  = var.oidc_secret_client_id_key
+      }
+    }
+  } : null
+  oidc_client_secret = var.enable_oidc ? {
+    name = "CODER_OIDC_CLIENT_SECRET"
+    valueFrom = {
+      secretKeyRef = {
+        name = var.oidc_secret_name
+        key  = var.oidc_secret_client_secret_key
+      }
+    }
+  } : null
+  oauth2_github_client_id = var.enable_oauth ? {
+    name = "CODER_OAUTH2_GITHUB_CLIENT_ID"
+    valueFrom = {
+      secretKeyRef = {
+        name = var.oauth_secret_name
+        key  = var.oauth_secret_client_id_key
+      }
+    }
+  } : null
+  oauth2_github_client_secret = var.enable_oauth ? {
+    name = "CODER_OAUTH2_GITHUB_CLIENT_SECRET"
+    valueFrom = {
+      secretKeyRef = {
+        name = var.oauth_secret_name
+        key  = var.oauth_secret_client_secret_key
+      }
+    }
+  } : null
+  external_auth_github_client_id = var.enable_github_external_auth ? {
+    name = "CODER_EXTERNAL_AUTH_0_CLIENT_ID"
+    valueFrom = {
+      secretKeyRef = {
+        name = var.oauth_secret_name
+        key  = var.oauth_secret_client_id_key
+      }
+    }
+  } : null
+  external_auth_github_client_secret = var.enable_github_external_auth ? {
+    name = "CODER_EXTERNAL_AUTH_0_CLIENT_SECRET"
+    valueFrom = {
+      secretKeyRef = {
+        name = var.oauth_secret_name
+        key  = var.oauth_secret_client_secret_key
+      }
+    }
+  } : null
+}
+
+locals {
   github_allow_everyone = length(var.coder_github_allowed_orgs) == 0
-  primary_env_vars = {
+  primary_env_vars = merge({
     CODER_ACCESS_URL             = var.primary_access_url
     CODER_WILDCARD_ACCESS_URL    = var.wildcard_access_url
     CODER_REDIRECT_TO_ACCESS_URL = true
     CODER_PG_AUTH                = "password"
-
-    CODER_OIDC_SIGN_IN_TEXT = var.oidc_config.sign_in_text
-    CODER_OIDC_ICON_URL     = var.oidc_config.icon_url
-    CODER_OIDC_SCOPES       = join(",", var.oidc_config.scopes)
-    CODER_OIDC_EMAIL_DOMAIN = var.oidc_config.email_domain
-
-    CODER_OAUTH2_GITHUB_DEFAULT_PROVIDER_ENABLE                                                                  = false
-    CODER_OAUTH2_GITHUB_ALLOW_SIGNUPS                                                                            = true
-    CODER_OAUTH2_GITHUB_DEVICE_FLOW                                                                              = false
-    "${local.github_allow_everyone ? "CODER_OAUTH2_GITHUB_ALLOW_EVERYONE" : "CODER_OAUTH2_GITHUB_ALLOWED_ORGS"}" = "${local.github_allow_everyone ? "true" : join(",", var.coder_github_allowed_orgs)}"
-
-    CODER_EXTERNAL_AUTH_0_ID   = "primary-github"
-    CODER_EXTERNAL_AUTH_0_TYPE = "github"
 
     CODER_ENABLE_TERRAFORM_DEBUG_MODE = true
     CODER_TRACE_LOGS                  = true
@@ -447,10 +516,23 @@ locals {
     CODER_AIBRIDGE_ENABLED = var.openai_llm_endpoint != "" || var.anthropic_llm_endpoint != ""
 
     # Experimental Coder Features
-    CODER_EXPERIMENTS = join(",", var.coder_experiments)
+    # CODER_EXPERIMENTS = join(",", var.coder_experiments)
     # Needed by the ai-tasks experiment to embed workspace apps running on subdomains in iframes
     CODER_ADDITIONAL_CSP_POLICY = "frame-src ${var.primary_access_url}"
-  }
+  }, merge(var.enable_oidc ? {
+    CODER_OIDC_SIGN_IN_TEXT = var.oidc_config.sign_in_text
+    CODER_OIDC_ICON_URL     = var.oidc_config.icon_url
+    CODER_OIDC_SCOPES       = join(",", var.oidc_config.scopes)
+    CODER_OIDC_EMAIL_DOMAIN = var.oidc_config.email_domain
+  } : {}, merge(var.enable_oauth ? {
+    CODER_OAUTH2_GITHUB_DEFAULT_PROVIDER_ENABLE                                                                  = false
+    CODER_OAUTH2_GITHUB_ALLOW_SIGNUPS                                                                            = true
+    CODER_OAUTH2_GITHUB_DEVICE_FLOW                                                                              = false
+    "${local.github_allow_everyone ? "CODER_OAUTH2_GITHUB_ALLOW_EVERYONE" : "CODER_OAUTH2_GITHUB_ALLOWED_ORGS"}" = "${local.github_allow_everyone ? "true" : join(",", var.coder_github_allowed_orgs)}"
+  } : {}, var.enable_github_external_auth ? {
+    CODER_EXTERNAL_AUTH_0_ID   = "primary-github"
+    CODER_EXTERNAL_AUTH_0_TYPE = "github"
+  } : {})))
   env_vars = concat([
     for k, v in merge(local.primary_env_vars, var.env_vars) : { name = k, value = tostring(v) }
     ], concat([{
@@ -461,68 +543,19 @@ locals {
           key  = var.db_secret_key
         }
       }
-      }, {
-      name = "CODER_OIDC_ISSUER_URL"
-      valueFrom = {
-        secretKeyRef = {
-          name = var.oidc_secret_name
-          key  = var.oidc_secret_issuer_url_key
-        }
-      }
-      }, {
-      name = "CODER_OIDC_CLIENT_ID"
-      valueFrom = {
-        secretKeyRef = {
-          name = var.oidc_secret_name
-          key  = var.oidc_secret_client_id_key
-        }
-      }
-      }, {
-      name = "CODER_OIDC_CLIENT_SECRET"
-      valueFrom = {
-        secretKeyRef = {
-          name = var.oidc_secret_name
-          key  = var.oidc_secret_client_secret_key
-        }
-      }
-      }, {
-      name = "CODER_OAUTH2_GITHUB_CLIENT_ID"
-      valueFrom = {
-        secretKeyRef = {
-          name = var.oauth_secret_name
-          key  = var.oauth_secret_client_id_key
-        }
-      }
-      }, {
-      name = "CODER_OAUTH2_GITHUB_CLIENT_SECRET"
-      valueFrom = {
-        secretKeyRef = {
-          name = var.oauth_secret_name
-          key  = var.oauth_secret_client_secret_key
-        }
-      }
-      }, {
-      name = "CODER_EXTERNAL_AUTH_0_CLIENT_ID"
-      valueFrom = {
-        secretKeyRef = {
-          name = var.oauth_secret_name
-          key  = var.oauth_secret_client_id_key
-        }
-      }
-      }, {
-      name = "CODER_EXTERNAL_AUTH_0_CLIENT_SECRET"
-      valueFrom = {
-        secretKeyRef = {
-          name = var.oauth_secret_name
-          key  = var.oauth_secret_client_secret_key
-        }
-      }
-      },
+      }, 
+      # local.oidc_secret_issuer_url,
+      # local.oidc_client_id, 
+      # local.oidc_client_secret, 
+      # local.oauth2_github_client_id, 
+      # local.oauth2_github_client_secret, 
+      # local.external_auth_github_client_id, 
+      # local.external_auth_github_client_secret,
       ], concat(var.anthropic_llm_endpoint != "" ? [{
         name = "CODER_AIBRIDGE_ANTHROPIC_KEY"
         valueFrom = {
           secretKeyRef = {
-            name = var.anthropic_llm_secret_name
+            name = kubernetes_secret.anthropic-llm-secret[0].metadata[0].name
             key  = "key"
           }
         }
@@ -530,7 +563,7 @@ locals {
         name = "CODER_AIBRIDGE_ANTHROPIC_BASE_URL"
         valueFrom = {
           secretKeyRef = {
-            name = var.anthropic_llm_secret_name
+            name = kubernetes_secret.anthropic-llm-secret[0].metadata[0].name
             key  = "base_url"
           }
         }
@@ -539,7 +572,7 @@ locals {
         name = "CODER_AIBRIDGE_OPENAI_KEY"
         valueFrom = {
           secretKeyRef = {
-            name = var.openai_llm_secret_name
+            name = kubernetes_secret.openai-llm-secret[0].metadata[0].name
             key  = "key"
           }
         }
@@ -547,7 +580,7 @@ locals {
         name = "CODER_AIBRIDGE_OPENAI_BASE_URL"
         valueFrom = {
           secretKeyRef = {
-            name = var.openai_llm_secret_name
+            name = kubernetes_secret.openai-llm-secret[0].metadata[0].name
             key  = "base_url"
           }
         }
@@ -614,64 +647,8 @@ resource "kubernetes_namespace" "this" {
   }
 }
 
-resource "helm_release" "coder-server" {
-  name             = "coder"
-  namespace        = kubernetes_namespace.this.metadata[0].name
-  chart            = "coder"
-  repository       = "https://helm.coder.com/v2"
-  create_namespace = false
-  upgrade_install  = true
-  skip_crds        = false
-  wait             = true
-  wait_for_jobs    = true
-  version          = var.helm_version
-  timeout          = var.helm_timeout
-
-  values = [yamlencode({
-    coder = {
-      image = {
-        repo        = var.image_repo
-        tag         = var.image_tag
-        pullPolicy  = var.image_pull_policy
-        pullSecrets = var.image_pull_secrets
-      }
-      env = local.env_vars
-      tls = {
-        secretNames = [var.ssl_cert_config.name]
-      }
-      podAnnotations = {
-        "prometheus.io/scrape" = "true"
-        "prometheus.io/port"   = "2112"
-      }
-      service = {
-        enable                = true
-        type                  = "LoadBalancer"
-        sessionAffinity       = "None"
-        externalTrafficPolicy = "Cluster"
-        loadBalancerClass     = var.load_balancer_class
-        annotations           = var.service_annotations
-      }
-      replicaCount = var.replica_count
-      resources = {
-        requests = var.resource_request
-        limits   = var.resource_limit
-      }
-      serviceAccount = {
-        annotations = var.coder_builtin_provisioner_count == 0 ? var.service_account_annotations : merge({
-          "eks.amazonaws.com/role-arn" : module.provisioner-oidc-role[0].role_arn
-        }, var.service_account_annotations)
-      }
-      nodeSelector              = var.node_selector
-      tolerations               = var.tolerations
-      topologySpreadConstraints = local.topology_spread_constraints
-      affinity = {
-        podAntiAffinity = {
-          preferredDuringSchedulingIgnoredDuringExecution = local.pod_anti_affinity_preferred_during_scheduling_ignored_during_execution
-        }
-      }
-      terminationGracePeriodSeconds = var.termination_grace_period_seconds
-    }
-  })]
+locals {
+  ssl_vol_friendly_name = replace(var.ssl_cert_config.name, ".", "-")
 }
 
 resource "kubernetes_secret" "pg-connection" {
@@ -751,20 +728,204 @@ resource "kubernetes_secret" "anthropic-llm-secret" {
 locals {
   common_name   = trimprefix(trimprefix(var.primary_access_url, "https://"), "http://")
   wildcard_name = trimprefix(trimprefix(var.wildcard_access_url, "https://"), "http://")
+  cert_refresh_interval = "2160h" # 90 days
+  cert_renew_before = "360h" # 15 days
+  secret_refresh_interval = "1812h0m0s" # 75.5 days
+  tls_secret_key = "tls.key"
+  tls_secret_crt = "tls.crt"
+  tls_remote_key = "tls5.key"
+  tls_remote_crt = "tls5.crt"
 }
 
-module "acme-cloudflare-ssl" {
-  source = "../acme-cloudflare-ssl"
-  count  = var.ssl_cert_config.create_secret ? 1 : 0
+resource "kubernetes_manifest" "pull" {
 
-  dns_names               = [local.common_name, local.wildcard_name]
-  common_name             = local.common_name
-  kubernetes_secret_name  = var.ssl_cert_config.name
-  kubernetes_namespace    = kubernetes_namespace.this.metadata[0].name
-  acme_registration_email = var.acme_registration_email
-  acme_days_until_renewal = var.acme_days_until_renewal
-  acme_revoke_certificate = var.acme_revoke_certificate
-  cloudflare_api_token    = var.cloudflare_api_token
+  field_manager {
+    force_conflicts = true
+  }
+
+  wait {
+    fields = {
+      "status.conditions[0].type" = "Ready"
+    }
+  }
+  
+  timeouts {
+    create = "1m"
+    update = "1m"
+    delete = "30s"
+  }
+
+  manifest = {
+    apiVersion = "external-secrets.io/v1"
+    kind = "ExternalSecret"
+    metadata = {
+      name = var.ssl_cert_config.name 
+      namespace = kubernetes_namespace.this.metadata[0].name
+    }
+    spec = {
+      secretStoreRef = {
+        kind = "ClusterSecretStore"
+        name = var.ssl_cert_config.secretissuer
+      }
+      refreshPolicy = "Periodic"
+      refreshInterval = local.secret_refresh_interval
+      target = {
+        name = local.ssl_vol_friendly_name
+        creationPolicy = "Orphan"
+        deletionPolicy = "Retain"
+        template = {
+          type = "kubernetes.io/tls"
+          metadata = {
+            labels = {
+              "controller.cert-manager.io/fao" = "true"
+            }
+            annotations = {
+              "cert-manager.io/alt-names" = "${local.wildcard_name},${local.common_name}"                                                                                                                                
+              "cert-manager.io/certificate-name" = var.ssl_cert_config.name                                                                                     
+              "cert-manager.io/common-name" = local.common_name 
+              "cert-manager.io/ip-sans" = ""
+              "cert-manager.io/issuer-group" = ""                                                                                                                   
+              "cert-manager.io/issuer-kind" = "ClusterIssuer"                                                                                               
+              "cert-manager.io/issuer-name" = var.ssl_cert_config.caissuer
+              "cert-manager.io/uri-sans" = ""
+            }
+          }
+        }
+      }
+      data = [{
+        secretKey = local.tls_secret_crt
+        remoteRef = {
+          key = local.tls_remote_crt
+        }
+      },{
+        secretKey = local.tls_secret_key
+        remoteRef = {
+          key = local.tls_remote_key
+        }
+      }]
+    }
+  }
+}
+
+resource "time_sleep" "wait" {
+  # Let the secret create first if it exists in AWS Secrets Manager.
+  depends_on = [ kubernetes_manifest.pull ]
+  create_duration = "30s"
+}
+
+## 
+# Requires the cert-manager
+## 
+
+resource "kubernetes_manifest" "certificate" {
+
+  depends_on = [ time_sleep.wait ]
+
+  field_manager {
+    force_conflicts = true
+  }
+
+  wait {
+    condition {
+      type   = "Ready"
+      status = "True"
+    }
+  }
+
+  timeouts {
+    create = "10m"
+    update = "10m"
+    delete = "30s"
+  }
+
+  manifest = {
+    apiVersion = "cert-manager.io/v1"
+    kind = "Certificate"
+    metadata = {
+      name = var.ssl_cert_config.name
+      namespace = kubernetes_namespace.this.metadata[0].name
+    }
+    spec = {
+      commonName = local.common_name
+      dnsNames = [
+        local.common_name,
+        local.wildcard_name
+      ]
+      duration = local.cert_refresh_interval
+      renewBefore = local.cert_renew_before
+      issuerRef = {
+        kind = "ClusterIssuer"
+        name = var.ssl_cert_config.caissuer
+      }
+      secretName = local.ssl_vol_friendly_name
+      privateKey = {
+        rotationPolicy = "Never"
+        algorithm = "RSA"
+        encoding = "PKCS1"
+        size = "2048"
+      }
+    }
+  }
+}
+
+resource "kubernetes_manifest" "push" {
+
+  depends_on = [ kubernetes_manifest.certificate ]
+
+  field_manager {
+    force_conflicts = true
+  }
+
+  wait {
+    condition {
+      type   = "Ready"
+      status = "True"
+    }
+  }
+
+  timeouts {
+    create = "10m"
+    update = "10m"
+    delete = "30s"
+  }
+
+  manifest = {
+    apiVersion = "external-secrets.io/v1alpha1"
+    kind = "PushSecret"
+    metadata = {
+      name = var.ssl_cert_config.name 
+      namespace = kubernetes_namespace.this.metadata[0].name
+    }
+    spec = {
+      updatePolicy = "Replace"
+      deletionPolicy = "None"
+      refreshInterval = local.secret_refresh_interval
+      secretStoreRefs = [{
+        kind = "ClusterSecretStore"
+        name = var.ssl_cert_config.secretissuer
+      }]
+      selector = {
+        secret = {
+          name = kubernetes_manifest.certificate.manifest.spec.secretName
+        } 
+      }
+      data = [{
+        match = {
+          secretKey = local.tls_secret_crt
+          remoteRef = {
+            remoteKey = local.tls_remote_crt
+          }
+        }
+      },{
+        match = {
+          secretKey = local.tls_secret_key
+          remoteRef = {
+            remoteKey = local.tls_remote_key
+          }
+        }
+      }]
+    }
+  }
 }
 
 resource "kubernetes_service" "prometheus" {
@@ -787,4 +948,67 @@ resource "kubernetes_service" "prometheus" {
       "app.kubernetes.io/name"     = "coder"
     }
   }
+}
+
+resource "helm_release" "coder-server" {
+
+  depends_on = [ kubernetes_manifest.push ]
+
+  name             = "coder"
+  namespace        = kubernetes_namespace.this.metadata[0].name
+  chart            = "coder"
+  repository       = "https://helm.coder.com/v2"
+  create_namespace = false
+  upgrade_install  = true
+  skip_crds        = false
+  wait             = true
+  wait_for_jobs    = true
+  version          = var.helm_version
+  timeout          = var.helm_timeout
+
+  values = [yamlencode({
+    coder = {
+      image = {
+        repo        = var.image_repo
+        tag         = var.image_tag
+        pullPolicy  = var.image_pull_policy
+        pullSecrets = var.image_pull_secrets
+      }
+      env = local.env_vars
+      tls = {
+        secretNames = [ local.ssl_vol_friendly_name ]
+      }
+      podAnnotations = {
+        "prometheus.io/scrape" = "true"
+        "prometheus.io/port"   = "2112"
+      }
+      service = {
+        enable                = true
+        type                  = "LoadBalancer"
+        sessionAffinity       = "None"
+        externalTrafficPolicy = "Cluster"
+        loadBalancerClass     = var.load_balancer_class
+        annotations           = var.service_annotations
+      }
+      replicaCount = var.replica_count
+      resources = {
+        requests = var.resource_request
+        limits   = var.resource_limit
+      }
+      serviceAccount = {
+        annotations = var.coder_builtin_provisioner_count == 0 ? var.service_account_annotations : merge({
+          "eks.amazonaws.com/role-arn" : module.provisioner-oidc-role[0].role_arn
+        }, var.service_account_annotations)
+      }
+      nodeSelector              = var.node_selector
+      tolerations               = var.tolerations
+      topologySpreadConstraints = local.topology_spread_constraints
+      affinity = {
+        podAntiAffinity = {
+          preferredDuringSchedulingIgnoredDuringExecution = local.pod_anti_affinity_preferred_during_scheduling_ignored_during_execution
+        }
+      }
+      terminationGracePeriodSeconds = var.termination_grace_period_seconds
+    }
+  })]
 }

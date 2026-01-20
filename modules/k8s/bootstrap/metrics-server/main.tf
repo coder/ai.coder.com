@@ -2,7 +2,7 @@ terraform {
   required_providers {
     helm = {
       source  = "hashicorp/helm"
-      version = "2.17.0"
+      version = ">= 2.17.0"
     }
   }
 }
@@ -40,8 +40,6 @@ resource "helm_release" "metrics-server" {
   timeout          = 120 # in seconds
 
   values = [yamlencode({
-    nodeSelector = {
-      "node.amazonaws.io/managed-by" : "asg"
-    }
+    nodeSelector = var.node_selector
   })]
 }
