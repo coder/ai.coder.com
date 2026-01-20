@@ -13,17 +13,19 @@ CODER_DOMAIN_NAME=<Route53 Domain Name>
 CODER_LICENSE=<Coder License Key> (Optional)
 ```
 
-4. Run "./0-initialize.sh"
-5. Run "set -a && source coder.env && set +a && ./1-plan-n-deploy.sh"
-6. Run "set -a && source coder.env && set +a && ./2-clean.sh"
+4. Run `./0-initialize.sh`
+5. Run `set -a && source coder.env && set +a && ./1-plan-n-deploy.sh`
+6. Run `set -a && source coder.env && set +a && ./2-clean.sh`
 
 # Logging In
 
 1. On your browser, go to "https://<Your Domain>"
 2. Enter the following login details (if you didn't override it):
 
-- Email: admin@coder.com
-- Password: Th1s1sN0TS3CuR3!!
+```
+Email: admin@coder.com
+Password: Th1s1sN0TS3CuR3!!
+```
 
 3. You're done!
 
