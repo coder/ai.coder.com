@@ -13,8 +13,7 @@
 4. [Purchase/Register](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/domain-register.html#domain-register-procedure-section) a domain in Route53 and tie it to a public hosted zone.
 
 > [!IMPORTANT] 
-> When purchasing, it will create an associated hosted zone in a few minutes. Make sure to wait until this is available. 
-> If using an existing domain + hosted zone, cleanup any A/AAAA/CNAME/TXT records.
+> When purchasing, it creates a hosted zone in a few minutes, wait for this. AND, if using an existing domain/zone, cleanup any A/AAAA/CNAME/TXT records.
 
 5. Fill the `coder.env` file with the following environment variables:
 
