@@ -1,9 +1,15 @@
+# Requirements
+
+- Terraform
+- AWS Account
+- Domain in Route53
+
 > [!IMPORTANT] 
 > This deployment will take around 30min ~ 1hr to setup everything (AWS resources, K8s Addons, and Coder)
 
 # Getting Started
 
-1. Create a new AWS account
+1. Create a new AWS account or access an existing one
 2. Login as a user with AdministratorAccess
 3. Setup your local machine to have an [AWS profile](https://docs.aws.amazon.com/cli/v1/userguide/cli-configure-files.html)
 
@@ -29,7 +35,7 @@ CODER_LICENSE=<Coder License Key> (Optional)
 
 # Logging In
 
-1. On your browser, go to "https://<Your Domain>"
+1. On your browser, go to "https://put.your.domain.here.com"
 2. Enter the following login details (if you didn't override it):
 
 ```
@@ -44,14 +50,16 @@ Password: Th1s1sN0TS3CuR3!!
 - To verify the state of the infrastructure, visit the AWS Console and look at the pages of following AWS services that this solution deploys/manages:
     - EC2
     - VPC
-    - RDS
+    - RDS (Database, Snapshots, and SubnetGroups)
     - EKS
     - Secrets Manager
     - Route53
+    - SSM Parameters
+    - CloudWatch Logs
 
-- To verify the state of the Cluster, you can run `aws eks update-kubeconfig --name <ClusterName> --region <YourRegion> --profile <YourProfile>` and execute kubectl commands.
+- To verify the cluster state, run `aws eks update-kubeconfig --name <ClusterName> --region <YourRegion> --profile <YourProfile>` and execute kubectl commands.
 
-- To verify the state of Cluster addons, you can inspect the following and review their status/logs within the cluster:
+- To verify the cluster addons, inspect the status/logs of the following cluster addons:
     - vpc-cni
     - coredns
     - metrics-server

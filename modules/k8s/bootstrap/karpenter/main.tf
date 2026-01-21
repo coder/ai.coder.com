@@ -171,7 +171,7 @@ data "aws_iam_policy_document" "sts" {
 }
 
 resource "aws_iam_policy" "sts" {
-  name_prefix = "sts"
+  name_prefix = "${var.cluster_name}-sts-"
   path        = "/"
   description = "Assume Role Policy"
   policy      = data.aws_iam_policy_document.sts.json
@@ -205,7 +205,6 @@ data "aws_iam_policy_document" "kptr_ctrl_assume_role_policy" {
 
 module "karpenter" {
   source  = "terraform-aws-modules/eks/aws//modules/karpenter"
-  # version = "20.34.0" # "21.3.1"
   version = "21.14.0"
 
   cluster_name     = var.cluster_name
@@ -316,16 +315,28 @@ resource "kubernetes_manifest" "ec2nodeclass" {
   manifest   = yamldecode(module.ec2nodeclass[count.index].manifest)
 }
 
-# module "nodepool" {
-#     count = length(local.nodepool_configs)
-#     source = "../objects/nodepool"
-#     name = local.nodepool_configs[count.index].name
-#     node_labels = local.nodepool_configs[count.index].node_labels
-#     node_taints = local.nodepool_configs[count.index].node_taints
-#     node_requirements = local.nodepool_configs[count.index].node_requirements
-#     node_class_ref_name = local.nodepool_configs[count.index].node_class_ref_name
-#     node_expires_after = local.nodepool_configs[count.index].node_expires_after
-#     disruption_consolidation_policy = local.nodepool_configs[count.index].disruption_consolidation_policy
-#     disruption_consolidate_after = local.nodepool_configs[count.index].disruption_consolidate_after
-# }
+resource "kubernetes_service_account_v1" "ctrl-role" {
 
+  depends_on = [helm_release.karpenter]
+
+  metadata {
+    name = "ctrl-role"
+    namespace = var.namespace
+    annotations = {
+      "eks.amazonaws.com/role-arn" = module.karpenter.iam_role_arn
+    }
+  }
+}
+
+resource "kubernetes_service_account_v1" "node-role" {
+
+  depends_on = [helm_release.karpenter]
+
+  metadata {
+    name = "node-role"
+    namespace = var.namespace
+    annotations = {
+      "eks.amazonaws.com/role-arn" = module.karpenter.node_iam_role_arn
+    }
+  }
+}

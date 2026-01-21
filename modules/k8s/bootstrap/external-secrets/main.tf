@@ -72,8 +72,8 @@ data "aws_caller_identity" "this" {}
 locals {
   region      = var.policy_resource_region == "" ? data.aws_region.this.region : var.policy_resource_region
   account_id  = var.policy_resource_account == "" ? data.aws_caller_identity.this.account_id : var.policy_resource_account
-  policy_name = var.policy_name == "" ? "ExternalSec-${data.aws_region.this.region}" : var.policy_name
-  role_name   = var.role_name == "" ? "externalsec-${data.aws_region.this.region}" : var.role_name
+  policy_name = var.policy_name == "" ? "${var.cluster_name}-ext-sec-${data.aws_region.this.region}" : var.policy_name
+  role_name   = var.role_name == "" ? "${var.cluster_name}-ext-sec-${data.aws_region.this.region}" : var.role_name
 }
 
 module "policy" {
@@ -114,6 +114,7 @@ resource "helm_release" "chart" {
   timeout          = 120 # in seconds
 
   values = [yamlencode({
+    nodeSelector = var.node_selector
     serviceAccount = {
       annotations = {
         "eks.amazonaws.com/role-arn" = module.oidc-role.role_arn

@@ -11,7 +11,7 @@ data "aws_iam_policy_document" "sts" {
 }
 
 resource "aws_iam_policy" "sts" {
-  name_prefix = "sts"
+  name_prefix = "${var.name}-sts-"
   path        = "/"
   description = "Assume Role Policy"
   policy      = data.aws_iam_policy_document.sts.json

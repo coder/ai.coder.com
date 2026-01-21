@@ -612,8 +612,8 @@ locals {
 locals {
   region      = var.policy_resource_region == "" ? data.aws_region.this.region : var.policy_resource_region
   account_id  = var.policy_resource_account == "" ? data.aws_caller_identity.this.account_id : var.policy_resource_account
-  policy_name = var.policy_name == "" ? "Server-${data.aws_region.this.region}" : var.policy_name
-  role_name   = var.role_name == "" ? "server-${data.aws_region.this.region}" : var.role_name
+  policy_name = var.policy_name == "" ? "${var.cluster_name}-coder-srv-${data.aws_region.this.region}" : var.policy_name
+  role_name   = var.role_name == "" ? "${var.cluster_name}-coder-srv-${data.aws_region.this.region}" : var.role_name
 }
 
 module "provisioner-policy" {

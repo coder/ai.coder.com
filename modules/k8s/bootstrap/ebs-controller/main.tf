@@ -61,7 +61,7 @@ variable "replace" {
 data "aws_region" "this" {}
 
 locals {
-  role_name = var.role_name == "" ? "ebs-controller-${data.aws_region.this.region}" : var.role_name
+  role_name = var.role_name == "" ? "${var.cluster_name}-ebs-ctrl-${data.aws_region.this.region}" : var.role_name
 }
 
 module "oidc-role" {

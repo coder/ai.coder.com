@@ -7,34 +7,14 @@
 # NodeClass + NodePool for Coder Server, Provisioner, & Workspaces
 ##
 
-locals {
-  global_node_labels = {
-    "node.coder.io/instance"   = "coder-v2"
-    "node.coder.io/managed-by" = "karpenter"
-  }
-  global_node_reqs = [{
-    key      = "kubernetes.io/arch"
-    operator = "In"
-    values   = ["amd64"]
-    }, {
-    key      = "kubernetes.io/os"
-    operator = "In"
-    values   = ["linux"]
-    }, {
-    key      = "kubernetes.sh/capacity-type"
-    operator = "In"
-    values   = ["spot", "on-demand"]
-  }]
-  sg_tags = {
-    "karpenter.sh/discovery" = var.name
-  }
-  subnet_tags = {
-    "karpenter.sh/discovery" = var.name
+data "kubernetes_service_account_v1" "kptr" {
+  metadata {
+    name = "node-role"
+    namespace = "karpenter"
   }
 }
 
 locals {
-    node_role_name = data.aws_iam_role.kptr-node-role.name
     nodeclass_configs = {
         "coder-server" = {
             user_data = ""
@@ -77,15 +57,19 @@ resource "kubernetes_manifest" "nodeclass" {
             name = each.key
         }
         spec = {
-        role = local.node_role_name
+        role = data.kubernetes_service_account_v1.kptr.metadata[0].annotations["eks.amazonaws.com/role-arn"]
         amiSelectorTerms = [{
             alias = "al2023@latest"
         }]
         subnetSelectorTerms = [{
-            tags = local.subnet_tags
+            tags = {
+              "karpenter.sh/discovery" = var.name
+            }
         }]
         securityGroupSelectorTerms = [{
-            tags = local.sg_tags
+            tags = {
+              "karpenter.sh/discovery" = var.name
+            }
         }]
         blockDeviceMappings = each.value.block_device_mappings
         userData =  each.value.user_data
@@ -145,11 +129,13 @@ resource "kubernetes_manifest" "nodepool" {
         spec = {
             template = {
                 metadata = {
-                    labels = merge(local.global_node_labels, {
-                        "node.coder.io/name"     = "coder"
-                        "node.coder.io/part-of"  = "coder"
-                        "node.coder.io/used-for" = each.key
-                    })
+                    labels = {
+                      "node.coder.io/instance"   = "coder-v2"
+                      "node.coder.io/managed-by" = "karpenter"
+                      "node.coder.io/name"     = "coder"
+                      "node.coder.io/part-of"  = "coder"
+                      "node.coder.io/used-for" = each.key
+                    }
                 }
                 spec = {
                     taints = [{
@@ -157,11 +143,23 @@ resource "kubernetes_manifest" "nodepool" {
                         value  = each.key
                         effect = "NoSchedule"
                     }]
-                    requirements =concat(local.global_node_reqs, [{
+                    requirements = [{
+                        key      = "kubernetes.io/arch"
+                        operator = "In"
+                        values   = ["amd64"]
+                        }, {
+                        key      = "kubernetes.io/os"
+                        operator = "In"
+                        values   = ["linux"]
+                        }, {
+                        key      = "kubernetes.sh/capacity-type"
+                        operator = "In"
+                        values   = ["spot", "on-demand"]
+                        },{
                         key      = "node.kubernetes.io/instance-type"
                         operator = "In"
                         values   = ["t3a.xlarge"]
-                    }])
+                    }]
                     nodeClassRef = {
                         group = "karpenter.k8s.aws"
                         kind = "EC2NodeClass"

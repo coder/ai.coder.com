@@ -59,10 +59,6 @@ data "aws_iam_openid_connect_provider" "coder" {
   url = data.aws_eks_cluster.coder.identity[0].oidc[0].issuer
 }
 
-data "aws_iam_role" "kptr-node-role" {
-  name = "${var.name}-kptr-${var.region}-node"
-}
-
 ##
 # Global Inputs + Providers
 ##

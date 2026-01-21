@@ -17,8 +17,8 @@ module "karpenter" {
   chart_version = "1.8.4"
   node_selector = local.labels_system_node
 
-  iam_role_use_name_prefix = false
-  node_iam_role_use_name_prefix = false
+  iam_role_use_name_prefix = true
+  node_iam_role_use_name_prefix = true
   karpenter_controller_role_policies = {
     "AmazonEFSCSIDriverPolicy" = "arn:aws:iam::aws:policy/service-role/AmazonEFSCSIDriverPolicy"
   }
@@ -58,7 +58,7 @@ module "lb-controller" {
   cluster_name              = module.eks.cluster_name
   cluster_oidc_provider_arn = module.eks.oidc_provider_arn
 
-  namespace           = "lb-crtl"
+  namespace           = "lb-ctrl"
   chart_version       = "1.13.2"
   enable_cert_manager = true
   vpc_id = module.vpc.vpc_id
@@ -77,7 +77,7 @@ module "ebs-controller" {
   cluster_name              = module.eks.cluster_name
   cluster_oidc_provider_arn = module.eks.oidc_provider_arn
 
-  namespace     = "ebs-crtl"
+  namespace     = "ebs-ctrl"
   chart_version = "2.22.1"
   node_selector = local.labels_system_node
   replace       = true
