@@ -6,10 +6,6 @@
 # - external-secrets
 ##
 
-variable "domain_name" {
-  type = string
-}
-
 variable "coder_username" {
   description = "Coder DB's username."
   type        = string
@@ -51,7 +47,7 @@ module "coder-server" {
 
   source = "../../../modules/k8s/bootstrap/coder-server"
 
-  cluster_name              = var.name
+  cluster_name              = "${var.name}-${local.normalized_domain_name}"
   cluster_oidc_provider_arn = data.aws_iam_openid_connect_provider.coder.arn
 
   namespace                       = "coder"
@@ -127,7 +123,7 @@ module "coder-server" {
 
 # Wait for DNS propagation. May require multiple redeploys
 resource "time_sleep" "wait_for_dns" {
-  create_duration = "300s"
+  create_duration = "120s"
   depends_on = [ module.coder-server ]
 }
 
@@ -138,7 +134,7 @@ data "external" "first-user" {
   program = ["bash", "${path.module}/scripts/first-user.sh"]
 
   query = {
-    access_url = "https://${var.domain_name}"
+    domain = var.domain_name
     admin_email = var.coder_admin_email
     admin_username = var.coder_admin_username
     admin_password = var.coder_admin_password
@@ -159,7 +155,7 @@ data "external" "add-license" {
   program = ["bash", "${path.module}/scripts/add-license.sh"]
 
   query = {
-    access_url = "https://${var.domain_name}"
+    domain = var.domain_name
     license_key = var.coder_license
     session_token = data.external.first-user.result.session_token
   }

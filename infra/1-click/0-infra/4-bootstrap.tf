@@ -1,7 +1,3 @@
-variable "domain_name" {
-  type = string
-}
-
 ##
 # System-Level Addons
 ##

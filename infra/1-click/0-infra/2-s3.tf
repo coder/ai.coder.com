@@ -16,18 +16,8 @@ variable "loki_s3_bucket_tags" {
   default = {}
 }
 
-resource "random_string" "bucket" {
-  keepers = {
-    static = "true"
-  }
-  length           = 16
-  special          = false
-  upper = false
-  lower = true
-}
-
 resource "aws_s3_bucket" "loki" {
-  bucket = var.loki_s3_bucket_name == "" ? "granafa-logs-${random_string.bucket.result}" : var.loki_s3_bucket_name
+  bucket = var.loki_s3_bucket_name == "" ? "${var.name}-${local.normalized_domain_name}-granafa-logs" : var.loki_s3_bucket_name
   tags   = var.loki_s3_bucket_tags
 }
 

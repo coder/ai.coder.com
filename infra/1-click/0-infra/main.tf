@@ -37,6 +37,11 @@ variable "profile" {
   default = "default"
 }
 
+variable "domain_name" {
+  description = "Your Coder domain name (i.e. coder-example.com)"
+  type = string
+}
+
 data "aws_eks_cluster_auth" "coder" {
   name = module.eks.cluster_name
 }
@@ -61,5 +66,6 @@ provider "kubernetes" {
 }
 
 locals {
+  normalized_domain_name = split(".", var.domain_name)[0]
   tags_global = {}
 }

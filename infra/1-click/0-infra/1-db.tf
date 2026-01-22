@@ -43,7 +43,7 @@ variable "grafana_password" {
 
 resource "aws_security_group" "postgres" {
   vpc_id      = module.vpc.vpc_id
-  name        = "postgres"
+  name        = "${var.name}-${local.normalized_domain_name}-pgsql"
   description = "security group for postgres all egress traffic"
   tags = {
     Name = "PostgreSQL"
@@ -65,16 +65,16 @@ resource "aws_vpc_security_group_egress_rule" "postgres" {
 }
 
 resource "aws_db_subnet_group" "coder" {
-  name       = "coder"
+  name       = "${var.name}-${local.normalized_domain_name}-coder"
   subnet_ids = local.private_subnet_ids
 
   tags = {
-    Name = "coder"
+    Name = "${var.name}-${local.normalized_domain_name}-coder"
   }
 }
 
 resource "aws_db_instance" "coder" {
-  identifier        = "coder"
+  identifier        = "${var.name}-${local.normalized_domain_name}-coder"
   instance_class    = "db.t4g.large"
   allocated_storage = 50
   engine            = "postgres"
@@ -100,7 +100,7 @@ resource "aws_db_instance" "coder" {
 }
 
 resource "aws_db_instance" "litellm" {
-  identifier                = "litellm"
+  identifier                = "${var.name}-${local.normalized_domain_name}-litellm"
   instance_class            = "db.t4g.medium"
   allocated_storage         = 50
   engine                    = "postgres"
@@ -125,7 +125,7 @@ resource "aws_db_instance" "litellm" {
 }
 
 resource "aws_db_instance" "grafana" {
-  identifier                = "grafana"
+  identifier                = "${var.name}-${local.normalized_domain_name}-grafana"
   instance_class            = "db.t4g.large"
   allocated_storage         = 50
   engine                    = "postgres"

@@ -11,7 +11,7 @@ data "aws_iam_policy_document" "sts" {
 }
 
 resource "aws_iam_policy" "sts" {
-  name_prefix = "${var.name}-sts-"
+  name_prefix = "${var.name}-${local.normalized_domain_name}-sts-"
   path        = "/"
   description = "Assume Role Policy"
   policy      = data.aws_iam_policy_document.sts.json
@@ -21,7 +21,7 @@ resource "aws_iam_policy" "sts" {
 locals {
   # Karpenter Security Group Discovery - https://karpenter.sh/v1.0/concepts/nodeclasses/#specsecuritygroupselectorterms
   tags_kptr_sg_discovery = {
-    "karpenter.sh/discovery" = var.name
+    "karpenter.sh/discovery" = "${var.name}-${local.normalized_domain_name}"
   }
   labels_system_node = {
     "scheduling.coder.com/pool" = "system"
@@ -41,7 +41,7 @@ module "eks" {
     local.private_subnet_ids
   ))
 
-  name                    = var.name
+  name                    = "${var.name}-${local.normalized_domain_name}"
 
   kubernetes_version      = "1.34"
   endpoint_public_access  = true

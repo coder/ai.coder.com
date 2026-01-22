@@ -63,12 +63,12 @@ resource "kubernetes_manifest" "nodeclass" {
         }]
         subnetSelectorTerms = [{
             tags = {
-              "karpenter.sh/discovery" = var.name
+              "karpenter.sh/discovery" = "${var.name}-${local.normalized_domain_name}"
             }
         }]
         securityGroupSelectorTerms = [{
             tags = {
-              "karpenter.sh/discovery" = var.name
+              "karpenter.sh/discovery" = "${var.name}-${local.normalized_domain_name}"
             }
         }]
         blockDeviceMappings = each.value.block_device_mappings
@@ -282,7 +282,7 @@ resource "kubernetes_manifest" "secret-store" {
       provider = {
         aws = {
           service = "SecretsManager"
-          region = "us-east-2"
+          region = var.region
           auth = {
             jwt = {
               serviceAccountRef = {
