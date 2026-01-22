@@ -95,14 +95,14 @@ data "aws_caller_identity" "this" {}
 locals {
   region      = var.policy_resource_region == "" ? data.aws_region.this.region : var.policy_resource_region
   account_id  = var.policy_resource_account == "" ? data.aws_caller_identity.this.account_id : var.policy_resource_account
-  policy_name = var.policy_name == "" ? "${var.cluster_name}-crt-mgr-${data.aws_region.this.region}" : var.policy_name
-  role_name   = var.role_name == "" ? "${var.cluster_name}-crt-mgr-${data.aws_region.this.region}" : var.role_name
+  policy_name = var.policy_name == "" ? "crt-mgr" : var.policy_name
+  role_name   = var.role_name == "" ? "crt-mgr" : var.role_name
 }
 
 module "policy" {
   source      = "../../../security/policy"
   name        = local.policy_name
-  path        = "/"
+  path         = "/${var.cluster_name}/${data.aws_region.this.region}/"
   description = "CertManager for Route53 Policy"
   policy_json = data.aws_iam_policy_document.route53.json
 }
@@ -110,6 +110,7 @@ module "policy" {
 module "oidc-role" {
   source       = "../../../security/role/access-entry"
   name         = local.role_name
+  path         = "/${var.cluster_name}/${data.aws_region.this.region}/"
   cluster_name = var.cluster_name
   policy_arns = {
     "CertManagerRoute53" = module.policy.policy_arn

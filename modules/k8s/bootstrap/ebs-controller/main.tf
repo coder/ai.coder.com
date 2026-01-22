@@ -61,13 +61,14 @@ variable "replace" {
 data "aws_region" "this" {}
 
 locals {
-  role_name = var.role_name == "" ? "${var.cluster_name}-ebs-ctrl-${data.aws_region.this.region}" : var.role_name
+  role_name = var.role_name == "" ? "ebs-ctrl" : var.role_name
 }
 
 module "oidc-role" {
   source       = "../../../security/role/access-entry"
   name         = local.role_name
   cluster_name = var.cluster_name
+  path         = "/${var.cluster_name}/${data.aws_region.this.region}/"
   policy_arns = {
     "AmazonEBSCSIDriverPolicy" = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
   }

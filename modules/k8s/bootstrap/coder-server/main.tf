@@ -10,9 +10,6 @@ terraform {
     kubernetes = {
       source = "hashicorp/kubernetes"
     }
-    acme = {
-      source = "vancluever/acme"
-    }
     tls = {
       source = "hashicorp/tls"
     }
@@ -612,15 +609,15 @@ locals {
 locals {
   region      = var.policy_resource_region == "" ? data.aws_region.this.region : var.policy_resource_region
   account_id  = var.policy_resource_account == "" ? data.aws_caller_identity.this.account_id : var.policy_resource_account
-  policy_name = var.policy_name == "" ? "${var.cluster_name}-coder-srv-${data.aws_region.this.region}" : var.policy_name
-  role_name   = var.role_name == "" ? "${var.cluster_name}-coder-srv-${data.aws_region.this.region}" : var.role_name
+  policy_name = var.policy_name == "" ? "coder-srv" : var.policy_name
+  role_name   = var.role_name == "" ? "coder-srv" : var.role_name
 }
 
 module "provisioner-policy" {
   count       = var.coder_builtin_provisioner_count == 0 ? 0 : 1
   source      = "../../../security/policy"
   name        = local.policy_name
-  path        = "/"
+  path         = "/${var.cluster_name}/${data.aws_region.this.region}/"
   description = "Coder Terraform External Provisioner Policy"
   policy_json = data.aws_iam_policy_document.provisioner-policy.json
 }
@@ -629,6 +626,7 @@ module "provisioner-oidc-role" {
   count        = var.coder_builtin_provisioner_count == 0 ? 0 : 1
   source       = "../../../security/role/access-entry"
   name         = local.role_name
+  path         = "/${var.cluster_name}/${data.aws_region.this.region}/"
   cluster_name = var.cluster_name
   policy_arns = {
     "AmazonEC2ReadOnlyAccess" = "arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess"
@@ -733,8 +731,8 @@ locals {
   secret_refresh_interval = "1812h0m0s" # 75.5 days
   tls_secret_key = "tls.key"
   tls_secret_crt = "tls.crt"
-  tls_remote_key = "tls5.key"
-  tls_remote_crt = "tls5.crt"
+  tls_remote_key = "tls-${local.common_name}.key"
+  tls_remote_crt = "tls-${local.common_name}.crt"
 }
 
 resource "kubernetes_manifest" "pull" {

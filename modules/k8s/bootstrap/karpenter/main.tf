@@ -154,9 +154,9 @@ variable "node_selector" {
 data "aws_region" "this" {}
 
 locals {
-  std_karpenter_format             = "${var.cluster_name}-kptr-${data.aws_region.this.region}"
+  std_karpenter_format             = "kptr"
   karpenter_queue_name             = var.karpenter_queue_name == "" ? "${var.cluster_name}-kptr" : var.karpenter_queue_name
-  karpenter_queue_rule_name        = var.karpenter_queue_rule_name == "" ? "${var.cluster_name}-kptr" : var.karpenter_queue_rule_name
+  # karpenter_queue_rule_name        = var.karpenter_queue_rule_name == "" ? "${var.cluster_name}-kptr" : var.karpenter_queue_rule_name
   karpenter_controller_role_name   = var.karpenter_controller_role_name == "" ? "${local.std_karpenter_format}-ctrl" : var.karpenter_controller_role_name
   karpenter_controller_policy_name = var.karpenter_controller_policy_name == "" ? local.std_karpenter_format : var.karpenter_controller_policy_name
   karpenter_node_role_name         = var.karpenter_node_role_name == "" ? "${local.std_karpenter_format}-node" : var.karpenter_node_role_name
@@ -172,7 +172,7 @@ data "aws_iam_policy_document" "sts" {
 
 resource "aws_iam_policy" "sts" {
   name_prefix = "${var.cluster_name}-sts-"
-  path        = "/"
+  path            = "/${var.cluster_name}/${data.aws_region.this.region}/${local.std_karpenter_format}/"
   description = "Assume Role Policy"
   policy      = data.aws_iam_policy_document.sts.json
 }
@@ -209,12 +209,13 @@ module "karpenter" {
 
   cluster_name     = var.cluster_name
   queue_name       = local.karpenter_queue_name
-  rule_name_prefix = "${local.karpenter_queue_rule_name}-"
+  rule_name_prefix = ""
 
   # Karpenter Controller Role
   create_iam_role          = true
   iam_role_name            = local.karpenter_controller_role_name
   iam_role_use_name_prefix = var.iam_role_use_name_prefix
+  iam_role_path            = "/${var.cluster_name}/${data.aws_region.this.region}/"
   iam_role_policies        = var.karpenter_controller_role_policies
   iam_role_source_assume_policy_documents = [
     data.aws_iam_policy_document.kptr_ctrl_assume_role_policy.json,
@@ -233,6 +234,7 @@ module "karpenter" {
   create_node_iam_role          = true
   node_iam_role_name            = local.karpenter_node_role_name
   node_iam_role_use_name_prefix = var.node_iam_role_use_name_prefix
+  node_iam_role_path            = "/${var.cluster_name}/${data.aws_region.this.region}/"
   node_iam_role_additional_policies = merge({
     AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
     STSAssumeRole                = aws_iam_policy.sts.arn
