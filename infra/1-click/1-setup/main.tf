@@ -26,33 +26,33 @@ terraform {
 
 data "aws_vpc" "this" {
   tags = {
-    "Name" = var.name
+    "Name" = "${var.name}-${local.normalized_domain_name}"
   }
 }
 
 data "aws_db_instance" "coder" {
-  db_instance_identifier = var.name
+  db_instance_identifier = "${var.name}-${local.normalized_domain_name}-coder"
 }
 
 data "aws_db_instance" "litellm" {
-  db_instance_identifier = "litellm"
+  db_instance_identifier = "${var.name}-${local.normalized_domain_name}-litellm"
 }
 
 data "aws_db_instance" "grafana" {
-  db_instance_identifier = "grafana"
+  db_instance_identifier = "${var.name}-${local.normalized_domain_name}-grafana"
 }
 
 data "aws_security_group" "coder" {
-  name = var.name
+  name = "${var.name}-${local.normalized_domain_name}-pgsql"
   vpc_id = data.aws_vpc.this.id
 }
 
 data "aws_eks_cluster" "coder" {
-  name = var.name
+  name = "${var.name}-${local.normalized_domain_name}"
 }
 
 data "aws_eks_cluster_auth" "coder" {
-  name = var.name
+  name = "${var.name}-${local.normalized_domain_name}"
 }
 
 data "aws_iam_openid_connect_provider" "coder" {
@@ -80,6 +80,10 @@ variable "profile" {
   default = "default"
 }
 
+variable "domain_name" {
+  type = string
+}
+
 provider "aws" {
   region  = var.region
   profile = var.profile
@@ -97,4 +101,8 @@ provider "kubernetes" {
   host                   = data.aws_eks_cluster.coder.endpoint
   cluster_ca_certificate = base64decode(data.aws_eks_cluster.coder.certificate_authority[0].data)
   token                  = data.aws_eks_cluster_auth.coder.token
+}
+
+locals {
+  normalized_domain_name = split(".", var.domain_name)[0]
 }
