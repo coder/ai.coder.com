@@ -106,7 +106,7 @@ variable "node_iam_role_use_name_prefix" {
 variable "topology_spread_constraints" {
   type = list(map(string))
   default = [{
-    maxSkew = 1
+    maxSkew = "1"
     topologyKey = "topology.kubernetes.io/zone"
     whenUnsatisfiable = "DoNotSchedule"
   }]
