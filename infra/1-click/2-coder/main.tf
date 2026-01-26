@@ -20,8 +20,13 @@ terraform {
       source = "coder/coderd"
       version = "0.0.12"
     }
+    null = {
+        source = "hashicorp/null"
+    }
+    time = {
+        source = "hashicorp/time"
+    }
   }
-  # backend "s3" {}
 }
 
 ##
@@ -30,16 +35,16 @@ terraform {
 
 data "aws_vpc" "this" {
   tags = {
-    "Name" = var.name
+    "Name" = "${var.name}-${local.normalized_domain_name}"
   }
 }
 
 data "aws_eks_cluster" "coder" {
-  name = var.name
+  name = "${var.name}-${local.normalized_domain_name}"
 }
 
 data "aws_eks_cluster_auth" "coder" {
-  name = var.name
+  name = "${var.name}-${local.normalized_domain_name}"
 }
 
 data "aws_iam_openid_connect_provider" "coder" {
@@ -84,4 +89,8 @@ provider "kubernetes" {
   host                   = data.aws_eks_cluster.coder.endpoint
   cluster_ca_certificate = base64decode(data.aws_eks_cluster.coder.certificate_authority[0].data)
   token                  = data.aws_eks_cluster_auth.coder.token
+}
+
+locals {
+  normalized_domain_name = split(".", var.domain_name)[0]
 }

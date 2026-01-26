@@ -20,7 +20,7 @@ locals {
             user_data = ""
             block_device_mappings = []
         }
-        "coder-ws" = {
+        "coder-workspace" = {
             user_data            = <<-EOF
                 apiVersion: node.eks.aws/v1alpha1
                     kind: NodeConfig
@@ -83,16 +83,19 @@ locals {
             node_expires_after = "Never"
             disruption_consolidation_policy = "WhenEmpty"
             disruption_consolidate_after = "1m"
+            taints = null
         }
         "coder-provisioner" = {
             node_expires_after = "Never"
             disruption_consolidation_policy = "WhenEmpty"
             disruption_consolidate_after = "1m"
+            taints = null
         }
-        "coder-ws" = {
+        "coder-workspace" = {
             node_expires_after = "Never"
             disruption_consolidation_policy = "WhenEmpty"
             disruption_consolidate_after = "30m"
+            taints = null
         }
     }
 }
@@ -138,11 +141,11 @@ resource "kubernetes_manifest" "nodepool" {
                     }
                 }
                 spec = {
-                    taints = [{
+                    taints = each.value.taints == null ? [{
                         key    = "dedicated"
                         value  = each.key
                         effect = "NoSchedule"
-                    }]
+                    }] : each.value.taints
                     requirements = [{
                         key      = "kubernetes.io/arch"
                         operator = "In"
@@ -174,6 +177,29 @@ resource "kubernetes_manifest" "nodepool" {
             }
         }
     }
+}
+
+##
+# EBS CSI Default StorageClass
+##
+
+resource "kubernetes_manifest" "default-sc" {
+  manifest = {
+    apiVersion = "storage.k8s.io/v1"
+    kind = "StorageClass"
+    metadata = {
+      name = "default"
+      annotations = {
+        "storageclass.kubernetes.io/is-default-class" = "true"
+      }
+    }
+    provisioner = "ebs.csi.eks.amazonaws.com"
+    volumeBindingMode = "WaitForFirstConsumer"
+    parameters = {
+      type = "gp3"
+      encrypted = "true"
+    }
+  }
 }
 
 ##

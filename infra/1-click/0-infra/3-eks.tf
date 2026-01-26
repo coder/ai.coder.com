@@ -68,13 +68,18 @@ module "eks" {
     system = {
       min_size     = 0
       max_size     = 10
-      desired_size = 3 # Ignored after creation. Override from AWS Console as needed.
+      desired_size = 2 # Ignored after creation. Override from AWS Console as needed.
       
       # K8s Labels - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/eks_node_group#labels-1
       labels = local.labels_system_node
+      # taints = {
+      #   "CriticalAddonsOnly"
+      # }
 
-      instance_types = ["t3.xlarge"]
+      instance_types = ["t3.large"]
       capacity_type  = "ON_DEMAND"
+      volume_size = 50
+      
       iam_role_additional_policies = {
         AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
         STSAssumeRole                = aws_iam_policy.sts.arn

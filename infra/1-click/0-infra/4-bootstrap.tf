@@ -15,6 +15,7 @@ module "karpenter" {
 
   iam_role_use_name_prefix = true
   node_iam_role_use_name_prefix = true
+  replicas = 2
   karpenter_controller_role_policies = {
     "AmazonEFSCSIDriverPolicy" = "arn:aws:iam::aws:policy/service-role/AmazonEFSCSIDriverPolicy"
   }
@@ -22,7 +23,7 @@ module "karpenter" {
 
 module "metrics-server" {
 
-  depends_on = [ module.karpenter ]
+  # depends_on = [ module.karpenter ]
 
   source = "../../../modules/k8s/bootstrap/metrics-server"
 
@@ -33,7 +34,7 @@ module "metrics-server" {
 
 module "cert-manager" {
 
-  depends_on = [ module.karpenter ]
+  # depends_on = [ module.karpenter ]
 
   source                    = "../../../modules/k8s/bootstrap/cert-manager"
   cluster_name              = module.eks.cluster_name
@@ -48,7 +49,7 @@ module "cert-manager" {
 
 module "lb-controller" {
 
-  depends_on = [ module.cert-manager, module.karpenter ]
+  depends_on = [ module.cert-manager ]
 
   source                    = "../../../modules/k8s/bootstrap/lb-controller"
   cluster_name              = module.eks.cluster_name
@@ -67,7 +68,7 @@ module "lb-controller" {
 
 module "ebs-controller" {
 
-  depends_on = [ module.cert-manager, module.karpenter ]
+  # depends_on = [ module.cert-manager ]
 
   source                    = "../../../modules/k8s/bootstrap/ebs-controller"
   cluster_name              = module.eks.cluster_name
@@ -81,7 +82,7 @@ module "ebs-controller" {
 
 module "external-dns" {
 
-  depends_on = [ module.cert-manager, module.karpenter ]
+  depends_on = [ module.cert-manager ]
 
   source                    = "../../../modules/k8s/bootstrap/external-dns"
   cluster_name              = module.eks.cluster_name

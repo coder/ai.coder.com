@@ -103,6 +103,8 @@ provider "kubernetes" {
   token                  = data.aws_eks_cluster_auth.coder.token
 }
 
+data "aws_region" "this" {}
+
 locals {
   normalized_domain_name = split(".", var.domain_name)[0]
 }

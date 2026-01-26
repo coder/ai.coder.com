@@ -103,6 +103,15 @@ variable "node_iam_role_use_name_prefix" {
   default = true
 }
 
+variable "topology_spread_constraints" {
+  type = list(map(string))
+  default = [{
+    maxSkew = 1
+    topologyKey = "topology.kubernetes.io/zone"
+    whenUnsatisfiable = "DoNotSchedule"
+  }]
+}
+
 variable "ec2nodeclass_configs" {
   type = list(object({
     name                 = string
@@ -149,6 +158,11 @@ variable "nodepool_configs" {
 variable "node_selector" {
   type    = map(string)
   default = {}
+}
+
+variable "replicas" {
+  type    = number
+  default = 1
 }
 
 data "aws_region" "this" {}
@@ -283,12 +297,13 @@ resource "helm_release" "karpenter" {
     }
     dnsPolicy    = "ClusterFirst"
     nodeSelector = var.node_selector
-    replicas     = 2
+    replicas     = var.replicas
     serviceAccount = {
       annotations = {
         "eks.amazonaws.com/role-arn" = module.karpenter.iam_role_arn
       }
     }
+    topologySpreadConstraints = var.topology_spread_constraints
     settings = {
       clusterName = var.cluster_name
       featureGates = {

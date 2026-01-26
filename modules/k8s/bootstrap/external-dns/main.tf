@@ -110,11 +110,6 @@ variable "is_private_domain" {
     default = false
 }
 
-data "aws_route53_zone" "this" {
-  name         = "${var.domain_name}."
-  private_zone = var.is_private_domain
-}
-
 resource "helm_release" "chart" {
   name             = "external-dns"
   namespace        = var.namespace
@@ -150,8 +145,9 @@ resource "helm_release" "chart" {
         }
     }
     nodeSelector = var.node_selector
-    # extraArgs = [
-    #   "--aws-prefer-cname"
-    # ]
+    extraArgs = [
+      "--aws-zone-match-parent"
+      # "--aws-prefer-cname"
+    ]
   })]
 }

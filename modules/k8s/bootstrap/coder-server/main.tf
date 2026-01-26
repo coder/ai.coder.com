@@ -371,11 +371,6 @@ variable "coder_github_allowed_orgs" {
   default = []
 }
 
-variable "prometheus_port" {
-  type    = number
-  default = 2112
-}
-
 variable "openai_llm_endpoint" {
   type      = string
   sensitive = true
@@ -508,9 +503,10 @@ locals {
     CODER_PROMETHEUS_ENABLE              = true
     CODER_PROMETHEUS_COLLECT_AGENT_STATS = true
     CODER_PROMETHEUS_COLLECT_DB_METRICS  = true
-    CODER_PROMETHEUS_ADDRESS             = "127.0.0.1:${var.prometheus_port}"
+    # CODER_PROMETHEUS_ADDRESS             = "127.0.0.1:${var.prometheus_port}"
 
-    CODER_AIBRIDGE_ENABLED = var.openai_llm_endpoint != "" || var.anthropic_llm_endpoint != ""
+    # CODER_AIBRIDGE_BEDROCK_MODEL = "global.anthropic.claude-sonnet-4-5-20250929-v1:0"
+    # CODER_AIBRIDGE_BEDROCK_SMALL_FAST_MODEL = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
 
     # Experimental Coder Features
     # CODER_EXPERIMENTS = join(",", var.coder_experiments)
@@ -939,7 +935,7 @@ resource "kubernetes_service" "prometheus" {
       name        = "prom-http"
       protocol    = "TCP"
       port        = 2112
-      target_port = var.prometheus_port
+      target_port = 2112
     }
     selector = {
       "app.kubernetes.io/instance" = "coder-v2"

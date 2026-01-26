@@ -7,6 +7,12 @@
 > [!IMPORTANT] 
 > This deployment will take around 30min ~ 1hr to setup everything (AWS resources, K8s Addons, and Coder)
 
+./1-plan-n-deploy.sh  60.39s user 9.01s system 4% cpu 23:20.70 total
+
+> Cleaning up will take ~20 minutes
+
+./2-clean.sh  39.48s user 7.67s system 5% cpu 13:59.86 total
+
 # Getting Started
 
 1. Create a new AWS account or access an existing one

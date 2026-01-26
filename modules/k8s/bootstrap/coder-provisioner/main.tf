@@ -205,6 +205,11 @@ variable "coder_provisioner_key_name" {
   default = ""
 }
 
+variable "coder_provisioner_tags" {
+  type    = map(string)
+  default = null
+}
+
 ##
 # Coder External Provisioner 
 ##
@@ -254,6 +259,9 @@ locals {
   env_vars = [
     for k, v in merge(local.primary_env_vars, var.env_vars) : { name = k, value = v }
   ]
+  provisioner_tags = var.coder_provisioner_tags == null ? {
+    region = data.aws_region.this.region
+  } : var.coder_provisioner_tags
   topology_spread_constraints = [
     for v in var.topology_spread_constraints : {
       maxSkew           = v.max_skew
@@ -277,9 +285,7 @@ locals {
 module "coder-provisioner-key" {
   source          = "../../../coder/provisioner"
   organization_id = data.coderd_organization.this.id
-  provisioner_tags = {
-    region = data.aws_region.this.region
-  }
+  provisioner_tags = local.provisioner_tags
 }
 
 resource "kubernetes_namespace" "this" {
@@ -434,4 +440,25 @@ resource "kubernetes_service_account" "ws" {
 
 output "oidc_role_arn" {
   value = module.provisioner-oidc-role.role_arn
+}
+
+output "coderd_organization_id" {
+
+  depends_on = [ helm_release.coder-provisioner ]
+  
+  value = data.coderd_organization.this.id
+}
+
+output "k8s_namespace" {
+
+  depends_on = [ helm_release.coder-provisioner ]
+  
+  value = kubernetes_namespace.this.metadata[0].name
+}
+
+output "k8s_ws_service_account_name" {
+
+  depends_on = [ helm_release.coder-provisioner ]
+  
+  value = kubernetes_service_account.ws.metadata[0].name
 }

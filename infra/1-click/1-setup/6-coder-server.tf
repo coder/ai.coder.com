@@ -41,6 +41,21 @@ variable "coder_admin_password" {
   default = "Th1s1sN0TS3CuR3!!"
 }
 
+resource "aws_iam_user" "bedrock" {
+  name = "bedrock-access"
+  path = "/${var.cluster_name}/${data.aws_region.this.region}/"
+}
+
+resource "aws_iam_user_policy_attachment" "bedrock" {
+  user = aws_iam_user.bedrock.name
+  # https://docs.aws.amazon.com/aws-managed-policy/latest/reference/AmazonBedrockLimitedAccess.html
+  policy_arn = "arn:aws:iam::aws:policy/AmazonBedrockLimitedAccess"
+}
+
+resource "aws_iam_access_key" "bedrock" {
+  user = aws_iam_user.bedrock.name
+}
+
 module "coder-server" {
 
   depends_on = [ kubernetes_manifest.nodepool ]
@@ -53,14 +68,22 @@ module "coder-server" {
   namespace                       = "coder"
   
   replica_count                   = 2
-  helm_version                    = "2.29.1"
+  helm_version                    = "2.29.2"
   image_repo                      = "ghcr.io/coder/coder"
-  image_tag                       = "v2.29.1"
+  image_tag                       = "v2.29.2"
   primary_access_url              = "https://${var.domain_name}"
   wildcard_access_url             = "*.${var.domain_name}"
   db_secret_url                   = "postgresql://${var.coder_username}:${var.coder_password}@${data.aws_db_instance.coder.endpoint}/coder"
+
+  env_vars = {
+    CODER_AIBRIDGE_ENABLED = true
+    CODER_AIBRIDGE_BEDROCK_REGION = data.aws_region.this.region 
+    CODER_AIBRIDGE_BEDROCK_ACCESS_KEY = aws_iam_access_key.bedrock.id
+    CODER_AIBRIDGE_BEDROCK_ACCESS_KEY_SECRET = aws_iam_access_key.bedrock.secret
+  }
   
-  coder_builtin_provisioner_count = 0
+  # Use this instead of external provisioners. DNS might not propagate fast enough for Coder to be "reachable".
+  coder_builtin_provisioner_count = 4
   # coder_github_allowed_orgs       = var.coder_github_allowed_orgs
 
   ssl_cert_config = {
@@ -139,7 +162,6 @@ data "external" "first-user" {
     admin_username = var.coder_admin_username
     admin_password = var.coder_admin_password
   }
-
 }
 
 output "coder_session_token" {
@@ -159,7 +181,6 @@ data "external" "add-license" {
     license_key = var.coder_license
     session_token = data.external.first-user.result.session_token
   }
-
 }
 
 # locals {
