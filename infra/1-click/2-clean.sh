@@ -30,12 +30,12 @@ terraform plan -destroy -out=tf.plan \
 terraform apply tf.plan
 cd ../
 
-# echo "Change directory into '0-infra'."
-# cd 0-infra
-# terraform plan -destroy -out=tf.plan \
-#     -var profile=$AWS_PROFILE \
-#     -var region=$AWS_REGION \
-#     -var azs='["a","c"]' \
-#     -var domain_name=$DOMAIN_NAME
-# terraform apply tf.plan
-# cd ../
+echo "Change directory into '0-infra'."
+cd 0-infra
+terraform plan -destroy -out=tf.plan \
+    -var profile=$AWS_PROFILE \
+    -var region=$AWS_REGION \
+    -var azs='["a","c"]' \
+    -var domain_name=$DOMAIN_NAME
+terraform apply tf.plan
+cd ../

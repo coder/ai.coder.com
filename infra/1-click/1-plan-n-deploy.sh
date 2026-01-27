@@ -22,21 +22,21 @@ terraform plan -out=tf.plan \
 terraform apply tf.plan
 cd ../
 
-# echo "Change directory into '1-setup'."
-# cd 1-setup
-# terraform plan -out=tf.plan \
-#     -var profile=$AWS_PROFILE \
-#     -var region=$AWS_REGION \
-#     -var domain_name=$DOMAIN_NAME \
-#     -var coder_license=$LICENSE
-# terraform apply tf.plan
-# cd ../
+echo "Change directory into '1-setup'."
+cd 1-setup
+terraform plan -out=tf.plan \
+    -var profile=$AWS_PROFILE \
+    -var region=$AWS_REGION \
+    -var domain_name=$DOMAIN_NAME \
+    -var coder_license=$LICENSE
+terraform apply tf.plan
+cd ../
 
-# echo "Change directory into '2-coder'."
-# cd 2-coder
-# terraform plan -out=tf.plan \
-#     -var profile=$AWS_PROFILE \
-#     -var region=$AWS_REGION \
-#     -var domain_name=$DOMAIN_NAME
-# terraform apply tf.plan
-# cd ../
+echo "Change directory into '2-coder'."
+cd 2-coder
+terraform plan -out=tf.plan \
+    -var profile=$AWS_PROFILE \
+    -var region=$AWS_REGION \
+    -var domain_name=$DOMAIN_NAME
+terraform apply tf.plan
+cd ../
