@@ -103,7 +103,11 @@ resource "helm_release" "ebs-controller" {
           "eks.amazonaws.com/role-arn" = module.oidc-role.role_arn
         }, var.service_account_annotations)
       }
-      nodeSelector = {}
+      nodeSelector = var.node_selector
+      tolerations = [{
+        key      = "CriticalAddonsOnly"
+        operator = "Exists"
+      }]
     }
   })]
 }

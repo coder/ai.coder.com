@@ -165,6 +165,10 @@ resource "helm_release" "lb-controller" {
     vpcId = var.vpc_id
     enableCertManager      = var.enable_cert_manager
     nodeSelector           = var.node_selector
+    tolerations = [{
+      key      = "CriticalAddonsOnly"
+      operator = "Exists"
+    }]
     serviceTargetENISGTags = local.service_target_eni_sg_tags
     serviceMutatorWebhookConfig = {
       # Ref - https://github.com/awslabs/data-on-eks/issues/458

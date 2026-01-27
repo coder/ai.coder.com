@@ -41,5 +41,9 @@ resource "helm_release" "metrics-server" {
 
   values = [yamlencode({
     nodeSelector = var.node_selector
+    tolerations = [{
+      key      = "CriticalAddonsOnly"
+      operator = "Exists"
+    }]
   })]
 }

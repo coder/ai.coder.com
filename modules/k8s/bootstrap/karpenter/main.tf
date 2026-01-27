@@ -162,7 +162,7 @@ variable "node_selector" {
 
 variable "replicas" {
   type    = number
-  default = 1
+  default = 2
 }
 
 data "aws_region" "this" {}
@@ -303,7 +303,10 @@ resource "helm_release" "karpenter" {
         "eks.amazonaws.com/role-arn" = module.karpenter.iam_role_arn
       }
     }
-    topologySpreadConstraints = var.topology_spread_constraints
+    tolerations = [{
+      key      = "CriticalAddonsOnly"
+      operator = "Exists"
+    }]
     settings = {
       clusterName = var.cluster_name
       featureGates = {

@@ -60,6 +60,13 @@ variable "helm_version" {
   default = "v1.18.2"
 }
 
+variable "node_selector" {
+  type    = map(string)
+  default = {
+    "kubernetes.io/os" = "linux"
+  }
+}
+
 ##
 # Create Default Resources?
 ##
@@ -130,6 +137,13 @@ resource "kubernetes_namespace" "this" {
   }
 }
 
+locals {
+  global_tolerations = [{
+    key      = "CriticalAddonsOnly"
+    operator = "Exists"
+  }]
+}
+
 resource "helm_release" "cert-manager" {
   name             = "cert-manager"
   namespace        = kubernetes_namespace.this.metadata[0].name
@@ -146,6 +160,17 @@ resource "helm_release" "cert-manager" {
   values = [yamlencode({
     crds = {
       enabled = true
+    }
+    nodeSelector = var.node_selector
+    tolerations = local.global_tolerations
+    webhook = {
+      tolerations = local.global_tolerations
+    }
+    cainjector = {
+      tolerations = local.global_tolerations
+    }
+    startupapicheck = {
+      tolerations = local.global_tolerations
     }
   })]
 }

@@ -101,6 +101,13 @@ module "oidc-role" {
   tags = var.tags
 }
 
+locals {
+  global_tolerations = [{
+    key      = "CriticalAddonsOnly"
+    operator = "Exists"
+  }]
+}
+
 resource "helm_release" "chart" {
   name             = "external-secrets"
   namespace        = var.namespace
@@ -116,6 +123,13 @@ resource "helm_release" "chart" {
 
   values = [yamlencode({
     nodeSelector = var.node_selector
+    tolerations = local.global_tolerations
+    webhook = {
+      tolerations = local.global_tolerations
+    }
+    certController = {
+      tolerations = local.global_tolerations
+    }
     serviceAccount = {
       annotations = {
         "eks.amazonaws.com/role-arn" = module.oidc-role.role_arn

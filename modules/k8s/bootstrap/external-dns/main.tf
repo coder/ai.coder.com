@@ -145,9 +145,12 @@ resource "helm_release" "chart" {
         }
     }
     nodeSelector = var.node_selector
+    tolerations = [{
+      key      = "CriticalAddonsOnly"
+      operator = "Exists"
+    }]
     extraArgs = [
       "--aws-zone-match-parent"
-      # "--aws-prefer-cname"
     ]
   })]
 }
