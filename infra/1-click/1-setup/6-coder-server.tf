@@ -43,7 +43,7 @@ variable "coder_admin_password" {
 
 resource "aws_iam_user" "bedrock" {
   name = "bedrock-access"
-  path = "/${var.cluster_name}/${data.aws_region.this.region}/"
+  path = "/${local.normalized_domain_name}/${data.aws_region.this.region}/"
 }
 
 resource "aws_iam_user_policy_attachment" "bedrock" {
@@ -80,11 +80,21 @@ module "coder-server" {
     CODER_AIBRIDGE_BEDROCK_REGION = data.aws_region.this.region 
     CODER_AIBRIDGE_BEDROCK_ACCESS_KEY = aws_iam_access_key.bedrock.id
     CODER_AIBRIDGE_BEDROCK_ACCESS_KEY_SECRET = aws_iam_access_key.bedrock.secret
+    CODER_EXPERIMENTS = "oauth2,mcp-server-http"
   }
   
   # Use this instead of external provisioners. DNS might not propagate fast enough for Coder to be "reachable".
   coder_builtin_provisioner_count = 4
   # coder_github_allowed_orgs       = var.coder_github_allowed_orgs
+
+  resource_request = {
+    cpu    = "1000m"
+    memory = "2Gi"
+  }
+  resource_limit = {
+    cpu    = "1000m"
+    memory = "2Gi"
+  }
 
   ssl_cert_config = {
     name          = var.domain_name
@@ -103,7 +113,7 @@ module "coder-server" {
     "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type" = "instance"
     "service.beta.kubernetes.io/aws-load-balancer-scheme"          = "internet-facing"
     "service.beta.kubernetes.io/aws-load-balancer-attributes"      = "deletion_protection.enabled=false"
-    "external-dns.alpha.kubernetes.io/hostname"                    = "${var.domain_name}"
+    "external-dns.alpha.kubernetes.io/hostname"                    = "${var.domain_name},*.${var.domain_name}"
     "external-dns.alpha.kubernetes.io/ttl"                         = 30
   }
 

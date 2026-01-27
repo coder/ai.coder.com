@@ -95,7 +95,7 @@ locals {
             node_expires_after = "Never"
             disruption_consolidation_policy = "WhenEmpty"
             disruption_consolidate_after = "30m"
-            taints = null
+            taints = []
         }
     }
 }
@@ -161,7 +161,7 @@ resource "kubernetes_manifest" "nodepool" {
                         },{
                         key      = "node.kubernetes.io/instance-type"
                         operator = "In"
-                        values   = ["t3a.xlarge"]
+                        values   = ["t3a.medium"]
                     }]
                     nodeClassRef = {
                         group = "karpenter.k8s.aws"
@@ -193,7 +193,7 @@ resource "kubernetes_manifest" "default-sc" {
         "storageclass.kubernetes.io/is-default-class" = "true"
       }
     }
-    provisioner = "ebs.csi.eks.amazonaws.com"
+    provisioner = "ebs.csi.aws.com"
     volumeBindingMode = "WaitForFirstConsumer"
     parameters = {
       type = "gp3"

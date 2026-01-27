@@ -72,9 +72,13 @@ module "eks" {
       
       # K8s Labels - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/eks_node_group#labels-1
       labels = local.labels_system_node
-      # taints = {
-      #   "CriticalAddonsOnly"
-      # }
+      taints = {
+        "system-only" = {
+          key = "CriticalAddonsOnly"
+          value = "true"
+          effect = "NO_EXECUTE"
+        }
+      }
 
       instance_types = ["t3.large"]
       capacity_type  = "ON_DEMAND"

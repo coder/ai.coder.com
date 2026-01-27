@@ -12,7 +12,7 @@ module "karpenter" {
   namespace     = "karpenter"
   chart_version = "1.8.4"
   node_selector = local.labels_system_node
-
+  
   iam_role_use_name_prefix = true
   node_iam_role_use_name_prefix = true
   replicas = 2
