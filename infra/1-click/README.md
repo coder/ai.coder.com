@@ -2,7 +2,7 @@
 
 - [Terraform](https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli)
 - [AWS Account](https://docs.aws.amazon.com/accounts/latest/reference/manage-acct-creating.html) + [CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
-- [Domain in Route53]((https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/domain-register.html#domain-register-procedure-section))
+- [Domain in Route53](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/domain-register.html#domain-register-procedure-section)
 - [AWS Bedrock + Anthropic Agreement Completed](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access.html)
 
 > [!IMPORTANT] 
