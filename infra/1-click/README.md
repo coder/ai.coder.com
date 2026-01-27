@@ -27,7 +27,7 @@
 
 ```env
 CODER_AWS_PROFILE=default (Change profile if needed)
-CODER_AWS_PROFILE=us-east-2 (Change region if needed)
+CODER_AWS_REGION=us-east-2 (Change region if needed)
 CODER_DOMAIN_NAME=put.your.domain.here.com
 CODER_LICENSE=abcde1234..... (Optional)
 ```
