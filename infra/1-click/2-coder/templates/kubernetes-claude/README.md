@@ -1,5 +1,5 @@
 ---
-display_name: Kubernetes w/ Claude Code
+display_name: Claude Code on Coder
 description: Provision Kubernetes workspaces with Claude Code and code-server
 icon: ../../../site/static/icon/claude.svg
 maintainer_github: coder

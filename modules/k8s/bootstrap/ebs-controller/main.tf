@@ -53,6 +53,11 @@ variable "node_selector" {
   default = {}
 }
 
+variable "tolerations" {
+  type = list(map(any))
+  default = []
+}
+
 variable "replace" {
   type    = bool
   default = false
@@ -93,7 +98,7 @@ resource "helm_release" "ebs-controller" {
   wait             = true
   wait_for_jobs    = true
   version          = var.chart_version
-  timeout          = 120 # in seconds
+  timeout          = 300 # in seconds
 
   values = [yamlencode({
     controller = {
@@ -104,10 +109,7 @@ resource "helm_release" "ebs-controller" {
         }, var.service_account_annotations)
       }
       nodeSelector = var.node_selector
-      tolerations = [{
-        key      = "CriticalAddonsOnly"
-        operator = "Exists"
-      }]
+      tolerations = var.tolerations
     }
   })]
 }

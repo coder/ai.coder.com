@@ -160,6 +160,11 @@ variable "node_selector" {
   default = {}
 }
 
+variable "tolerations" {
+  type = list(map(any))
+  default = []
+}
+
 variable "replicas" {
   type    = number
   default = 2
@@ -303,10 +308,7 @@ resource "helm_release" "karpenter" {
         "eks.amazonaws.com/role-arn" = module.karpenter.iam_role_arn
       }
     }
-    tolerations = [{
-      key      = "CriticalAddonsOnly"
-      operator = "Exists"
-    }]
+    tolerations = var.tolerations
     settings = {
       clusterName = var.cluster_name
       featureGates = {

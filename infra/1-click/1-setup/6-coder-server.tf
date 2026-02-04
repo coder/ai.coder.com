@@ -15,77 +15,144 @@ variable "coder_username" {
 variable "coder_password" {
   description = "Coder DB's password."
   type        = string
-  sensitive   = true
   default     = "th1s1sn0tas3cur3pass0wrd"
+  sensitive = true
 }
 
 variable "coder_license" {
-  type = string
+  type      = string
+  default   = ""
   sensitive = true
-  default = ""
 }
 
 variable "coder_admin_email" {
-  type = string
+  type    = string
   default = "admin@coder.com"
 }
 
 variable "coder_admin_username" {
-  type = string
+  type    = string
   default = "admin"
 }
 
 variable "coder_admin_password" {
-  type = string
+  type      = string
+  default   = "Th1s1sN0TS3CuR3!!"
   sensitive = true
-  default = "Th1s1sN0TS3CuR3!!"
+}
+
+variable "grafana_username" {
+  description = "Grafana DB's username."
+  type        = string
+  default     = "grafana"
+}
+
+variable "grafana_password" {
+  description = "Grafana DB's password."
+  type        = string
+  default     = "th1s1sn0tas3cur3pass0wrd"
+  sensitive = true
+}
+
+variable "grafana_admin_username" {
+  type    = string
+  default = "admin"
+}
+
+variable "grafana_admin_password" {
+  type      = string
+  default   = "Th1s1sN0TS3CuR3!!"
+  sensitive = true
+}
+
+variable "use_ext_dns" {
+  description = "Toggle the K8s 'external-dns' addon. Disable in-case you want to manage DNS records yourself."
+  type = bool
+  default = true
+}
+
+variable "azs" {
+  type    = list(string)
+  default = ["a", "b", "c"]
 }
 
 resource "aws_iam_user" "bedrock" {
+
+  count = var.coder_license != "" ? 1 : 0
+
   name = "bedrock-access"
   path = "/${local.normalized_domain_name}/${data.aws_region.this.region}/"
 }
 
+resource "aws_iam_access_key" "bedrock" {
+
+  count = var.coder_license != "" ? 1 : 0
+
+  user = aws_iam_user.bedrock[0].name
+}
+
 resource "aws_iam_user_policy_attachment" "bedrock" {
-  user = aws_iam_user.bedrock.name
+
+  count = var.coder_license != "" ? 1 : 0
+
+  user = aws_iam_user.bedrock[0].name
   # https://docs.aws.amazon.com/aws-managed-policy/latest/reference/AmazonBedrockLimitedAccess.html
   policy_arn = "arn:aws:iam::aws:policy/AmazonBedrockLimitedAccess"
 }
 
-resource "aws_iam_access_key" "bedrock" {
-  user = aws_iam_user.bedrock.name
+resource "aws_eip" "coder" {
+  count = length(var.azs)
+  domain   = "vpc"
+  public_ipv4_pool = "amazon"
+  tags = {
+    Name = "${var.name}-${local.normalized_domain_name}-coder-${count.index}"
+  }
+}
+
+locals {
+  pub_subs = [ for az in var.azs : "${var.name}-${local.normalized_domain_name}-public-${data.aws_region.this.region}${az}"]
 }
 
 module "coder-server" {
 
-  depends_on = [ kubernetes_manifest.nodepool ]
+  depends_on = [kubernetes_manifest.nodepool]
 
   source = "../../../modules/k8s/bootstrap/coder-server"
 
   cluster_name              = "${var.name}-${local.normalized_domain_name}"
   cluster_oidc_provider_arn = data.aws_iam_openid_connect_provider.coder.arn
 
-  namespace                       = "coder"
-  
-  replica_count                   = 2
-  helm_version                    = "2.29.2"
-  image_repo                      = "ghcr.io/coder/coder"
-  image_tag                       = "v2.29.2"
-  primary_access_url              = "https://${var.domain_name}"
-  wildcard_access_url             = "*.${var.domain_name}"
-  db_secret_url                   = "postgresql://${var.coder_username}:${var.coder_password}@${data.aws_db_instance.coder.endpoint}/coder"
+  namespace = "coder"
 
-  env_vars = {
-    CODER_AIBRIDGE_ENABLED = true
-    CODER_AIBRIDGE_BEDROCK_REGION = data.aws_region.this.region 
-    CODER_AIBRIDGE_BEDROCK_ACCESS_KEY = aws_iam_access_key.bedrock.id
-    CODER_AIBRIDGE_BEDROCK_ACCESS_KEY_SECRET = aws_iam_access_key.bedrock.secret
-    CODER_EXPERIMENTS = "oauth2,mcp-server-http"
+  helm_version        = "2.29.4"
+
+  coder = {
+    access_url  = "https://${var.domain_name}"
+    wildcard_url = "*.${var.domain_name}"
+    pub_ips = aws_eip.coder.*.public_ip
+    image_repo          = "ghcr.io/coder/coder"
+    image_tag           = "v2.29.4"
+    rep_cnt = 1
+    # Use this instead of external provisioners. DNS might not propagate fast enough for Coder to be "reachable".
+    prov_rep_cnt = 4
+    # csp_policy = "frame-src https://${var.domain_name}"
   }
-  
-  # Use this instead of external provisioners. DNS might not propagate fast enough for Coder to be "reachable".
-  coder_builtin_provisioner_count = 4
-  # coder_github_allowed_orgs       = var.coder_github_allowed_orgs
+
+  db = {
+    url = data.aws_db_instance.coder.endpoint
+    username = var.coder_username
+    password = var.coder_password
+  }
+
+  aibridge = var.coder_license == "" ? null : {
+    enabled = true
+    bedrock = {
+      region = data.aws_region.this.region
+      model = "global.anthropic.claude-opus-4-5-20251101-v1:0"
+      access_id = aws_iam_access_key.bedrock[0].id
+      secret_id = aws_iam_access_key.bedrock[0].secret
+    }
+  }
 
   resource_request = {
     cpu    = "1000m"
@@ -96,36 +163,36 @@ module "coder-server" {
     memory = "2Gi"
   }
 
-  ssl_cert_config = {
+  cert_config = {
     name          = var.domain_name
-    caissuer = kubernetes_manifest.default-issuer.manifest.metadata.name
-    secretissuer = kubernetes_manifest.secret-store.manifest.metadata.name
+    kind = kubernetes_manifest.issuer.manifest.kind
+    issuer      = kubernetes_manifest.issuer.manifest.metadata.name
+    store  = kubernetes_manifest.secret-store.manifest.metadata.name
     create_secret = true
   }
 
-  enable_oidc = false
-  enable_oauth = false
-  enable_github_external_auth = false
+  tags = {}
 
-  tags                                      = {}
-
-  service_annotations = {
+  svc_annot = merge({
     "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type" = "instance"
     "service.beta.kubernetes.io/aws-load-balancer-scheme"          = "internet-facing"
     "service.beta.kubernetes.io/aws-load-balancer-attributes"      = "deletion_protection.enabled=false"
+    "service.beta.kubernetes.io/aws-load-balancer-eip-allocations" = join(",", aws_eip.coder.*.allocation_id)
+    "service.beta.kubernetes.io/aws-load-balancer-subnets" = join(",", local.pub_subs)
+  }, !var.use_ext_dns ? null : {
     "external-dns.alpha.kubernetes.io/hostname"                    = "${var.domain_name},*.${var.domain_name}"
-    "external-dns.alpha.kubernetes.io/ttl"                         = 30
-  }
+    "external-dns.alpha.kubernetes.io/ttl"                         = 60
+  })
 
-  node_selector = kubernetes_manifest.nodepool["coder-server"].manifest.spec.template.metadata.labels
-  tolerations = [ for toleration in kubernetes_manifest.nodepool["coder-server"].manifest.spec.template.spec.taints : {
-      key      = toleration.key
-      operator = "Equal"
-      value    = toleration.value
-      effect   = toleration.effect
+  node_selector = kubernetes_manifest.nodepool["coder"].manifest.spec.template.metadata.labels
+  tolerations = [for toleration in kubernetes_manifest.nodepool["coder"].manifest.spec.template.spec.taints : {
+    key      = toleration.key
+    operator = "Equal"
+    value    = toleration.value
+    effect   = toleration.effect
   }]
 
-  topology_spread_constraints = [{
+  topology_spread = [{
     max_skew           = 1
     topology_key       = "kubernetes.io/hostname"
     when_unsatisfiable = "ScheduleAnyway"
@@ -139,7 +206,7 @@ module "coder-server" {
       "app.kubernetes.io/instance"
     ]
   }]
-  pod_anti_affinity_preferred_during_scheduling_ignored_during_execution = [{
+  pod_aaf_pref_sched_ie = [{
     weight = 100
     pod_affinity_term = {
       label_selector = {
@@ -155,218 +222,245 @@ module "coder-server" {
 }
 
 # Wait for DNS propagation. May require multiple redeploys
-resource "time_sleep" "wait_for_dns" {
-  create_duration = "120s"
-  depends_on = [ module.coder-server ]
-}
+# resource "time_sleep" "wait_for_dns" {
+#   depends_on      = [ module.coder-server ]
+#   create_duration = "120s"
+# }
 
-data "external" "first-user" {
-  
-  depends_on = [ time_sleep.wait_for_dns ]
+data "http" "first-user" {
 
-  program = ["bash", "${path.module}/scripts/first-user.sh"]
+  # depends_on = [ time_sleep.wait_for_dns ]
+  depends_on      = [ module.coder-server ]
 
-  query = {
-    domain = var.domain_name
-    admin_email = var.coder_admin_email
-    admin_username = var.coder_admin_username
-    admin_password = var.coder_admin_password
+  url = "https://${aws_eip.coder[0].public_ip}/api/v2/users/first"
+  method = "POST"
+  insecure = true
+  request_headers = {
+    Host = var.domain_name
+    Accept = "application/json"
+  }
+  request_body = jsonencode({
+    email    = var.coder_admin_email
+    username = var.coder_admin_username
+    password = var.coder_admin_password
+    trial = false
+  })
+  retry {
+    attempts = 60+1
+    max_delay_ms = 5000
+    min_delay_ms = 5000
   }
 }
 
-output "coder_session_token" {
-  value = data.external.first-user.result.session_token
+data "http" "login" {
+
+  depends_on = [data.http.first-user]
+
+  url = "https://${aws_eip.coder[0].public_ip}/api/v2/users/login"
+  insecure = true
+  method = "POST"
+  request_headers = {
+    Host = var.domain_name
+    Accept = "application/json"
+  }
+  request_body = jsonencode({
+    email    = var.coder_admin_email
+    password = var.coder_admin_password
+  })
 }
 
-data "external" "add-license" {
-  
-  count = var.coder_license != "" ? 1 : 0
+##
+# Adding a license crashes Coder temporarily. 
+# Use 'external' to allow custom handling, and then wait before proceeding.
+##
 
-  depends_on = [ time_sleep.wait_for_dns ]
+data "external" "add-license" {
+
+  count = var.coder_license != "" ? 1 : 0
 
   program = ["bash", "${path.module}/scripts/add-license.sh"]
 
   query = {
+    ip_addr = aws_eip.coder[0].public_ip
     domain = var.domain_name
     license_key = var.coder_license
-    session_token = data.external.first-user.result.session_token
+    session_token = jsondecode(data.http.login.response_body).session_token
   }
 }
 
-# locals {
-#   dashboards-path = "${path.module}/dashboards"
-#   # coderd_selector  = "pod=~`coder.*`, pod!~`.*provisioner.*`, namespace=`${local.coderd_namespace}`"
-#   coderd_selector = "pod=~`coder.*`, pod!~`.*provisioner.*`, namespace=~`(coder)`"
+resource "time_sleep" "wait_for_coder" {
 
-#   provisionerd_selector = "pod=~`coder-provisioner.*`, namespace=~`(coder-ws|coder-ws-experiment|coder-ws-demo)`"
+  count = var.coder_license != "" ? 1 : 0
 
-#   # workspaces_selector     = "namespace=`coder-ws*`"
-#   workspaces_selector     = "pod!~`coder.*`, namespace=~`(coder-ws|coder-ws-experiment|coder-ws-demo)`"
-#   non_workspaces_selector = "namespace=~`(coder|coder-ws|coder-ws-experiment|coder-ws-demo)`"
+  depends_on      = [ data.external.add-license[0] ]
+  create_duration = "30s"
+}
 
-#   dashboard_timerange = "12h"
-#   dashboard_refresh   = "30s"
-# }
+resource "aws_eip" "grafana" {
+  count = length(var.azs)
+  domain   = "vpc"
+  public_ipv4_pool = "amazon"
+  tags = {
+    Name = "${var.name}-${local.normalized_domain_name}-grafana-${count.index}"
+  }
+}
 
-# module "monitoring" {
-#   source = "../../../modules/k8s/bootstrap/monitoring"
+module "monitoring" {
+  source = "../../../modules/k8s/bootstrap/monitoring"
 
-#   namespace                        = var.addon_namespace
-#   helm_coder_observability_version = var.helm_coder_observability_version
-#   helm_coder_observability_timeout = var.helm_coder_observability_timeout
-#   helm_prometheus_operator_version = var.helm_prometheus_operator_version
-#   helm_prometheus_operator_timeout = var.helm_prometheus_operator_timeout
-#   cluster_name                     = var.cluster_name
-#   cluster_oidc_provider_arn        = var.cluster_oidc_provider_arn
+  chart_version = "0.7.0-rc.1"
+  cluster_name              = "${var.name}-${local.normalized_domain_name}"
+  cluster_oidc_provider_arn = data.aws_iam_openid_connect_provider.coder.arn
 
-#   coder_db_username = var.coder_db_username
-#   coder_db_password = var.coder_db_password
-#   coder_db_host     = var.coder_db_host
-#   coder_db_port     = var.coder_db_port
+  domain_name = var.domain_name
+  tolerations = concat([{
+    key      = "CriticalAddonsOnly"
+    operator = "Exists"
+  }], [for toleration in kubernetes_manifest.nodepool["coder"].manifest.spec.template.spec.taints : {
+    key      = toleration.key
+    operator = "Equal"
+    value    = toleration.value
+    effect   = toleration.effect
+  }])
 
-#   loki_s3_chunk_bucket_name = var.loki_s3_chunk_bucket_name
-#   loki_s3_ruler_bucket_name = var.loki_s3_ruler_bucket_name
-#   loki_s3_bucket_region     = var.loki_s3_bucket_region
-#   loki_iam_role_name        = var.loki_iam_role_name
-#   loki_replicas             = var.loki_replicas
+  coder = {
+    db = {
+      host = data.aws_db_instance.coder.address
+      password = var.coder_password
+      username = var.coder_username
+      database = data.aws_db_instance.coder.db_name
+    }
+    selector = {
+      coderd = "pod=~`coder.*`, pod!~`.*provisioner.*`, namespace=~`(coder)`"
+      provisionerd = "pod=~`coder-provisioner.*`, namespace=~`(coder)`"
+      workspaces = "pod!~`coder.*`, namespace=~`(coder)`"
+      ctrl_plane_ns = "coder"
+      ext_prov_ns = "coder"
+    }
+  }
+  grafana = {
+    admin = {
+      username = var.grafana_admin_username
+      password = var.grafana_admin_password
+    }
+    db = {
+      host = data.aws_db_instance.grafana.address
+      password = var.grafana_password
+      username = var.grafana_username
+      database = data.aws_db_instance.grafana.db_name
+    }
+    svc = {
+      annots = merge({
+        "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type" = "instance"
+        "service.beta.kubernetes.io/aws-load-balancer-scheme"          = "internet-facing"
+        "service.beta.kubernetes.io/aws-load-balancer-attributes"      = "deletion_protection.enabled=false"
+        "service.beta.kubernetes.io/aws-load-balancer-healthcheck-protocol" = "https"
+        "service.beta.kubernetes.io/aws-load-balancer-healthcheck-path" = "/api/health"
+        "service.beta.kubernetes.io/aws-load-balancer-eip-allocations" = join(",", aws_eip.grafana.*.allocation_id)
+        "service.beta.kubernetes.io/aws-load-balancer-subnets" = join(",", local.pub_subs)
+      }, !var.use_ext_dns ? null : {
+        "external-dns.alpha.kubernetes.io/hostname"                    = "grafana.${var.domain_name},*.grafana.${var.domain_name}"
+        "external-dns.alpha.kubernetes.io/ttl"                         = 60
+      })
+    }
+  }
+  loki = {
+    s3 = {
+      chunks_bucket = data.aws_s3_bucket.loki.id
+      ruler_bucket = data.aws_s3_bucket.loki.id
+      region = data.aws_s3_bucket.loki.bucket_region
+    }
+  }
+}
 
-#   grafana_security_key   = var.grafana_security_key
-#   grafana_auth_username  = var.grafana_auth_username
-#   grafana_auth_password  = var.grafana_auth_password
-#   grafana_db_user        = var.grafana_db_user
-#   grafana_db_name        = var.grafana_db_name
-#   grafana_db_password    = var.grafana_db_password
-#   grafana_db_host        = var.grafana_db_host
-#   grafana_admin_username = var.grafana_admin_username
-#   grafana_admin_password = var.grafana_admin_password
-#   grafana_root_domain    = var.grafana_root_domain
-#   grafana_subdomain      = var.grafana_subdomain
-#   grafana_cert_name      = var.grafana_cert_name
-#   grafana_cert_mnt_path  = var.grafana_cert_mnt_path
-#   grafana_replicas       = 2
-#   grafana_service_annotations = {
-#     "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type" = "instance"
-#     "service.beta.kubernetes.io/aws-load-balancer-scheme"          = "internet-facing"
-#     "service.beta.kubernetes.io/aws-load-balancer-attributes"      = "deletion_protection.enabled=true"
-#   }
+##
+# Coder Binary Prefetch
+##
 
-#   dashboards = [
-#     {
-#       name      = "coder-dashboard-status"
-#       localPath = "${local.dashboards-path}/status.json"
-#       args = {
-#         HELM_NAMESPACE        = var.addon_namespace
-#         CODERD_SELECTOR       = local.coderd_selector
-#         PROVISIONERD_SELECTOR = local.provisionerd_selector
-#         WORKSPACES_SELECTOR   = local.workspaces_selector
-#         PROMETHEUS_JOB        = "${var.addon_namespace}/prometheus/server"
-#         LOKI_JOB              = "${var.addon_namespace}/loki"
-#         GRAFANA_AGENT_JOB     = "${var.addon_namespace}/grafana-agent/grafana-agent"
-#       }
-#     },
-#     {
-#       name      = "coder-dashboard-coderd"
-#       localPath = "${local.dashboards-path}/coderd.json"
-#       args = {
-#         DASHBOARD_TIMERANGE = local.dashboard_timerange
-#         DASHBOARD_REFRESH   = local.dashboard_refresh
-#         CODERD_SELECTOR     = local.coderd_selector
-#       }
-#     },
-#     {
-#       name      = "coder-dashboard-provisionerd"
-#       localPath = "${local.dashboards-path}/provisionerd.json"
-#       args = {
-#         DASHBOARD_TIMERANGE     = local.dashboard_timerange
-#         DASHBOARD_REFRESH       = local.dashboard_refresh
-#         PROVISIONERD_SELECTOR   = local.provisionerd_selector
-#         NON_WORKSPACES_SELECTOR = local.non_workspaces_selector
-#       }
-#     },
-#     {
-#       name      = "coder-dashboard-workspaces"
-#       localPath = "${local.dashboards-path}/workspaces.json"
-#       args = {
-#         DASHBOARD_TIMERANGE     = local.dashboard_timerange
-#         DASHBOARD_REFRESH       = local.dashboard_refresh
-#         WORKSPACES_SELECTOR     = local.workspaces_selector
-#         NON_WORKSPACES_SELECTOR = local.non_workspaces_selector
-#       }
-#     },
-#     {
-#       name      = "coder-dashboard-workspace-detail"
-#       localPath = "${local.dashboards-path}/workspace_detail.json"
-#       args = {
-#         DASHBOARD_TIMERANGE     = local.dashboard_timerange
-#         DASHBOARD_REFRESH       = local.dashboard_refresh
-#         WORKSPACES_SELECTOR     = local.workspaces_selector
-#         NON_WORKSPACES_SELECTOR = local.non_workspaces_selector
-#       }
-#     },
-#     {
-#       name      = "coder-dashboard-prebuilds"
-#       localPath = "${local.dashboards-path}/prebuilds.json"
-#       args = {
-#         DASHBOARD_TIMERANGE = local.dashboard_timerange
-#         DASHBOARD_REFRESH   = local.dashboard_refresh
-#       }
-#     },
-#     {
-#       name      = "coder-dashboard-aibridge"
-#       localPath = "${local.dashboards-path}/aibridge.json"
-#       args      = {}
-#     },
-#     # {
-#     #   name = "coder-dashboard-proxyd"
-#     #   localPath = "${local.dashboards-path}/proxyd.json"
-#     #   args = {
-#     #     DASHBOARD_TIMERANGE = local.dashboard_timerange
-#     #     DASHBOARD_REFRESH   = local.dashboard_refresh
-#     #     CODERD_SELECTOR     = local.coderd_selector
-#     #   }
-#     # }
-#   ]
+locals {
+  coder_path = "/opt/coder/bin"
+  bin_fetch_script = <<-EOF
+    if [ ! -f ${local.coder_path}/coder ]; then
+      curl -L https://${var.domain_name}/bin/coder-linux-amd64 -o ${local.coder_path}/coder
+      chmod +x ${local.coder_path}/coder
+    fi
+  EOF
+}
 
-#   # service_annotations = {
-#   #   "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type" = "instance"
-#   #   "service.beta.kubernetes.io/aws-load-balancer-scheme"          = "internet-facing"
-#   #   "service.beta.kubernetes.io/aws-load-balancer-attributes"      = "deletion_protection.enabled=true"
-#   # }
-#   # node_selector = {
-#   #   "node.coder.io/managed-by" = "karpenter"
-#   #   "node.coder.io/used-for"   = "coder"
-#   # }
-#   # tolerations = [{
-#   #   key      = "dedicated"
-#   #   operator = "Equal"
-#   #   value    = "coder"
-#   #   effect   = "NoSchedule"
-#   # }]
-#   # topology_spread_constraints = [{
-#   #   max_skew           = 1
-#   #   topology_key       = "kubernetes.io/hostname"
-#   #   when_unsatisfiable = "ScheduleAnyway"
-#   #   label_selector = {
-#   #     match_labels = {
-#   #       "app.kubernetes.io/name"    = "coder"
-#   #       "app.kubernetes.io/part-of" = "coder"
-#   #     }
-#   #   }
-#   #   match_label_keys = [
-#   #     "app.kubernetes.io/instance"
-#   #   ]
-#   # }]
-#   # pod_anti_affinity_preferred_during_scheduling_ignored_during_execution = [{
-#   #   weight = 100
-#   #   pod_affinity_term = {
-#   #     label_selector = {
-#   #       match_labels = {
-#   #         "app.kubernetes.io/instance" = "coder-v2"
-#   #         "app.kubernetes.io/name"     = "coder"
-#   #         "app.kubernetes.io/part-of"  = "coder"
-#   #       }
-#   #     }
-#   #     topology_key = "kubernetes.io/hostname"
-#   #   }
-#   # }]
-# }
+resource "kubernetes_daemon_set_v1" "bin-fetch" {
+  metadata {
+    name = "coder-bin-fetch"
+    namespace = module.coder-server.namespace
+    labels = {
+      "app.kubernetes.io/name"    = "bin-fetch"
+      "app.kubernetes.io/part-of" = "coder-workspaces"
+    }
+  }
+
+  spec {
+
+    selector {
+      match_labels = {
+        "app.kubernetes.io/name" = "bin-fetch"
+      }
+    }
+
+    template {
+
+      metadata {
+        labels = {
+          "app.kubernetes.io/name" = "bin-fetch"
+        }
+      }
+      
+      spec {
+
+        host_aliases {
+          hostnames = [var.domain_name]
+          ip = aws_eip.coder[0].private_ip
+        }
+        
+        security_context {
+          run_as_user = "0"
+        }
+
+        init_container {
+          name = "fetch-binary"
+          image = "curlimages/curl:latest"
+          command = ["sh", "-c", "${local.bin_fetch_script}"]
+          
+          volume_mount {
+            name = "coder-bin"
+            mount_path = local.coder_path
+            read_only = false
+          }
+
+        }
+
+        container {
+          name  = "pause"
+          image = "registry.k8s.io/pause:3.9"
+
+          resources {
+            requests = {
+              cpu    = "1m"
+              memory = "1Mi"
+            }
+            limits = {
+              cpu    = "10m"
+              memory = "10Mi"
+            }
+          }
+        }
+
+        volume {
+          name = "coder-bin"
+          host_path {
+            path = local.coder_path
+            type = "DirectoryOrCreate"
+          }
+        }
+      }
+    }
+  }
+}

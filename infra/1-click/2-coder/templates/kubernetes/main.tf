@@ -30,6 +30,12 @@ variable "namespace" {
   description = "The Kubernetes namespace to create workspaces in (must exist prior to creating workspaces). If the Coder host is itself running as a Pod on the same Kubernetes cluster as you are deploying workspaces to, set this to the same namespace."
 }
 
+variable "host_ip" {
+  type        = string
+  description = "The IP address to use for hostAliases in workspace pods. If empty, no hostAliases will be added."
+  default     = ""
+}
+
 data "coder_parameter" "cpu" {
   name         = "cpu"
   display_name = "CPU"
@@ -220,11 +226,19 @@ resource "kubernetes_persistent_volume_claim_v1" "home" {
   }
 }
 
+locals {
+  coder_bin = "/opt/coder/bin"
+  init_script = <<-EOF
+  if [ -x ${local.coder_bin}/coder ]; then
+    exec ${local.coder_bin}/coder agent
+  else
+    ${coder_agent.main.init_script}
+  fi
+  EOF
+}
+
 resource "kubernetes_deployment_v1" "main" {
   count = data.coder_workspace.me.start_count
-  depends_on = [
-    kubernetes_persistent_volume_claim_v1.home
-  ]
   wait_for_rollout = false
   metadata {
     name      = "coder-${data.coder_workspace.me.id}"
@@ -282,13 +296,29 @@ resource "kubernetes_deployment_v1" "main" {
           run_as_non_root = true
         }
 
+        dynamic "host_aliases" {
+          for_each = var.host_ip != "" ? [1] : []
+          content {
+            hostnames = [replace(replace(data.coder_workspace.me.access_url, "https://", ""), "http://", "")]
+            ip = var.host_ip
+          }
+        }
+
         container {
           name              = "dev"
           image             = "codercom/enterprise-base:ubuntu"
-          image_pull_policy = "Always"
-          command           = ["sh", "-c", coder_agent.main.init_script]
+          image_pull_policy = "IfNotPresent"
+          command           = ["sh", "-c", local.init_script]
           security_context {
             run_as_user = "1000"
+          }
+          env {
+            name = "CODER_AGENT_AUTH"
+            value = "token"
+          }
+          env {
+            name = "CODER_AGENT_URL"
+            value = data.coder_workspace.me.access_url
           }
           env {
             name  = "CODER_AGENT_TOKEN"
@@ -304,11 +334,19 @@ resource "kubernetes_deployment_v1" "main" {
               "memory" = "${data.coder_parameter.memory.value}Gi"
             }
           }
+
           volume_mount {
             mount_path = "/home/coder"
             name       = "home"
             read_only  = false
           }
+
+          volume_mount {
+            name = "coder-bin"
+            mount_path = local.coder_bin
+            read_only = true
+          }
+
         }
 
         volume {
@@ -316,6 +354,14 @@ resource "kubernetes_deployment_v1" "main" {
           persistent_volume_claim {
             claim_name = kubernetes_persistent_volume_claim_v1.home.metadata.0.name
             read_only  = false
+          }
+        }
+
+        volume {
+          name = "coder-bin"
+          host_path {
+            path = local.coder_bin
+            type = "Directory"
           }
         }
 

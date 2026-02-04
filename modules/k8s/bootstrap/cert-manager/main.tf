@@ -17,26 +17,6 @@ variable "cluster_name" {
   type = string
 }
 
-variable "role_name" {
-  type    = string
-  default = ""
-}
-
-variable "policy_name" {
-  type    = string
-  default = ""
-}
-
-variable "policy_resource_region" {
-  type    = string
-  default = ""
-}
-
-variable "policy_resource_account" {
-  type    = string
-  default = ""
-}
-
 variable "cluster_oidc_provider_arn" {
   type = string
 }
@@ -67,23 +47,14 @@ variable "node_selector" {
   }
 }
 
-##
-# Create Default Resources?
-##
-
-variable "create_default_cluster_issuer" {
-  type = bool
-  default = true
+variable "tolerations" {
+  type = list(map(any))
+  default = []
 }
 
 ##
 # ACME Certificate Inputs
 ##
-
-variable "issuer_private_key_secret_name" {
-  type    = string
-  default = "issuer-account-key"
-}
 
 variable "acme_server_url" {
   type    = string
@@ -99,49 +70,10 @@ data "aws_region" "this" {}
 
 data "aws_caller_identity" "this" {}
 
-locals {
-  region      = var.policy_resource_region == "" ? data.aws_region.this.region : var.policy_resource_region
-  account_id  = var.policy_resource_account == "" ? data.aws_caller_identity.this.account_id : var.policy_resource_account
-  policy_name = var.policy_name == "" ? "crt-mgr" : var.policy_name
-  role_name   = var.role_name == "" ? "crt-mgr" : var.role_name
-}
-
-module "policy" {
-  source      = "../../../security/policy"
-  name        = local.policy_name
-  path         = "/${var.cluster_name}/${data.aws_region.this.region}/"
-  description = "CertManager for Route53 Policy"
-  policy_json = data.aws_iam_policy_document.route53.json
-}
-
-module "oidc-role" {
-  source       = "../../../security/role/access-entry"
-  name         = local.role_name
-  path         = "/${var.cluster_name}/${data.aws_region.this.region}/"
-  cluster_name = var.cluster_name
-  policy_arns = {
-    "CertManagerRoute53" = module.policy.policy_arn
-  }
-  cluster_policy_arns = {
-    "AmazonEKSClusterAdminPolicy" = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy",
-  }
-  oidc_principals = {
-    "${var.cluster_oidc_provider_arn}" = ["system:serviceaccount:*:*"]
-  }
-  tags = var.tags
-}
-
 resource "kubernetes_namespace" "this" {
   metadata {
     name = var.namespace
   }
-}
-
-locals {
-  global_tolerations = [{
-    key      = "CriticalAddonsOnly"
-    operator = "Exists"
-  }]
 }
 
 resource "helm_release" "cert-manager" {
@@ -162,15 +94,15 @@ resource "helm_release" "cert-manager" {
       enabled = true
     }
     nodeSelector = var.node_selector
-    tolerations = local.global_tolerations
+    tolerations = var.tolerations
     webhook = {
-      tolerations = local.global_tolerations
+      tolerations = var.tolerations
     }
     cainjector = {
-      tolerations = local.global_tolerations
+      tolerations = var.tolerations
     }
     startupapicheck = {
-      tolerations = local.global_tolerations
+      tolerations = var.tolerations
     }
   })]
 }
@@ -179,47 +111,94 @@ resource "helm_release" "cert-manager" {
 # Use Route53 for the DNS01 Challenge Provider
 ##
 
-variable "use_route53" {
-  type = bool
-  default = false
+variable "r53_config" {
+  type = object({
+    enabled = bool
+    region = optional(string, "")
+    account = optional(string, "")
+    role_name = optional(string, "crt-mgr")
+    policy_name = optional(string, "crt-mgr")
+  })
+  default = {
+    enabled = false
+    region = ""
+    account = ""
+    role_name = "crt-mgr"
+    policy_name = "crt-mgr"
+  }
 }
 
-variable "route53_region" {
-  type = string
-  default = "us-east-2"
+locals {
+  region      = var.r53_config.region == "" ? data.aws_region.this.region : var.r53_config.region
+  account_id  = var.r53_config.account == "" ? data.aws_caller_identity.this.account_id : var.r53_config.account
 }
 
-variable "route53_sa_role" {
-  type = string
-  default = ""
+module "policy" {
+
+  count = var.r53_config.enabled ? 1 : 0
+
+  source      = "../../../security/policy"
+  name        = var.r53_config.policy_name
+  path         = "/${var.cluster_name}/${local.region}/"
+  description = "Cert-Manager for R53 Policy"
+  policy_json = data.aws_iam_policy_document.route53.json
 }
 
-resource "kubernetes_service_account" "route53" {
+module "oidc-role" {
+
+  count = var.r53_config.enabled ? 1 : 0
+
+  source       = "../../../security/role/access-entry"
+  name         = var.r53_config.role_name
+  path         = "/${var.cluster_name}/${local.region}/"
+  cluster_name = var.cluster_name
+  policy_arns = {
+    "CertManagerR53" = module.policy[0].policy_arn
+  }
+  cluster_policy_arns = {
+    "AmazonEKSClusterAdminPolicy" = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy",
+  }
+  oidc_principals = {
+    "${var.cluster_oidc_provider_arn}" = ["system:serviceaccount:*:*"]
+  }
+  tags = var.tags
+}
+
+resource "kubernetes_service_account" "r53" {
+
+  count = var.r53_config.enabled ? 1 : 0
+
   metadata {
-    name      = "cert-manager-acme-dns01-route53"
+    name      = "${var.r53_config.role_name}"
     namespace = kubernetes_namespace.this.metadata[0].name
     annotations = {
-      "eks.amazonaws.com/role-arn" = module.oidc-role.role_arn
+      "eks.amazonaws.com/role-arn" = module.oidc-role[0].role_arn
     }
   }
 }
 
-resource "kubernetes_role" "route53" {
+resource "kubernetes_role" "r53" {
+
+  count = var.r53_config.enabled ? 1 : 0
+
   metadata {
-    name      = "cert-manager-acme-dns01-route53-tokenrequest"
+    name      = "${var.r53_config.role_name}-tokenrequest"
     namespace = kubernetes_namespace.this.metadata[0].name
   }
   rule {
     api_groups     = [""]
     resources      = ["serviceaccounts/token"]
-    resource_names = [kubernetes_service_account.route53.metadata[0].name]
+    resource_names = [kubernetes_service_account.r53[0].metadata[0].name]
     verbs          = ["create"]
   }
 }
 
-resource "kubernetes_role_binding" "route53" {
+resource "kubernetes_role_binding" "r53" {
+
+  count = var.r53_config.enabled ? 1 : 0
+
   metadata {
-    name      = "cert-manager-acme-dns01-route53-tokenrequest"
+    name      = "${var.r53_config.role_name}-tokenrequest"
     namespace = kubernetes_namespace.this.metadata[0].name
   }
   subject {
@@ -230,7 +209,7 @@ resource "kubernetes_role_binding" "route53" {
   role_ref {
     api_group = "rbac.authorization.k8s.io"
     kind      = "Role"
-    name      = kubernetes_role.route53.metadata[0].name
+    name      = kubernetes_role.r53[0].metadata[0].name
   }
 }
 
@@ -238,112 +217,42 @@ resource "kubernetes_role_binding" "route53" {
 # Use CloudFlare for the DNS01 Challenge Provider
 ##
 
-variable "use_cloudflare" {
-  type = bool
-  default = true
-}
-
-variable "cloudflare_token_secret_name" {
-  type    = string
-  default = "cloudflare-token"
-}
-
-variable "cloudflare_token_secret_key" {
-  type    = string
-  default = "token.key"
-}
-
-variable "cloudflare_token_secret" {
-  type      = string
+variable "cf_config" {
+  type = object({
+    enabled = bool
+    name = optional(string, "cloudflare")
+    key = optional(string, "token.key")
+    token = string
+    email = string
+  })
+  default = {
+    enabled = false
+    name = "cloudflare"
+    key = "token.key"
+    token = ""
+    email = ""
+  }
   sensitive = true
-  default = ""
 }
 
-variable "cloudflare_token_secret_email" {
-  type      = string
-  sensitive = true
-  default = ""
+locals {
+  cf_annot_sec_key = "custom.kubernetes.secret/key"
+  cf_annot_email_key = "custom.kubernetes.secret/email"
 }
 
 resource "kubernetes_secret" "cloudflare" {
+
+  count = var.cf_config.enabled ? 1 : 0
+
   metadata {
-    name      = var.cloudflare_token_secret_name
+    name      = var.cf_config.name
     namespace = kubernetes_namespace.this.metadata[0].name
+    annotations = {
+      "${local.cf_annot_sec_key}" = var.cf_config.key
+      "${local.cf_annot_email_key}" = var.cf_config.email
+    }
   }
   data = {
-    "${var.cloudflare_token_secret_key}" = var.cloudflare_token_secret
-  }
-}
-
-# ----------------
-
-locals {
-  dns01_cf = {
-    cloudflare = {
-      apiTokenSecretRef = {
-        key  = var.cloudflare_token_secret_key
-        name = kubernetes_secret.cloudflare.metadata[0].name
-      }
-      email = var.cloudflare_token_secret_email
-    }
-  }
-  dns01_r53 = {
-    route53 = {
-      region = var.route53_region
-      auth = {
-        kubernetes = {
-          serviceAccountRef = {
-            name = kubernetes_service_account.route53.metadata[0].name
-          }
-        }
-      }
-    }
-  }
-}
-
-##
-# Setup the default Cluster Issuer
-##
-
-resource "kubernetes_manifest" "default-issuer" {
-
-  depends_on = [
-    helm_release.cert-manager,
-    kubernetes_secret.cloudflare
-  ]
-
-  count = var.create_default_cluster_issuer ? 1 : 0
-
-  field_manager {
-    force_conflicts = true
-  }
-  manifest = {
-    apiVersion = "cert-manager.io/v1"
-    kind       = "ClusterIssuer"
-    metadata = {
-      labels = {}
-      name   = "issuer"
-    }
-    spec = {
-      acme = {
-        privateKeySecretRef = {
-          name = var.issuer_private_key_secret_name
-        }
-        server = var.acme_server_url
-        solvers = [
-          {
-            dns01 = {
-              cloudflare = {
-                apiTokenSecretRef = {
-                  key  = var.cloudflare_token_secret_key
-                  name = kubernetes_secret.cloudflare.metadata[0].name
-                }
-                email = var.cloudflare_token_secret_email
-              }
-            }
-          }
-        ]
-      }
-    }
+    "${var.cf_config.key}" = var.cf_config.token
   }
 }

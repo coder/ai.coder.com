@@ -13,7 +13,6 @@ terraform {
       source = "hashicorp/kubernetes"
     }
   }
-  # backend "s3" {}
 }
 
 ##
@@ -33,13 +32,13 @@ variable "name" {
 }
 
 variable "profile" {
-  type = string
+  type    = string
   default = "default"
 }
 
 variable "domain_name" {
   description = "Your Coder domain name (i.e. coder-example.com)"
-  type = string
+  type        = string
 }
 
 data "aws_eks_cluster_auth" "coder" {
@@ -67,5 +66,38 @@ provider "kubernetes" {
 
 locals {
   normalized_domain_name = split(".", var.domain_name)[0]
-  tags_global = {}
+  tags_global            = {}
+}
+
+# If R53 enabled, then fetch service account from cert-manager for IAM Role
+variable "r53_config" {
+  description = "Enable to use Route53 as a DNS01 provider for ACME challenges."
+  type = object({
+    enabled = bool
+  })
+  default = {
+    enabled     = false
+  }
+}
+
+# If CF enabled, then fetch secret from cert-manager for token
+variable "cf_config" {
+  description = "Enable to use CloudFlare as a DNS01 provider for ACME challenges."
+  type = object({
+    enabled = bool
+    email = string
+    token = string
+  })
+  default = {
+    enabled     = false
+    email       = ""
+    token = ""  
+  }
+  sensitive = true
+}
+
+variable "use_ext_dns" {
+  description = "Toggle the K8s 'external-dns' addon. Disable in-case you want to manage DNS records yourself."
+  type = bool
+  default = true
 }

@@ -65,6 +65,11 @@ variable "node_selector" {
     default = {}
 }
 
+variable "tolerations" {
+  type = list(map(any))
+  default = []
+}
+
 data "aws_region" "this" {}
 
 data "aws_caller_identity" "this" {}
@@ -101,13 +106,6 @@ module "oidc-role" {
   tags = var.tags
 }
 
-locals {
-  global_tolerations = [{
-    key      = "CriticalAddonsOnly"
-    operator = "Exists"
-  }]
-}
-
 resource "helm_release" "chart" {
   name             = "external-secrets"
   namespace        = var.namespace
@@ -123,12 +121,12 @@ resource "helm_release" "chart" {
 
   values = [yamlencode({
     nodeSelector = var.node_selector
-    tolerations = local.global_tolerations
+    tolerations = var.tolerations
     webhook = {
-      tolerations = local.global_tolerations
+      tolerations = var.tolerations
     }
     certController = {
-      tolerations = local.global_tolerations
+      tolerations = var.tolerations
     }
     serviceAccount = {
       annotations = {

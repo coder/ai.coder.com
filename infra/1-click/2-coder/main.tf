@@ -13,18 +13,21 @@ terraform {
       source = "hashicorp/kubernetes"
     }
     external = {
-      source = "hashicorp/external"
+      source  = "hashicorp/external"
       version = ">= 2.3.5"
     }
+    http = {
+      source  = "hashicorp/http"
+    }
     coderd = {
-      source = "coder/coderd"
+      source  = "coder/coderd"
       version = "0.0.12"
     }
-    null = {
-        source = "hashicorp/null"
-    }
     time = {
-        source = "hashicorp/time"
+      source = "hashicorp/time"
+    }
+    dns = {
+      source = "hashicorp/dns"
     }
   }
 }
@@ -58,17 +61,17 @@ data "aws_iam_openid_connect_provider" "coder" {
 variable "region" {
   description = "The AWS region of the deployment."
   type        = string
-  default = "us-east-2"
+  default     = "us-east-2"
 }
 
 variable "name" {
   description = "Name for created resources and tag prefix."
   type        = string
-  default = "coder"
+  default     = "coder"
 }
 
 variable "profile" {
-  type = string
+  type    = string
   default = "default"
 }
 
@@ -91,6 +94,56 @@ provider "kubernetes" {
   token                  = data.aws_eks_cluster_auth.coder.token
 }
 
+provider "dns" {}
+
 locals {
   normalized_domain_name = split(".", var.domain_name)[0]
+}
+
+##
+# Login and Fetch Authentication Token
+##
+
+variable "domain_name" {
+  type = string
+}
+
+variable "coder_admin_email" {
+  type    = string
+  default = "admin@coder.com"
+}
+
+variable "coder_admin_password" {
+  type      = string
+  default   = "Th1s1sN0TS3CuR3!!"
+  sensitive = true
+}
+
+##
+# Coder MUST be in a reachable state by now
+##
+
+data "aws_eip" "coder" {
+  tags = {
+    Name = "${var.name}-${local.normalized_domain_name}-coder-0"
+  }
+}
+
+data "http" "login" {
+  url = "https://${data.aws_eip.coder.public_ip}/api/v2/users/login"
+  insecure = true
+  method = "POST"
+  request_headers = {
+    Host = var.domain_name
+    Accept = "application/json"
+  }
+  request_body = jsonencode({
+    email    = var.coder_admin_email
+    password = var.coder_admin_password
+  })
+}
+
+provider "coderd" {
+  url = "https://${var.domain_name}"
+  token = jsondecode(data.http.login.response_body).session_token
 }

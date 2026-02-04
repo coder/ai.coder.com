@@ -90,6 +90,11 @@ variable "node_selector" {
   default = {}
 }
 
+variable "tolerations" {
+  type = list(map(any))
+  default = []
+}
+
 variable "create_alb_class" {
   type = bool
   default = true
@@ -165,10 +170,7 @@ resource "helm_release" "lb-controller" {
     vpcId = var.vpc_id
     enableCertManager      = var.enable_cert_manager
     nodeSelector           = var.node_selector
-    tolerations = [{
-      key      = "CriticalAddonsOnly"
-      operator = "Exists"
-    }]
+    tolerations = var.tolerations
     serviceTargetENISGTags = local.service_target_eni_sg_tags
     serviceMutatorWebhookConfig = {
       # Ref - https://github.com/awslabs/data-on-eks/issues/458

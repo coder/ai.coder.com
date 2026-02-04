@@ -10,9 +10,6 @@ terraform {
     kubernetes = {
       source = "hashicorp/kubernetes"
     }
-    tls = {
-      source = "hashicorp/tls"
-    }
   }
 }
 
@@ -26,32 +23,22 @@ variable "cluster_oidc_provider_arn" {
 
 variable "policy_resource_region" {
   type    = string
-  default = ""
+  default = null
 }
 
 variable "policy_resource_account" {
   type    = string
-  default = ""
+  default = null
 }
 
 variable "policy_name" {
   type    = string
-  default = ""
+  default = null
 }
 
 variable "role_name" {
   type    = string
-  default = ""
-}
-
-##
-# TLS/SSL Inputs
-##
-
-variable "cloudflare_api_token" {
-  type      = string
-  default   = ""
-  sensitive = true
+  default = null
 }
 
 ##
@@ -72,39 +59,48 @@ variable "helm_version" {
   default = "2.25.1"
 }
 
-variable "image_repo" {
-  type    = string
-  default = "ghcr.io/coder/coder"
+variable "coder" {
+  type = object({
+    access_url = string
+    wildcard_url = string
+    redirect = optional(bool, true)
+    image_repo = optional(string, "ghcr.io/coder/coder")
+    image_tag = optional(string, "latest")
+    image_pull_policy = optional(string, "IfNotPresent")
+    image_pull_secrets = optional(list(string), null)
+    experiments = optional(list(string), null)
+    csp_policy = optional(string, null)
+    env_vars = optional(map(string), {})
+    rep_cnt = optional(number, 1)
+    prov_rep_cnt = optional(number, 2)
+    prov_force_cancel_interval = optional(string, "10m0s")
+    quiet_hours = optional(string, "CRON_TZ=America/Los_Angeles 50 23 * * *")
+    allow_custom_quiet = optional(bool, true)
+    tf_debug_mode = optional(bool, true)
+    trace_logs = optional(bool, true)
+    swagger_enable = optional(bool, true)
+    update_check = optional(bool, true)
+    cli_upgr_msg = optional(bool, true)
+    log_filter = optional(string, ".*")
+  })
 }
 
-variable "image_tag" {
-  type    = string
-  default = "latest"
+variable "prom" {
+  type = object({
+    enable = optional(bool, true)
+    collect_agent_status = optional(bool, true)
+    collect_db_metrics = optional(bool, true)
+  })
+  default = {
+    enable = false
+    collect_agent_status = false
+    collect_db_metrics = false
+  }
 }
 
-variable "image_pull_policy" {
-  type    = string
-  default = "IfNotPresent"
-}
-
-variable "image_pull_secrets" {
-  type    = list(string)
-  default = []
-}
-
-variable "replica_count" {
-  type    = number
-  default = 0
-}
-
-variable "env_vars" {
-  type    = map(string)
-  default = {}
-}
-
-variable "load_balancer_class" {
-  type    = string
-  default = "service.k8s.aws/nlb"
+variable "termination_grace_period" {
+  type = number
+  default = 600
 }
 
 variable "resource_request" {
@@ -118,6 +114,11 @@ variable "resource_request" {
   }
 }
 
+variable "tags" {
+  type = map(string)
+  default = {}
+}
+
 variable "resource_limit" {
   type = object({
     cpu    = string
@@ -129,12 +130,17 @@ variable "resource_limit" {
   }
 }
 
-variable "service_annotations" {
+variable "svc_annot" {
   type    = map(string)
   default = {}
 }
 
-variable "service_account_annotations" {
+variable "lb_class" {
+  type = string
+  default = "service.k8s.aws/nlb"
+}
+
+variable "svc_acc_annot" {
   type    = map(string)
   default = {}
 }
@@ -154,7 +160,7 @@ variable "tolerations" {
   default = []
 }
 
-variable "topology_spread_constraints" {
+variable "topology_spread" {
   type = list(object({
     max_skew           = number
     topology_key       = string
@@ -167,7 +173,7 @@ variable "topology_spread_constraints" {
   default = []
 }
 
-variable "pod_anti_affinity_preferred_during_scheduling_ignored_during_execution" {
+variable "pod_aaf_pref_sched_ie" {
   type = list(object({
     weight = number
     pod_affinity_term = object({
@@ -180,234 +186,256 @@ variable "pod_anti_affinity_preferred_during_scheduling_ignored_during_execution
   default = []
 }
 
-variable "primary_access_url" {
-  type = string
-}
-
-variable "wildcard_access_url" {
-  type = string
-}
-
-variable "termination_grace_period_seconds" {
-  type    = number
-  default = 600
-}
-
-variable "ssl_cert_config" {
+variable "cert_config" {
   type = object({
+    create_secret = bool
     name          = string
-    caissuer        = optional(string, "issuer")
-    secretissuer    = optional(string, "issuer")
-    create_secret = optional(bool, true)
+    kind          = optional(string, "ClusterIssuer")
+    issuer        = optional(string, "issuer")
+    store    = optional(string, "issuer")
   })
   default = {
-    name          = "coder-tls"
-    caissuer        = "issuer"
-    secretissuer        = "issuer"
     create_secret = true
+    name          = "coder-tls"
+    kind       = "ClusterIssuer"
+    issuer        = "issuer"
+    store        = "issuer"
   }
 }
 
-variable "db_secret_name" {
-  type    = string
-  default = "postgres"
-}
-
-variable "db_secret_key" {
-  type    = string
-  default = "url"
-}
-
-variable "db_secret_url" {
-  type      = string
-  sensitive = true
-}
-
-variable "enable_oidc" {
-  type = bool
-  default = true
-}
-
-variable "oidc_config" {
+variable "db" {
   type = object({
+    url = string
+    username = string
+    password = string
+    db = optional(string, "coder")
+    pg_auth = optional(string, "password")
+  })
+}
+
+variable "oidc" {
+  type = object({
+    enable = bool
     sign_in_text = string
     icon_url     = string
-    scopes       = list(string)
+    scopes       = optional(list(string), null)
     email_domain = string
+    issuer_url = optional(string, null)
+    client_id = optional(string, null)
+    client_secret = optional(string, null)
   })
   default = {
-    sign_in_text = ""
-    icon_url     = ""
-    scopes       = []
-    email_domain = ""
+    enable = false
+    sign_in_text = null
+    icon_url     = null
+    scopes       = null
+    email_domain = null
+    issuer_url   = null
+    client_id = null
+    client_secret = null
   }
 }
 
-variable "oidc_secret_name" {
-  type    = string
-  default = "oidc"
-}
-
-variable "oidc_secret_issuer_url_key" {
-  type    = string
-  default = "issuer-url"
-}
-
-variable "oidc_secret_issuer_url" {
-  type      = string
-  sensitive = true
-  default = ""
-}
-
-variable "oidc_secret_client_id_key" {
-  type    = string
-  default = "client-id"
-}
-
-variable "oidc_secret_client_id" {
-  type      = string
-  sensitive = true
-  default = ""
-}
-
-variable "oidc_secret_client_secret_key" {
-  type    = string
-  default = "client-secret"
-}
-
-variable "oidc_secret_client_secret" {
-  type      = string
-  sensitive = true
-  default = ""
-}
-
-variable "enable_oauth" {
-  type = bool
-  default = true
-}
-
-variable "oauth_secret_name" {
-  type    = string
-  default = "oauth"
-}
-
-variable "oauth_secret_client_id_key" {
-  type    = string
-  default = "client-id"
-}
-
-variable "oauth_secret_client_id" {
-  type      = string
-  sensitive = true
-  default = ""
-}
-
-variable "oauth_secret_client_secret_key" {
-  type    = string
-  default = "client-secret"
-}
-
-variable "oauth_secret_client_secret" {
-  type      = string
-  sensitive = true
-  default = ""
-}
-
-variable "enable_github_external_auth" {
-  type = bool
-  default = true
-}
-
-variable "github_external_auth_config" {
+variable "oauth2" {
   type = object({
-    id   = string
-    type = optional(string, "github")
+    enable = bool
+    default_provider_enable = bool
+    allow_signups = bool
+    device_flow = bool
+    allowed_orgs = list(string) # Empty list means allow everyone
+    client_id = string
+    client_secret = string
+    use_extern_auth = bool
   })
   default = {
-    id   = "primary-github"
-    type = "github"
+    enable = false
+    default_provider_enable = false
+    allow_signups = true
+    device_flow = false
+    allowed_orgs = []
+    client_id = null
+    client_secret = null
+    use_extern_auth = false
   }
 }
 
-variable "github_external_auth_secret_name" {
-  type    = string
-  default = "github-external-auth"
-}
-
-variable "github_external_auth_secret_client_id_key" {
-  type    = string
-  default = "client-id"
-}
-
-variable "github_external_auth_secret_client_id" {
-  type      = string
-  sensitive = true
-  default = ""
-}
-
-variable "github_external_auth_secret_client_secret_key" {
-  type    = string
-  default = "client-secret"
-}
-
-variable "github_external_auth_secret_client_secret" {
-  type      = string
-  sensitive = true
-  default = ""
-}
-
-variable "coder_builtin_provisioner_count" {
-  type    = number
-  default = 3
-}
-
-variable "coder_experiments" {
-  type    = list(string)
+variable "extern_auth" {
+  type = list(object({
+    id = string
+    type = string
+    client_id = string
+    client_secret = string
+    auth_url = optional(string, null)
+    token_url = optional(string, null)
+    revoke_url = optional(string, null)
+    validate_url = optional(string, null)
+    regex = optional(string, null)
+  }))
   default = []
 }
 
-variable "coder_github_allowed_orgs" {
-  type    = list(string)
-  default = []
+variable "aibridge" {
+  type = object({
+    enabled = bool
+    anthropic = optional(object({
+      url = string
+      key = string
+    }), null)
+    openai = optional(object({
+      url = string
+      key = string
+    }), null)
+    bedrock = optional(object({
+      url = optional(string, null)
+      region = optional(string, null)
+      access_id = string
+      secret_id = string
+      model = optional(string, "global.anthropic.claude-sonnet-4-5-20250929-v1:0")
+      fast_model = optional(string, "global.anthropic.claude-haiku-4-5-20251001-v1:0")
+    }), null)
+  })
+  default = {
+    enabled = false
+    anthropic = null
+    openai = null
+    bedrock = null
+  }
 }
 
-variable "openai_llm_endpoint" {
-  type      = string
-  sensitive = true
-  default   = ""
+locals {
+  coder = {
+    CODER_ACCESS_URL             = var.coder.access_url
+    CODER_WILDCARD_ACCESS_URL    = var.coder.wildcard_url
+    CODER_REDIRECT_TO_ACCESS_URL = var.coder.redirect
+
+    CODER_ENABLE_TERRAFORM_DEBUG_MODE = var.coder.tf_debug_mode
+    CODER_TRACE_LOGS                  = var.coder.trace_logs
+    CODER_LOG_FILTER                  = var.coder.log_filter
+    CODER_SWAGGER_ENABLE              = var.coder.swagger_enable
+    CODER_UPDATE_CHECK                = var.coder.update_check
+    CODER_CLI_UPGRADE_MESSAGE         = var.coder.cli_upgr_msg
+
+    CODER_PROVISIONER_DAEMONS               = var.coder.prov_rep_cnt
+    CODER_PROVISIONER_FORCE_CANCEL_INTERVAL = var.coder.prov_force_cancel_interval
+    CODER_QUIET_HOURS_DEFAULT_SCHEDULE      = var.coder.quiet_hours
+    CODER_ALLOW_CUSTOM_QUIET_HOURS          = var.coder.allow_custom_quiet
+  }
+  prom = {
+    CODER_PROMETHEUS_ENABLE              = var.prom.enable
+    CODER_PROMETHEUS_COLLECT_AGENT_STATS = var.prom.collect_agent_status
+    CODER_PROMETHEUS_COLLECT_DB_METRICS  = var.prom.collect_db_metrics
+  }
+  db = {
+    CODER_PG_CONNECTION_URL = "postgresql://${var.db.username}:${var.db.password}@${var.db.url}/${var.db.db}"
+    CODER_PG_AUTH                = var.db.pg_auth
+  }
+  oidc = !var.oidc.enable ? {} : {
+    CODER_OIDC_ISSUER_URL = var.oidc.issuer_url
+    CODER_OIDC_CLIENT_ID = var.oidc.client_id
+    CODER_OIDC_CLIENT_SECRET = var.oidc.client_secret
+    CODER_OIDC_SIGN_IN_TEXT = var.oidc.sign_in_text
+    CODER_OIDC_ICON_URL     = var.oidc.icon_url
+    CODER_OIDC_SCOPES       = join(",", var.oidc.scopes)
+    CODER_OIDC_EMAIL_DOMAIN = var.oidc.email_domain
+  }
+  oauth2 = !var.oauth2.enable ? {
+    CODER_OAUTH2_GITHUB_DEFAULT_PROVIDER_ENABLE = false
+  } : {
+    CODER_OAUTH2_GITHUB_DEFAULT_PROVIDER_ENABLE = var.oauth2.default_provider_enable
+    CODER_OAUTH2_GITHUB_CLIENT_ID = var.oauth2.client_id
+    CODER_OAUTH2_GITHUB_CLIENT_SECRET = var.oauth2.client_secret
+    CODER_OAUTH2_GITHUB_ALLOW_SIGNUPS = var.oauth2.allow_signups
+    CODER_OAUTH2_GITHUB_DEVICE_FLOW = var.oauth2.device_flow
+    CODER_OAUTH2_GITHUB_ALLOW_EVERYONE = "${length(var.oauth2.allowed_orgs) == 0}"
+    CODER_OAUTH2_GITHUB_ALLOWED_ORGS = join(",", var.oauth2.allowed_orgs)
+  }
+  extern_auth = merge([for index, obj in var.extern_auth : {
+    "CODER_EXTERNAL_AUTH_${index}_ID" = obj.id
+    "CODER_EXTERNAL_AUTH_${index}_TYPE" = obj.type
+    "CODER_EXTERNAL_AUTH_${index}_CLIENT_ID" = obj.client_id
+    "CODER_EXTERNAL_AUTH_${index}_CLIENT_SECRET" = obj.client_secret
+    "CODER_EXTERNAL_AUTH_${index}_AUTH_URL" = obj.auth_url
+    "CODER_EXTERNAL_AUTH_${index}_TOKEN_URL" = obj.token_url
+    "CODER_EXTERNAL_AUTH_${index}_REVOKE_URL" = obj.revoke_url
+    "CODER_EXTERNAL_AUTH_${index}_VALIDATE_URL" = obj.validate_url
+    "CODER_EXTERNAL_AUTH_${index}_REGEX" = obj.regex
+  }]...)
+  anthropic = var.aibridge.anthropic == null ? {} : {
+    CODER_AIBRIDGE_ANTHROPIC_BASE_URL = var.aibridge.anthropic.url
+    CODER_AIBRIDGE_ANTHROPIC_KEY = var.aibridge.anthropic.key
+  }
+  openai = var.aibridge.openai == null ? {} : {
+    CODER_AIBRIDGE_OPENAI_BASE_URL = var.aibridge.openai.url
+    CODER_AIBRIDGE_OPENAI_KEY = var.aibridge.openai.key
+  }
+  bedrock = var.aibridge.bedrock == null ? {} : {
+    CODER_AIBRIDGE_BEDROCK_BASE_URL = var.aibridge.bedrock.url
+    CODER_AIBRIDGE_BEDROCK_REGION            = var.aibridge.bedrock.region
+    CODER_AIBRIDGE_BEDROCK_ACCESS_KEY        = var.aibridge.bedrock.access_id
+    CODER_AIBRIDGE_BEDROCK_ACCESS_KEY_SECRET = var.aibridge.bedrock.secret_id
+    CODER_AIBRIDGE_BEDROCK_MODEL = var.aibridge.bedrock.model
+    CODER_AIBRIDGE_BEDROCK_SMALL_FAST_MODEL = var.aibridge.bedrock.fast_model
+  }
+  aibridge = merge(
+    local.anthropic, 
+    local.openai, 
+    local.bedrock, 
+    { CODER_AIBRIDGE_ENABLED = var.aibridge.enabled }
+  )
+  secrets = merge({
+    CODER_AIBRIDGE_ANTHROPIC_KEY = try(local.anthropic["CODER_AIBRIDGE_ANTHROPIC_KEY"], null)
+    CODER_AIBRIDGE_OPENAI_KEY = try(local.openai["CODER_AIBRIDGE_OPENAI_KEY"], null)
+    CODER_AIBRIDGE_BEDROCK_ACCESS_KEY_SECRET = try(local.bedrock["CODER_AIBRIDGE_BEDROCK_ACCESS_KEY_SECRET"], null)
+    CODER_OAUTH2_GITHUB_CLIENT_SECRET = try(local.oauth2["CODER_OAUTH2_GITHUB_CLIENT_SECRET"], null)
+    CODER_OIDC_CLIENT_SECRET = try(local.oidc["CODER_OIDC_CLIENT_SECRET"], null)
+    CODER_PG_CONNECTION_URL = try(local.db["CODER_PG_CONNECTION_URL"], null)
+  }, { for index, obj in var.extern_auth : 
+    "CODER_EXTERNAL_AUTH_${index}_CLIENT_SECRET" => obj.client_secret 
+  })
+  secret_key = "key"
+  secret_keys = keys(local.secrets)
+  env = concat([ for k,v in merge(
+    local.coder,
+    local.prom, 
+    local.db,
+    local.oidc,
+    local.oauth2,
+    local.extern_auth,
+    local.aibridge
+  ) : { 
+    name = k, 
+    value = tostring(v) 
+  } if lookup(local.secrets, k, null) == null ], [
+    for k,v in local.secrets : { 
+      name = k, 
+      valueFrom = { 
+        secretKeyRef = { 
+          name = replace(lower(k), "_", "-"), 
+          key = local.secret_key
+        } 
+      } 
+    } if v != null
+  ])
 }
 
-variable "openai_llm_secret_name" {
-  type    = string
-  default = "coder-openai-llm-key"
+output "env" {
+  value = local.env
 }
 
-variable "openai_llm_key" {
-  type      = string
-  sensitive = true
-  default   = ""
-}
+resource "kubernetes_secret_v1" "coder" {
 
-variable "anthropic_llm_endpoint" {
-  type      = string
-  sensitive = true
-  default   = ""
-}
+  for_each = toset(local.secret_keys)
 
-variable "anthropic_llm_secret_name" {
-  type    = string
-  default = "coder-anthropic-llm-key"
-}
-
-variable "anthropic_llm_key" {
-  type      = string
-  sensitive = true
-  default   = ""
-}
-
-variable "tags" {
-  type    = map(string)
-  default = {}
+  metadata {
+    name = replace(lower(each.key), "_", "-")
+    namespace = kubernetes_namespace_v1.this.metadata[0].name
+    annotations = {
+      "custom.kubernetes.secret/key" = local.secret_key
+    }
+  }
+  data = {
+    "${local.secret_key}" = sensitive(local.secrets[each.key])
+  }
 }
 
 data "aws_region" "this" {}
@@ -415,171 +443,8 @@ data "aws_region" "this" {}
 data "aws_caller_identity" "this" {}
 
 locals {
-  oidc_secret_issuer_url = var.enable_oidc ? {
-    name = "CODER_OIDC_ISSUER_URL"
-    valueFrom = {
-      secretKeyRef = {
-        name = var.oidc_secret_name
-        key  = var.oidc_secret_issuer_url_key
-      }
-    }
-  } : null
-  oidc_client_id = var.enable_oidc ? {
-    name = "CODER_OIDC_CLIENT_ID"
-    valueFrom = {
-      secretKeyRef = {
-        name = var.oidc_secret_name
-        key  = var.oidc_secret_client_id_key
-      }
-    }
-  } : null
-  oidc_client_secret = var.enable_oidc ? {
-    name = "CODER_OIDC_CLIENT_SECRET"
-    valueFrom = {
-      secretKeyRef = {
-        name = var.oidc_secret_name
-        key  = var.oidc_secret_client_secret_key
-      }
-    }
-  } : null
-  oauth2_github_client_id = var.enable_oauth ? {
-    name = "CODER_OAUTH2_GITHUB_CLIENT_ID"
-    valueFrom = {
-      secretKeyRef = {
-        name = var.oauth_secret_name
-        key  = var.oauth_secret_client_id_key
-      }
-    }
-  } : null
-  oauth2_github_client_secret = var.enable_oauth ? {
-    name = "CODER_OAUTH2_GITHUB_CLIENT_SECRET"
-    valueFrom = {
-      secretKeyRef = {
-        name = var.oauth_secret_name
-        key  = var.oauth_secret_client_secret_key
-      }
-    }
-  } : null
-  external_auth_github_client_id = var.enable_github_external_auth ? {
-    name = "CODER_EXTERNAL_AUTH_0_CLIENT_ID"
-    valueFrom = {
-      secretKeyRef = {
-        name = var.oauth_secret_name
-        key  = var.oauth_secret_client_id_key
-      }
-    }
-  } : null
-  external_auth_github_client_secret = var.enable_github_external_auth ? {
-    name = "CODER_EXTERNAL_AUTH_0_CLIENT_SECRET"
-    valueFrom = {
-      secretKeyRef = {
-        name = var.oauth_secret_name
-        key  = var.oauth_secret_client_secret_key
-      }
-    }
-  } : null
-}
-
-locals {
-  github_allow_everyone = length(var.coder_github_allowed_orgs) == 0
-  primary_env_vars = merge({
-    CODER_ACCESS_URL             = var.primary_access_url
-    CODER_WILDCARD_ACCESS_URL    = var.wildcard_access_url
-    CODER_REDIRECT_TO_ACCESS_URL = true
-    CODER_PG_AUTH                = "password"
-
-    CODER_ENABLE_TERRAFORM_DEBUG_MODE = true
-    CODER_TRACE_LOGS                  = true
-    CODER_LOG_FILTER                  = ".*"
-    CODER_SWAGGER_ENABLE              = true
-    CODER_UPDATE_CHECK                = true
-    CODER_CLI_UPGRADE_MESSAGE         = true
-
-    CODER_PROVISIONER_DAEMONS               = var.coder_builtin_provisioner_count
-    CODER_PROVISIONER_FORCE_CANCEL_INTERVAL = "10m0s"
-    CODER_QUIET_HOURS_DEFAULT_SCHEDULE      = "CRON_TZ=America/Los_Angeles 50 23 * * *"
-    CODER_ALLOW_CUSTOM_QUIET_HOURS          = true
-
-    CODER_PROMETHEUS_ENABLE              = true
-    CODER_PROMETHEUS_COLLECT_AGENT_STATS = true
-    CODER_PROMETHEUS_COLLECT_DB_METRICS  = true
-    # CODER_PROMETHEUS_ADDRESS             = "127.0.0.1:${var.prometheus_port}"
-
-    # CODER_AIBRIDGE_BEDROCK_MODEL = "global.anthropic.claude-sonnet-4-5-20250929-v1:0"
-    # CODER_AIBRIDGE_BEDROCK_SMALL_FAST_MODEL = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
-
-    # Experimental Coder Features
-    # CODER_EXPERIMENTS = join(",", var.coder_experiments)
-    # Needed by the ai-tasks experiment to embed workspace apps running on subdomains in iframes
-    CODER_ADDITIONAL_CSP_POLICY = "frame-src ${var.primary_access_url}"
-  }, merge(var.enable_oidc ? {
-    CODER_OIDC_SIGN_IN_TEXT = var.oidc_config.sign_in_text
-    CODER_OIDC_ICON_URL     = var.oidc_config.icon_url
-    CODER_OIDC_SCOPES       = join(",", var.oidc_config.scopes)
-    CODER_OIDC_EMAIL_DOMAIN = var.oidc_config.email_domain
-  } : {}, merge(var.enable_oauth ? {
-    CODER_OAUTH2_GITHUB_DEFAULT_PROVIDER_ENABLE                                                                  = false
-    CODER_OAUTH2_GITHUB_ALLOW_SIGNUPS                                                                            = true
-    CODER_OAUTH2_GITHUB_DEVICE_FLOW                                                                              = false
-    "${local.github_allow_everyone ? "CODER_OAUTH2_GITHUB_ALLOW_EVERYONE" : "CODER_OAUTH2_GITHUB_ALLOWED_ORGS"}" = "${local.github_allow_everyone ? "true" : join(",", var.coder_github_allowed_orgs)}"
-  } : {}, var.enable_github_external_auth ? {
-    CODER_EXTERNAL_AUTH_0_ID   = "primary-github"
-    CODER_EXTERNAL_AUTH_0_TYPE = "github"
-  } : {})))
-  env_vars = concat([
-    for k, v in merge(local.primary_env_vars, var.env_vars) : { name = k, value = tostring(v) }
-    ], concat([{
-      name = "CODER_PG_CONNECTION_URL"
-      valueFrom = {
-        secretKeyRef = {
-          name = var.db_secret_name
-          key  = var.db_secret_key
-        }
-      }
-      }, 
-      # local.oidc_secret_issuer_url,
-      # local.oidc_client_id, 
-      # local.oidc_client_secret, 
-      # local.oauth2_github_client_id, 
-      # local.oauth2_github_client_secret, 
-      # local.external_auth_github_client_id, 
-      # local.external_auth_github_client_secret,
-      ], concat(var.anthropic_llm_endpoint != "" ? [{
-        name = "CODER_AIBRIDGE_ANTHROPIC_KEY"
-        valueFrom = {
-          secretKeyRef = {
-            name = kubernetes_secret.anthropic-llm-secret[0].metadata[0].name
-            key  = "key"
-          }
-        }
-        }, {
-        name = "CODER_AIBRIDGE_ANTHROPIC_BASE_URL"
-        valueFrom = {
-          secretKeyRef = {
-            name = kubernetes_secret.anthropic-llm-secret[0].metadata[0].name
-            key  = "base_url"
-          }
-        }
-      }] : [],
-      var.openai_llm_endpoint != "" ? [{
-        name = "CODER_AIBRIDGE_OPENAI_KEY"
-        valueFrom = {
-          secretKeyRef = {
-            name = kubernetes_secret.openai-llm-secret[0].metadata[0].name
-            key  = "key"
-          }
-        }
-        }, {
-        name = "CODER_AIBRIDGE_OPENAI_BASE_URL"
-        valueFrom = {
-          secretKeyRef = {
-            name = kubernetes_secret.openai-llm-secret[0].metadata[0].name
-            key  = "base_url"
-          }
-        }
-  }] : [])))
-  pod_anti_affinity_preferred_during_scheduling_ignored_during_execution = [
-    for k, v in var.pod_anti_affinity_preferred_during_scheduling_ignored_during_execution : {
+  pod_aaf_pref_sched_ie = [
+    for k, v in var.pod_aaf_pref_sched_ie : {
       weight = v.weight
       podAffinityTerm = {
         labelSelector = {
@@ -589,8 +454,8 @@ locals {
       }
     }
   ]
-  topology_spread_constraints = [
-    for k, v in var.topology_spread_constraints : {
+  topology_spread = [
+    for k, v in var.topology_spread : {
       maxSkew           = v.max_skew
       topologyKey       = v.topology_key
       whenUnsatisfiable = v.when_unsatisfiable
@@ -603,14 +468,16 @@ locals {
 }
 
 locals {
-  region      = var.policy_resource_region == "" ? data.aws_region.this.region : var.policy_resource_region
-  account_id  = var.policy_resource_account == "" ? data.aws_caller_identity.this.account_id : var.policy_resource_account
-  policy_name = var.policy_name == "" ? "coder-srv" : var.policy_name
-  role_name   = var.role_name == "" ? "coder-srv" : var.role_name
+  region      = var.policy_resource_region == null ? data.aws_region.this.region : var.policy_resource_region
+  account_id  = var.policy_resource_account == null ? data.aws_caller_identity.this.account_id : var.policy_resource_account
+  policy_name = var.policy_name == null ? "coder-srv" : var.policy_name
+  role_name   = var.role_name == null ? "coder-srv" : var.role_name
 }
 
 module "provisioner-policy" {
-  count       = var.coder_builtin_provisioner_count == 0 ? 0 : 1
+
+  count       = var.coder.prov_rep_cnt == 0 ? 0 : 1
+
   source      = "../../../security/policy"
   name        = local.policy_name
   path         = "/${var.cluster_name}/${data.aws_region.this.region}/"
@@ -619,7 +486,9 @@ module "provisioner-policy" {
 }
 
 module "provisioner-oidc-role" {
-  count        = var.coder_builtin_provisioner_count == 0 ? 0 : 1
+
+  count        = var.coder.prov_rep_cnt == 0 ? 0 : 1
+
   source       = "../../../security/role/access-entry"
   name         = local.role_name
   path         = "/${var.cluster_name}/${data.aws_region.this.region}/"
@@ -635,93 +504,25 @@ module "provisioner-oidc-role" {
   tags = var.tags
 }
 
-resource "kubernetes_namespace" "this" {
+resource "kubernetes_namespace_v1" "this" {
   metadata {
     name = var.namespace
   }
 }
 
 locals {
-  ssl_vol_friendly_name = replace(var.ssl_cert_config.name, ".", "-")
+  ssl_vol_friendly_name = replace(var.cert_config.name, ".", "-")
 }
 
-resource "kubernetes_secret" "pg-connection" {
-  metadata {
-    name      = var.db_secret_name
-    namespace = kubernetes_namespace.this.metadata[0].name
-  }
-  data = {
-    "${var.db_secret_key}" = var.db_secret_url
-  }
-  type = "Opaque"
-}
-
-resource "kubernetes_secret" "oidc" {
-  metadata {
-    name      = var.oidc_secret_name
-    namespace = kubernetes_namespace.this.metadata[0].name
-  }
-  data = {
-    "${var.oidc_secret_issuer_url_key}"    = var.oidc_secret_issuer_url
-    "${var.oidc_secret_client_id_key}"     = var.oidc_secret_client_id
-    "${var.oidc_secret_client_secret_key}" = var.oidc_secret_client_secret
-  }
-  type = "Opaque"
-}
-
-resource "kubernetes_secret" "oauth" {
-  metadata {
-    name      = var.oauth_secret_name
-    namespace = kubernetes_namespace.this.metadata[0].name
-  }
-  data = {
-    "${var.oauth_secret_client_id_key}"     = var.oauth_secret_client_id
-    "${var.oauth_secret_client_secret_key}" = var.oauth_secret_client_secret
-  }
-  type = "Opaque"
-}
-
-resource "kubernetes_secret" "external_auth" {
-  metadata {
-    name      = var.github_external_auth_secret_name
-    namespace = kubernetes_namespace.this.metadata[0].name
-  }
-  data = {
-    "${var.github_external_auth_secret_client_id_key}"     = var.github_external_auth_secret_client_id
-    "${var.github_external_auth_secret_client_secret_key}" = var.github_external_auth_secret_client_secret
-  }
-  type = "Opaque"
-}
-
-resource "kubernetes_secret" "openai-llm-secret" {
-  count = var.openai_llm_endpoint != "" ? 1 : 0
-  metadata {
-    name      = var.openai_llm_secret_name
-    namespace = kubernetes_namespace.this.metadata[0].name
-  }
-  data = {
-    base_url = var.openai_llm_endpoint
-    key      = var.openai_llm_key
-  }
-  type = "Opaque"
-}
-
-resource "kubernetes_secret" "anthropic-llm-secret" {
-  count = var.anthropic_llm_endpoint != "" ? 1 : 0
-  metadata {
-    name      = var.anthropic_llm_secret_name
-    namespace = kubernetes_namespace.this.metadata[0].name
-  }
-  data = {
-    base_url = var.anthropic_llm_endpoint
-    key      = var.anthropic_llm_key
-  }
-  type = "Opaque"
-}
+##
+# Store SSL/TLS certs in Secrets Manager.
+# Used to avoid throttling Let's Encrypt:
+# https://letsencrypt.org/docs/rate-limits/
+##
 
 locals {
-  common_name   = trimprefix(trimprefix(var.primary_access_url, "https://"), "http://")
-  wildcard_name = trimprefix(trimprefix(var.wildcard_access_url, "https://"), "http://")
+  common_name   = trimprefix(trimprefix(var.coder.access_url, "https://"), "http://")
+  wildcard_name = trimprefix(trimprefix(var.coder.wildcard_url, "https://"), "http://")
   cert_refresh_interval = "2160h" # 90 days
   cert_renew_before = "360h" # 15 days
   secret_refresh_interval = "1812h0m0s" # 75.5 days
@@ -753,13 +554,13 @@ resource "kubernetes_manifest" "pull" {
     apiVersion = "external-secrets.io/v1"
     kind = "ExternalSecret"
     metadata = {
-      name = var.ssl_cert_config.name 
-      namespace = kubernetes_namespace.this.metadata[0].name
+      name = var.cert_config.name 
+      namespace = kubernetes_namespace_v1.this.metadata[0].name
     }
     spec = {
       secretStoreRef = {
         kind = "ClusterSecretStore"
-        name = var.ssl_cert_config.secretissuer
+        name = var.cert_config.store
       }
       refreshPolicy = "Periodic"
       refreshInterval = local.secret_refresh_interval
@@ -775,12 +576,12 @@ resource "kubernetes_manifest" "pull" {
             }
             annotations = {
               "cert-manager.io/alt-names" = "${local.wildcard_name},${local.common_name}"                                                                                                                                
-              "cert-manager.io/certificate-name" = var.ssl_cert_config.name                                                                                     
+              "cert-manager.io/certificate-name" = var.cert_config.name                                                                                     
               "cert-manager.io/common-name" = local.common_name 
               "cert-manager.io/ip-sans" = ""
               "cert-manager.io/issuer-group" = ""                                                                                                                   
               "cert-manager.io/issuer-kind" = "ClusterIssuer"                                                                                               
-              "cert-manager.io/issuer-name" = var.ssl_cert_config.caissuer
+              "cert-manager.io/issuer-name" = var.cert_config.issuer
               "cert-manager.io/uri-sans" = ""
             }
           }
@@ -836,8 +637,8 @@ resource "kubernetes_manifest" "certificate" {
     apiVersion = "cert-manager.io/v1"
     kind = "Certificate"
     metadata = {
-      name = var.ssl_cert_config.name
-      namespace = kubernetes_namespace.this.metadata[0].name
+      name = var.cert_config.name
+      namespace = kubernetes_namespace_v1.this.metadata[0].name
     }
     spec = {
       commonName = local.common_name
@@ -848,8 +649,8 @@ resource "kubernetes_manifest" "certificate" {
       duration = local.cert_refresh_interval
       renewBefore = local.cert_renew_before
       issuerRef = {
-        kind = "ClusterIssuer"
-        name = var.ssl_cert_config.caissuer
+        kind = var.cert_config.kind
+        name = var.cert_config.issuer
       }
       secretName = local.ssl_vol_friendly_name
       privateKey = {
@@ -887,8 +688,8 @@ resource "kubernetes_manifest" "push" {
     apiVersion = "external-secrets.io/v1alpha1"
     kind = "PushSecret"
     metadata = {
-      name = var.ssl_cert_config.name 
-      namespace = kubernetes_namespace.this.metadata[0].name
+      name = var.cert_config.name 
+      namespace = kubernetes_namespace_v1.this.metadata[0].name
     }
     spec = {
       updatePolicy = "Replace"
@@ -896,7 +697,7 @@ resource "kubernetes_manifest" "push" {
       refreshInterval = local.secret_refresh_interval
       secretStoreRefs = [{
         kind = "ClusterSecretStore"
-        name = var.ssl_cert_config.secretissuer
+        name = var.cert_config.store
       }]
       selector = {
         secret = {
@@ -922,10 +723,10 @@ resource "kubernetes_manifest" "push" {
   }
 }
 
-resource "kubernetes_service" "prometheus" {
+resource "kubernetes_service_v1" "prometheus" {
   metadata {
     name      = "coder-prometheus"
-    namespace = kubernetes_namespace.this.metadata[0].name
+    namespace = kubernetes_namespace_v1.this.metadata[0].name
     # labels    = local.app_labels
   }
   spec {
@@ -949,7 +750,7 @@ resource "helm_release" "coder-server" {
   depends_on = [ kubernetes_manifest.push ]
 
   name             = "coder"
-  namespace        = kubernetes_namespace.this.metadata[0].name
+  namespace        = kubernetes_namespace_v1.this.metadata[0].name
   chart            = "coder"
   repository       = "https://helm.coder.com/v2"
   create_namespace = false
@@ -963,12 +764,12 @@ resource "helm_release" "coder-server" {
   values = [yamlencode({
     coder = {
       image = {
-        repo        = var.image_repo
-        tag         = var.image_tag
-        pullPolicy  = var.image_pull_policy
-        pullSecrets = var.image_pull_secrets
+        repo        = var.coder.image_repo
+        tag         = var.coder.image_tag
+        pullPolicy  = var.coder.image_pull_policy
+        pullSecrets = var.coder.image_pull_secrets
       }
-      env = local.env_vars
+      env = local.env
       tls = {
         secretNames = [ local.ssl_vol_friendly_name ]
       }
@@ -981,28 +782,32 @@ resource "helm_release" "coder-server" {
         type                  = "LoadBalancer"
         sessionAffinity       = "None"
         externalTrafficPolicy = "Cluster"
-        loadBalancerClass     = var.load_balancer_class
-        annotations           = var.service_annotations
+        loadBalancerClass     = var.lb_class
+        annotations           = var.svc_annot
       }
-      replicaCount = var.replica_count
+      replicaCount = var.coder.rep_cnt
       resources = {
         requests = var.resource_request
         limits   = var.resource_limit
       }
       serviceAccount = {
-        annotations = var.coder_builtin_provisioner_count == 0 ? var.service_account_annotations : merge({
+        annotations = var.coder.prov_rep_cnt == 0 ? var.svc_acc_annot : merge({
           "eks.amazonaws.com/role-arn" : module.provisioner-oidc-role[0].role_arn
-        }, var.service_account_annotations)
+        }, var.svc_acc_annot)
       }
       nodeSelector              = var.node_selector
       tolerations               = var.tolerations
-      topologySpreadConstraints = local.topology_spread_constraints
+      topologySpreadConstraints = local.topology_spread
       affinity = {
         podAntiAffinity = {
-          preferredDuringSchedulingIgnoredDuringExecution = local.pod_anti_affinity_preferred_during_scheduling_ignored_during_execution
+          preferredDuringSchedulingIgnoredDuringExecution = local.pod_aaf_pref_sched_ie
         }
       }
-      terminationGracePeriodSeconds = var.termination_grace_period_seconds
+      terminationGracePeriodSeconds = var.termination_grace_period
     }
   })]
+}
+
+output "namespace" {
+  value = kubernetes_namespace_v1.this.metadata[0].name
 }

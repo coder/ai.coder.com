@@ -65,32 +65,58 @@ variable "node_selector" {
     default = {}
 }
 
+variable "tolerations" {
+  type = list(map(any))
+  default = []
+}
+
 data "aws_region" "this" {}
 
 data "aws_caller_identity" "this" {}
 
+variable "r53_config" {
+  type = object({
+    enabled = bool
+    region = optional(string, "")
+    account = optional(string, "")
+    role_name = optional(string, "ext-dns")
+    policy_name = optional(string, "ext-dns")
+  })
+  default = {
+    enabled = false
+    region = ""
+    account = ""
+    role_name = "ext-dns"
+    policy_name = "ext-dns"
+  }
+}
+
 locals {
-  region      = var.policy_resource_region == "" ? data.aws_region.this.region : var.policy_resource_region
-  account_id  = var.policy_resource_account == "" ? data.aws_caller_identity.this.account_id : var.policy_resource_account
-  policy_name = var.policy_name == "" ? "ext-dns" : var.policy_name
-  role_name   = var.role_name == "" ? "ext-dns" : var.role_name
+  region      = var.r53_config.region == "" ? data.aws_region.this.region : var.r53_config.region
+  account_id  = var.r53_config.account == "" ? data.aws_caller_identity.this.account_id : var.r53_config.account
 }
 
 module "policy" {
+
+  count = var.r53_config.enabled ? 1 : 0
+
   source      = "../../../security/policy"
-  name        = local.policy_name
-  path         = "/${var.cluster_name}/${data.aws_region.this.region}/"
+  name        = var.r53_config.policy_name
+  path         = "/${var.cluster_name}/${local.region}/"
   description = "External DNS Policy."
   policy_json = data.aws_iam_policy_document.this.json
 }
 
 module "oidc-role" {
+
+  count = var.r53_config.enabled ? 1 : 0
+
   source       = "../../../security/role/access-entry"
-  name         = local.role_name
-  path         = "/${var.cluster_name}/${data.aws_region.this.region}/"
+  name         = var.r53_config.role_name
+  path         = "/${var.cluster_name}/${local.region}/"
   cluster_name = var.cluster_name
   policy_arns = {
-    "ExternalDNS"       = module.policy.policy_arn
+    "ExternalDNS"       = module.policy[0].policy_arn
   }
   cluster_policy_arns = {
     "AmazonEKSClusterAdminPolicy" = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy",
@@ -101,13 +127,55 @@ module "oidc-role" {
   tags = var.tags
 }
 
-variable "domain_name" {
-    type = string
+variable "cf_config" {
+  type = object({
+    enabled = bool
+    token = string
+    email = string
+  })
+  default = {
+    enabled = false
+    token = ""
+    email = ""
+  }
+  sensitive = true
 }
 
-variable "is_private_domain" {
-    type = bool
-    default = false
+locals {
+  # https://github.com/kubernetes-sigs/external-dns/blob/master/docs/tutorials/aws.md
+  provider_aws = !var.r53_config.enabled ? null : {
+    provider = { name = "aws" }
+    env = [{
+      name = "AWS_DEFAULT_REGION"
+      value = data.aws_region.this.region
+    }]
+    serviceAccount = {
+      annotations = {
+          "eks.amazonaws.com/role-arn" = module.oidc-role[0].role_arn
+      }
+    }
+    sources = [
+      "ingress",
+      "service"
+    ]
+    extraArgs = [ "--aws-zone-match-parent" ]
+  }
+  # https://github.com/kubernetes-sigs/external-dns/blob/master/docs/tutorials/cloudflare.md
+  provider_cf = !var.cf_config.enabled ? null : {
+    provider = { name = "cloudflare" }
+    env = [{
+      name = "CF_API_TOKEN"
+      value = var.cf_config.token
+    }]
+  }
+  values = merge(local.provider_cf, merge(local.provider_aws, {
+    registry = "txt"
+    txtPrefix = "%%{record_type}-txt-."
+    txtOwnerId = "coder"
+    policy = "sync" # Force cleanup + insertion of record.
+    nodeSelector = var.node_selector
+    tolerations = var.tolerations
+  }))
 }
 
 resource "helm_release" "chart" {
@@ -123,34 +191,5 @@ resource "helm_release" "chart" {
   version          = var.chart_version
   timeout          = 120 # in seconds
 
-  values = [yamlencode({
-    provider = {
-      name = "aws"
-    }
-    sources = [
-      "ingress",
-      "service"
-    ]
-    registry = "txt"
-    txtPrefix = "%%{record_type}-txt-."
-    txtOwnerId = "coder"
-    policy = "sync" # Force cleanup + insertion of record.
-    env = [{
-        name = "AWS_DEFAULT_REGION"
-        value = data.aws_region.this.region
-    }]
-    serviceAccount = {
-        annotations = {
-            "eks.amazonaws.com/role-arn" = module.oidc-role.role_arn
-        }
-    }
-    nodeSelector = var.node_selector
-    tolerations = [{
-      key      = "CriticalAddonsOnly"
-      operator = "Exists"
-    }]
-    extraArgs = [
-      "--aws-zone-match-parent"
-    ]
-  })]
+  values = [yamlencode(local.values)]
 }

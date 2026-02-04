@@ -22,6 +22,11 @@ variable "node_selector" {
   default = {}
 }
 
+variable "tolerations" {
+  type = list(map(any))
+  default = []
+}
+
 data "aws_region" "this" {}
 
 data "aws_caller_identity" "this" {}
@@ -37,13 +42,10 @@ resource "helm_release" "metrics-server" {
   wait             = true
   wait_for_jobs    = true
   version          = var.chart_version
-  timeout          = 120 # in seconds
+  timeout          = 300 # in seconds
 
   values = [yamlencode({
     nodeSelector = var.node_selector
-    tolerations = [{
-      key      = "CriticalAddonsOnly"
-      operator = "Exists"
-    }]
+    tolerations = var.tolerations
   })]
 }
