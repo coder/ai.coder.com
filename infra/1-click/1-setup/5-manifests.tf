@@ -16,11 +16,6 @@ data "kubernetes_service_account_v1" "kptr" {
 
 
 locals {
-  prefetch-script = templatefile("${path.module}/scripts/prefetch.sh.tftpl", {
-    IMAGES = join(" ", ["docker.io/codercom/enterprise-base:ubuntu"])
-    PRE_SCRIPT = ""
-    POST_SCRIPT = ""
-  })
   nodeclass_configs = {
     "coder" = {
       user_data = <<-EOF
@@ -84,7 +79,7 @@ locals {
       node_expires_after              = "Never"
       disruption_consolidation_policy = "WhenEmpty"
       disruption_consolidate_after    = "1m"
-      instance_type =                  "t3a.medium"
+      instance_type =                  "t3a.large"
       taints                          = []
     }
   }

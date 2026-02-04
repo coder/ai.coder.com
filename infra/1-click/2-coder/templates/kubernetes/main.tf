@@ -230,10 +230,9 @@ locals {
   coder_bin = "/opt/coder/bin"
   init_script = <<-EOF
   if [ -x ${local.coder_bin}/coder ]; then
-    exec ${local.coder_bin}/coder agent
-  else
-    ${coder_agent.main.init_script}
+    exec ${local.coder_bin}/coder agent ;
   fi
+  ${coder_agent.main.init_script}
   EOF
 }
 

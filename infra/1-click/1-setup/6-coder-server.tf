@@ -232,7 +232,7 @@ data "http" "first-user" {
   # depends_on = [ time_sleep.wait_for_dns ]
   depends_on      = [ module.coder-server ]
 
-  url = "https://${aws_eip.coder[0].public_ip}/api/v2/users/first"
+  url = "https://${aws_eip.coder.0.public_ip}/api/v2/users/first"
   method = "POST"
   insecure = true
   request_headers = {
@@ -380,14 +380,13 @@ module "monitoring" {
 locals {
   coder_path = "/opt/coder/bin"
   bin_fetch_script = <<-EOF
-    if [ ! -f ${local.coder_path}/coder ]; then
-      curl -L https://${var.domain_name}/bin/coder-linux-amd64 -o ${local.coder_path}/coder
-      chmod +x ${local.coder_path}/coder
-    fi
+    curl -kfsSL --retry 10 --retry-delay 5 -H "Host: ${var.domain_name}" https://coder.coder.svc.cluster.local/bin/coder-linux-amd64 -o ${local.coder_path}/coder
+    chmod +x ${local.coder_path}/coder
   EOF
 }
 
 resource "kubernetes_daemon_set_v1" "bin-fetch" {
+
   metadata {
     name = "coder-bin-fetch"
     namespace = module.coder-server.namespace
@@ -417,7 +416,7 @@ resource "kubernetes_daemon_set_v1" "bin-fetch" {
 
         host_aliases {
           hostnames = [var.domain_name]
-          ip = aws_eip.coder[0].private_ip
+          ip = aws_eip.coder[0].public_ip
         }
         
         security_context {

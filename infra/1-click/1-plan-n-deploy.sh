@@ -37,22 +37,22 @@ if [ -z "${DOMAIN_NAME}" ]; then
     exit 1;
 fi
 
-echo "Change directory into '0-infra'."
-cd 0-infra
-terraform plan -out=tf.plan \
-    -var profile=$AWS_PROFILE \
-    -var region=$AWS_REGION \
-    -var domain_name=$DOMAIN_NAME \
-    -var azs="$AWS_AZS" \
-    -var coder_username=$CODER_DB_USERNAME \
-    -var coder_password=$CODER_DB_PASSWORD \
-    -var grafana_username=$GRAFANA_DB_USERNAME \
-    -var grafana_password=$GRAFANA_DB_PASSWORD \
-    -var use_ext_dns=$USE_EXTERN_DNS \
-    -var cf_config="{\"enabled\":\"$USE_CF\",\"email\":\"$CF_EMAIL\",\"token\":\"$CF_TOKEN\"}" \
-    -var r53_config="{\"enabled\":\"$USE_R53\"}"
-terraform apply tf.plan
-cd ../
+# echo "Change directory into '0-infra'."
+# cd 0-infra
+# terraform plan -out=tf.plan \
+#     -var profile=$AWS_PROFILE \
+#     -var region=$AWS_REGION \
+#     -var domain_name=$DOMAIN_NAME \
+#     -var azs="$AWS_AZS" \
+#     -var coder_username=$CODER_DB_USERNAME \
+#     -var coder_password=$CODER_DB_PASSWORD \
+#     -var grafana_username=$GRAFANA_DB_USERNAME \
+#     -var grafana_password=$GRAFANA_DB_PASSWORD \
+#     -var use_ext_dns=$USE_EXTERN_DNS \
+#     -var cf_config="{\"enabled\":\"$USE_CF\",\"email\":\"$CF_EMAIL\",\"token\":\"$CF_TOKEN\"}" \
+#     -var r53_config="{\"enabled\":\"$USE_R53\"}"
+# terraform apply tf.plan
+# cd ../
 
 echo "Change directory into '1-setup'."
 cd 1-setup

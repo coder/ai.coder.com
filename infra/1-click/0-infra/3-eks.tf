@@ -88,7 +88,7 @@ module "eks" {
         "system-only" = local.taints_system
       }
 
-      instance_types = ["t3.large"]
+      instance_types = ["t3a.large"]
       capacity_type  = "ON_DEMAND"
       volume_size    = 50
 
