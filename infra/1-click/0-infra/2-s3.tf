@@ -6,13 +6,8 @@
 # Loki Inputs
 ##
 
-variable "loki_s3_bucket_tags" {
-  type    = map(string)
-  default = {}
-}
-
 resource "aws_s3_bucket" "loki" {
-  bucket = "${var.name}-${local.normalized_domain_name}-grafana"
+  bucket = "${local.formatted_name}-grafana"
   tags   = var.loki_s3_bucket_tags
 }
 

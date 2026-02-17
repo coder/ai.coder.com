@@ -26,85 +26,54 @@ terraform {
 # Coderd Inputs
 ##
 
-variable "coder_proxy_name" {
-  type = string
+variable "proxy" {
+  type = object({
+    access_url = string
+    wildcard_url = string
+    coder_access_url = string
+    mount_ssl = optional(bool, false)
+    mount_ssl_name = optional(string, "cert")
+    name = string
+    display_name = string
+    icon = optional(string, "")
+    rep_cnt = optional(number, 1)
+    image_repo = optional(string, "ghcr.io/coder/coder")
+    image_tag = optional(string, "latest")
+    image_pull_policy = optional(string, "IfNotPresent")
+    image_pull_secrets = optional(list(string), null)
+    trace_logs = optional(bool, true)
+    log_filter = optional(string, ".*")
+  })
 }
-
-variable "coder_proxy_display_name" {
-  type = string
-}
-
-variable "coder_proxy_icon" {
-  type = string
-}
-
-##
-# TLS/SSL Inputs
-##
-
-variable "acme_registration_email" {
-  type    = string
-  default = ""
-}
-
-variable "acme_days_until_renewal" {
-  type    = number
-  default = 30
-}
-
-variable "acme_revoke_certificate" {
-  type    = bool
-  default = true
-}
-
-variable "cloudflare_api_token" {
-  type      = string
-  default   = ""
-  sensitive = true
-}
-
 
 ##
 # Kubernetes Inputs
 ##
 
+variable "release_name" {
+  description = "The release name of the installed Helm app."
+  type = string
+  default = "coder-proxy"
+}
+
+variable "chart_name" {
+  description = "The chart name of the installed Helm app."
+  type = string
+  default = "coder"
+}
+
 variable "namespace" {
   type = string
 }
 
-variable "helm_timeout" {
+variable "chart_timeout" {
   type    = number
-  default = 120 # In Seconds
+  default = 300 # In Seconds
 }
 
-variable "helm_version" {
+variable "chart_version" {
   type    = string
-  default = "2.25.1"
-}
-
-variable "image_repo" {
-  type    = string
-  default = "ghcr.io/coder/coder"
-}
-
-variable "image_tag" {
-  type    = string
-  default = "latest"
-}
-
-variable "image_pull_policy" {
-  type    = string
-  default = "IfNotPresent"
-}
-
-variable "image_pull_secrets" {
-  type    = list(string)
-  default = []
-}
-
-variable "replica_count" {
-  type    = number
-  default = 0
+  default = "2.30.0"
 }
 
 variable "env_vars" {
@@ -112,7 +81,7 @@ variable "env_vars" {
   default = {}
 }
 
-variable "load_balancer_class" {
+variable "lb_class" {
   type    = string
   default = "service.k8s.aws/nlb"
 }
@@ -139,12 +108,12 @@ variable "resource_limit" {
   }
 }
 
-variable "service_annotations" {
+variable "svc_annot" {
   type    = map(string)
   default = {}
 }
 
-variable "service_account_annotations" {
+variable "svc_acc_annot" {
   type    = map(string)
   default = {}
 }
@@ -164,7 +133,7 @@ variable "tolerations" {
   default = []
 }
 
-variable "topology_spread_constraints" {
+variable "topology_spread" {
   type = list(object({
     max_skew           = number
     topology_key       = string
@@ -177,7 +146,7 @@ variable "topology_spread_constraints" {
   default = []
 }
 
-variable "pod_anti_affinity_preferred_during_scheduling_ignored_during_execution" {
+variable "pod_aaf_pref_sched_ie" {
   type = list(object({
     weight = number
     pod_affinity_term = object({
@@ -190,122 +159,33 @@ variable "pod_anti_affinity_preferred_during_scheduling_ignored_during_execution
   default = []
 }
 
-variable "primary_access_url" {
-  type = string
-}
-
-variable "proxy_access_url" {
-  type = string
-}
-
-variable "proxy_wildcard_url" {
-  type = string
-}
-
-variable "termination_grace_period_seconds" {
+variable "termination_grace_period" {
   type    = number
   default = 600
 }
 
-variable "ssl_cert_config" {
-  type = object({
-    name          = string
-    create_secret = optional(bool, true)
-  })
-  default = {
-    name          = "coder-proxy-tls"
-    create_secret = true
-  }
-}
-
-variable "proxy_token_config" {
-  type = object({
-    name = optional(string, "proxy-token")
-    key  = optional(string, "proxy.key")
-  })
-  default = {
-    name = "proxy-token"
-    key  = "proxy.key"
-  }
-}
-
-
 resource "coderd_workspace_proxy" "this" {
-  name         = var.coder_proxy_name
-  display_name = var.coder_proxy_display_name
-  icon         = var.coder_proxy_icon
-}
-
-resource "kubernetes_namespace" "this" {
-  metadata {
-    name = var.namespace
-  }
-}
-
-resource "kubernetes_secret" "coder-proxy-key" {
-  metadata {
-    name      = var.proxy_token_config.name
-    namespace = kubernetes_namespace.this.metadata[0].name
-  }
-  data = {
-    "${var.proxy_token_config.key}" = coderd_workspace_proxy.this.session_token
-  }
-  type = "Opaque"
+  name         = var.proxy.name
+  display_name = var.proxy.display_name
+  icon         = var.proxy.icon
 }
 
 locals {
-  common_name   = trimprefix(trimprefix(var.proxy_access_url, "https://"), "http://")
-  wildcard_name = trimprefix(trimprefix(var.proxy_wildcard_url, "https://"), "http://")
-}
-
-resource "kubernetes_manifest" "certificate" {
-
-  count = var.ssl_cert_config.create_secret ? 1 : 0
-
-  field_manager {
-    force_conflicts = true
+  proxy = {
+    CODER_ACCESS_URL          = var.proxy.access_url
+    CODER_WILDCARD_ACCESS_URL = var.proxy.wildcard_url
+    CODER_PRIMARY_ACCESS_URL  = var.proxy.coder_access_url
+    CODER_PROXY_SESSION_TOKEN = coderd_workspace_proxy.this.session_token
+    CODER_TRACE_LOGS                  = var.proxy.trace_logs
+    CODER_LOG_FILTER                  = var.proxy.log_filter
   }
-  manifest = {
-    apiVersion = "cert-manager.io/v1"
-    kind       = "Certificate"
-    metadata = {
-      labels    = {} # var.cert_labels
-      name      = var.ssl_cert_config.name
-      namespace = kubernetes_namespace.this.metadata[0].name
-    }
-    spec = {
-      secretName  = var.ssl_cert_config.name
-      commonName  = local.common_name
-      dnsNames    = [local.common_name, local.wildcard_name]
-      duration    = "${var.acme_days_until_renewal * 24}h"
-      renewBefore = "8h"
-      issuerRef = {
-        kind = "ClusterIssuer"
-        name = "issuer"
-      }
-    }
+  secrets = {
+    CODER_PROXY_SESSION_TOKEN = local.proxy["CODER_PROXY_SESSION_TOKEN"]
   }
-}
-
-locals {
-  primary_env_vars = {
-    CODER_PRIMARY_ACCESS_URL  = var.primary_access_url
-    CODER_ACCESS_URL          = var.proxy_access_url
-    CODER_WILDCARD_ACCESS_URL = var.proxy_wildcard_url
-  }
-  env_vars = concat([
-    for k, v in merge(local.primary_env_vars, var.env_vars) : { name = k, value = v }
-    ], [{
-      name = "CODER_PROXY_SESSION_TOKEN"
-      valueFrom = {
-        secretKeyRef = {
-          name = kubernetes_secret.coder-proxy-key.metadata[0].name
-          key  = var.proxy_token_config.key
-        }
-      }
-  }])
-  pod_anti_affinity_preferred_during_scheduling_ignored_during_execution = [
-    for k, v in var.pod_anti_affinity_preferred_during_scheduling_ignored_during_execution : {
+  secret_key = "key"
+  secret_keys = keys(local.secrets)
+  pod_aaf_pref_sched_ie = [
+    for k, v in var.pod_aaf_pref_sched_ie : {
       weight = v.weight
       podAffinityTerm = {
         labelSelector = {
@@ -315,8 +195,8 @@ locals {
       }
     }
   ]
-  topology_spread_constraints = [
-    for k, v in var.topology_spread_constraints : {
+  topology_spread = [
+    for k, v in var.topology_spread : {
       maxSkew           = v.max_skew
       topologyKey       = v.topology_key
       whenUnsatisfiable = v.when_unsatisfiable
@@ -324,62 +204,127 @@ locals {
         matchLabels = try(v.label_selector.match_labels, {})
       }
       matchLabelKeys = v.match_label_keys
-
     }
   ]
+  env = concat([ for k,v in merge(
+    local.proxy
+  ) : { 
+    name = k, 
+    value = tostring(v)
+  } if lookup(local.secrets, k, null) == null ], [
+    for k,v in local.secrets : { 
+      name = k, 
+      valueFrom = { 
+        secretKeyRef = { 
+          name = replace(lower(k), "_", "-"), 
+          key = local.secret_key
+        } 
+      } 
+    } if v != null
+  ])
+}
+
+resource "kubernetes_namespace_v1" "this" {
+  metadata {
+    name = var.namespace
+  }
+}
+
+resource "kubernetes_secret_v1" "coder" {
+
+  for_each = toset(local.secret_keys)
+
+  metadata {
+    name = replace(lower(each.key), "_", "-")
+    namespace = kubernetes_namespace_v1.this.metadata[0].name
+    annotations = {
+      "custom.kubernetes.secret/key" = local.secret_key
+    }
+  }
+  data = {
+    "${local.secret_key}" = sensitive(local.secrets[each.key])
+  }
+}
+
+resource "kubernetes_service_v1" "coder" {
+  
+  wait_for_load_balancer = true
+
+  metadata {
+    name      = var.release_name
+    namespace = kubernetes_namespace_v1.this.metadata[0].name
+    labels = {}
+    annotations = var.svc_annot
+  }
+  spec {
+    type = "LoadBalancer"
+    load_balancer_class = var.lb_class
+    port {
+      name = "http"
+      port = 80
+      protocol = "TCP"
+      target_port = "http"
+    }
+    port {
+      name = "https"
+      port = 443
+      protocol = "TCP"
+      target_port = "http"
+    }
+    selector = {
+      "app.kubernetes.io/instance" = var.release_name
+      "app.kubernetes.io/name"     = var.chart_name
+      "app.kubernetes.io/part-of" = var.chart_name
+    }
+  }
 }
 
 resource "helm_release" "coder-proxy" {
-  name             = "coder-v2"
-  namespace        = kubernetes_namespace.this.metadata[0].name
-  chart            = "coder"
+  name             = var.release_name
+  namespace        = kubernetes_namespace_v1.this.metadata[0].name
+  chart            = var.chart_name
   repository       = "https://helm.coder.com/v2"
   create_namespace = false
   upgrade_install  = true
   skip_crds        = false
   wait             = true
   wait_for_jobs    = true
-  version          = var.helm_version
-  timeout          = var.helm_timeout
+  version          = var.chart_version
+  timeout          = var.chart_timeout
 
   values = [yamlencode({
     coder = {
       image = {
-        repo        = var.image_repo
-        tag         = var.image_tag
-        pullPolicy  = var.image_pull_policy
-        pullSecrets = var.image_pull_secrets
+        repo        = var.proxy.image_repo
+        tag         = var.proxy.image_tag
+        pullPolicy  = var.proxy.image_pull_policy
+        pullSecrets = var.proxy.image_pull_secrets
       }
       workspaceProxy = true
-      env            = local.env_vars
-      tls = {
-        secretNames = [var.ssl_cert_config.name]
-      }
+      env            = local.env
       service = {
-        enable                = true
-        type                  = "LoadBalancer"
-        sessionAffinity       = "None"
-        externalTrafficPolicy = "Cluster"
-        loadBalancerClass     = var.load_balancer_class
-        annotations           = var.service_annotations
+        enable                = false
       }
-      replicaCount = var.replica_count
+      tls = {
+        secretNames = var.coder.mount_ssl ? [ var.coder.mount_ssl_name ] : []
+      }
+      replicaCount = var.proxy.rep_cnt
       resources = {
         requests = var.resource_request
         limits   = var.resource_limit
       }
       serviceAccount = {
-        annotations = var.service_account_annotations
+        annotations = var.svc_acc_annot
       }
       nodeSelector              = var.node_selector
       tolerations               = var.tolerations
-      topologySpreadConstraints = local.topology_spread_constraints
+      topologySpreadConstraints = local.topology_spread
       affinity = {
         podAntiAffinity = {
-          preferredDuringSchedulingIgnoredDuringExecution = local.pod_anti_affinity_preferred_during_scheduling_ignored_during_execution
+          preferredDuringSchedulingIgnoredDuringExecution = local.pod_aaf_pref_sched_ie
         }
       }
-      terminationGracePeriodSeconds = var.termination_grace_period_seconds
+      terminationGracePeriodSeconds = var.termination_grace_period
     }
   })]
 }

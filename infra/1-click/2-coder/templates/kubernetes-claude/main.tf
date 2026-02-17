@@ -175,31 +175,18 @@ data "coder_task" "me" {}
 
 locals {
   coder_host = replace(replace(data.coder_workspace.me.access_url, "https://", ""), "http://", "")
-  boundary_config = templatefile("${path.module}/boundary-config.yaml", {
-    CODER_DOMAIN = local.coder_host
-  })
 }
 
 module "claude-code" {
   source          = "registry.coder.com/coder/claude-code/coder"
-  version             = "4.5.0"
+  version         = "4.5.0"
   agent_id        = coder_agent.main.id
   workdir         = "/home/coder"
   subdomain       = true
   ai_prompt       = data.coder_task.me.prompt
   enable_aibridge = true
-  enable_boundary     = true
-  boundary_version    = "v0.6.0"
-
-  post_install_script = <<-EOF
-    #!/usr/bin/env bash
-
-    # Coder Boundary Setup
-
-    mkdir -p ~/.config/coder_boundary
-    echo '${base64encode(local.boundary_config)}' | base64 -d > ~/.config/coder_boundary/config.yaml
-    chmod 600 ~/.config/coder_boundary/config.yaml
-  EOF
+  # Does not work on EKS Auto-Mode
+  enable_boundary = false
 }
 
 resource "coder_ai_task" "task" {
@@ -252,27 +239,17 @@ data "coder_workspace_preset" "standard" {
   icon        = "/icon/standard.svg"
   default     = true
   parameters = {
-    (data.coder_parameter.cpu.name) = "2"
-    (data.coder_parameter.memory.name)        = "2"
-    (data.coder_parameter.home_disk_size.name)        = "10"
+    (data.coder_parameter.cpu.name)            = "2"
+    (data.coder_parameter.memory.name)         = "2"
+    (data.coder_parameter.home_disk_size.name) = "10"
   }
   prebuilds {
     instances = 0
   }
 }
 
-locals {
-  coder_bin = "/opt/coder/bin"
-  init_script = <<-EOF
-  if [ -x ${local.coder_bin}/coder ]; then
-    exec ${local.coder_bin}/coder agent ;
-  fi
-  ${coder_agent.main.init_script}
-  EOF
-}
-
 resource "kubernetes_deployment_v1" "main" {
-  count = data.coder_workspace.me.start_count
+  count            = data.coder_workspace.me.start_count
   wait_for_rollout = false
   metadata {
     name      = "coder-${data.coder_workspace.me.id}"
@@ -285,10 +262,10 @@ resource "kubernetes_deployment_v1" "main" {
       "com.coder.workspace.id"     = data.coder_workspace.me.id
     }
     annotations = {
-      "com.coder.user.email" = data.coder_workspace_owner.me.email
-      "com.coder.workspace.name"   = data.coder_workspace.me.name
-      "com.coder.user.id"          = data.coder_workspace_owner.me.id
-      "com.coder.user.username"    = data.coder_workspace_owner.me.name
+      "com.coder.user.email"     = data.coder_workspace_owner.me.email
+      "com.coder.workspace.name" = data.coder_workspace.me.name
+      "com.coder.user.id"        = data.coder_workspace_owner.me.id
+      "com.coder.user.username"  = data.coder_workspace_owner.me.name
     }
   }
 
@@ -331,7 +308,7 @@ resource "kubernetes_deployment_v1" "main" {
           for_each = var.host_ip != "" ? [1] : []
           content {
             hostnames = [local.coder_host]
-            ip = var.host_ip
+            ip        = var.host_ip
           }
         }
 
@@ -339,18 +316,16 @@ resource "kubernetes_deployment_v1" "main" {
           name              = "dev"
           image             = "codercom/enterprise-base:ubuntu"
           image_pull_policy = "IfNotPresent"
-          command           = ["sh", "-c", local.init_script]
+          command           = ["sh", "-c", coder_agent.main.init_script]
           security_context {
             run_as_user = "1000"
-            allow_privilege_escalation = true
-            privileged                 = true
           }
           env {
-            name = "CODER_AGENT_AUTH"
+            name  = "CODER_AGENT_AUTH"
             value = "token"
           }
           env {
-            name = "CODER_AGENT_URL"
+            name  = "CODER_AGENT_URL"
             value = data.coder_workspace.me.access_url
           }
           env {
@@ -373,12 +348,6 @@ resource "kubernetes_deployment_v1" "main" {
             name       = "home"
             read_only  = false
           }
-
-          volume_mount {
-            name = "coder-bin"
-            mount_path = local.coder_bin
-            read_only = true
-          }
         }
 
         volume {
@@ -386,14 +355,6 @@ resource "kubernetes_deployment_v1" "main" {
           persistent_volume_claim {
             claim_name = kubernetes_persistent_volume_claim_v1.home.metadata.0.name
             read_only  = false
-          }
-        }
-
-        volume {
-          name = "coder-bin"
-          host_path {
-            path = local.coder_bin
-            type = "Directory"
           }
         }
 

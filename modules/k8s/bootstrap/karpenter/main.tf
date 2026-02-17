@@ -103,56 +103,40 @@ variable "node_iam_role_use_name_prefix" {
   default = true
 }
 
-variable "topology_spread_constraints" {
-  type = list(map(string))
-  default = [{
-    maxSkew = "1"
-    topologyKey = "topology.kubernetes.io/zone"
-    whenUnsatisfiable = "DoNotSchedule"
-  }]
-}
-
-variable "ec2nodeclass_configs" {
+variable "pod_aaf_pref_sched_ie" {
   type = list(object({
-    name                 = string
-    node_role_name       = optional(string, "")
-    ami_alias            = optional(string, "al2023@latest")
-    subnet_selector_tags = map(string)
-    sg_selector_tags     = map(string)
-    user_data            = optional(string, "")
-    block_device_mappings = optional(list(object({
-      device_name = string
-      ebs = object({
-        volume_size           = string
-        volume_type           = string
-        encrypted             = optional(bool, false)
-        delete_on_termination = optional(bool, true)
+    weight = number
+    pod_affinity_term = object({
+      label_selector = object({
+        match_labels = map(string)
       })
-    })), [])
+      topology_key = string
+    })
   }))
   default = []
 }
 
-variable "nodepool_configs" {
+variable "topology_spread" {
   type = list(object({
-    name        = string
-    node_labels = map(string)
-    node_taints = optional(list(object({
-      key    = string
-      value  = string
-      effect = string
-    })), [])
-    node_requirements = optional(list(object({
-      key      = string
-      operator = string
-      values   = list(string)
-    })), [])
-    node_class_ref_name             = string
-    node_expires_after              = optional(string, "Never")
-    disruption_consolidation_policy = optional(string, "WhenEmpty")
-    disruption_consolidate_after    = optional(string, "1m")
+    max_skew           = number
+    topology_key       = string
+    when_unsatisfiable = optional(string, "DoNotSchedule")
+    label_selector = object({
+      match_labels = map(string)
+    })
+    match_label_keys = optional(list(string), [])
   }))
-  default = []
+  default = [{
+    max_skew = 1
+    topology_key = "topology.kubernetes.io/zone"
+    when_unsatisfiable = "DoNotSchedule"
+    label_selector = {
+      match_labels = {
+        "app.kubernetes.io/instance" = "karpenter"
+        "app.kubernetes.io/name" = "karpenter"
+      }
+    }
+  }]
 }
 
 variable "node_selector" {
@@ -273,13 +257,44 @@ module "karpenter" {
   # node_iam_role_tags = merge(var.tags, var.karpenter_node_role_tags)
 }
 
+resource "kubernetes_namespace_v1" "this" {
+  metadata {
+    name = var.namespace
+  }
+}
+
+locals {
+  pod_aaf_pref_sched_ie = [
+    for k, v in var.pod_aaf_pref_sched_ie : {
+      weight = v.weight
+      podAffinityTerm = {
+        labelSelector = {
+          matchLabels = try(v.pod_affinity_term.label_selector.match_labels, {})
+        }
+        topologyKey = try(v.pod_affinity_term.topology_key, {})
+      }
+    }
+  ]
+  topology_spread = [
+    for k, v in var.topology_spread : {
+      maxSkew           = v.max_skew
+      topologyKey       = v.topology_key
+      whenUnsatisfiable = v.when_unsatisfiable
+      labelSelector = {
+        matchLabels = try(v.label_selector.match_labels, {})
+      }
+      matchLabelKeys = v.match_label_keys
+    }
+  ]
+}
+
 resource "helm_release" "karpenter" {
-  depends_on       = [module.karpenter]
+  depends_on       = [ module.karpenter ]
   name             = "karpenter"
-  namespace        = var.namespace
+  namespace        = kubernetes_namespace_v1.this.metadata[0].name
   chart            = "karpenter"
   repository       = "oci://public.ecr.aws/karpenter"
-  create_namespace = true
+  create_namespace = false
   upgrade_install  = true
   skip_crds        = false
   wait             = true
@@ -290,14 +305,8 @@ resource "helm_release" "karpenter" {
   values = [yamlencode({
     controller = {
       resources = {
-        limits = {
-          cpu    = "1000m"
-          memory = "2Gi"
-        }
-        requests = {
-          cpu    = "500m"
-          memory = "1Gi"
-        }
+        limits = null
+        requests = null
       }
     }
     dnsPolicy    = "ClusterFirst"
@@ -309,6 +318,24 @@ resource "helm_release" "karpenter" {
       }
     }
     tolerations = var.tolerations
+    topologySpreadConstraints = local.topology_spread
+    affinity = {
+      nodeAffinity = {
+        requiredDuringSchedulingIgnoredDuringExecution = {
+          nodeSelectorTerms = [{
+            matchExpressions = [{
+              # Prevent Karpenter from scheduling Karpenter Ctrl pods onto itself.
+              key = "karpenter.sh/nodepool"
+              operator = "In"
+              values = ["system"]
+            }]
+          }]
+        }
+      }
+      podAntiAffinity = {
+        requiredDuringSchedulingIgnoredDuringExecution = []
+      }
+    }
     settings = {
       clusterName = var.cluster_name
       featureGates = {
@@ -319,31 +346,13 @@ resource "helm_release" "karpenter" {
   })]
 }
 
-module "ec2nodeclass" {
-  count                 = length(var.ec2nodeclass_configs)
-  source                = "../../objects/ec2nodeclass"
-  name                  = var.ec2nodeclass_configs[count.index].name
-  node_role_name        = var.ec2nodeclass_configs[count.index].node_role_name == "" ? module.karpenter.node_iam_role_name : var.ec2nodeclass_configs[count.index].node_role_name
-  ami_alias             = var.ec2nodeclass_configs[count.index].ami_alias
-  subnet_selector_tags  = var.ec2nodeclass_configs[count.index].subnet_selector_tags
-  sg_selector_tags      = var.ec2nodeclass_configs[count.index].sg_selector_tags
-  block_device_mappings = var.ec2nodeclass_configs[count.index].block_device_mappings
-  user_data             = var.ec2nodeclass_configs[count.index].user_data
-}
-
-resource "kubernetes_manifest" "ec2nodeclass" {
-  depends_on = [helm_release.karpenter]
-  count      = length(var.ec2nodeclass_configs)
-  manifest   = yamldecode(module.ec2nodeclass[count.index].manifest)
-}
-
 resource "kubernetes_service_account_v1" "ctrl-role" {
 
   depends_on = [helm_release.karpenter]
 
   metadata {
     name = "ctrl-role"
-    namespace = var.namespace
+    namespace = kubernetes_namespace_v1.this.metadata[0].name
     annotations = {
       "eks.amazonaws.com/role-arn" = module.karpenter.iam_role_arn
     }
@@ -356,7 +365,7 @@ resource "kubernetes_service_account_v1" "node-role" {
 
   metadata {
     name = "node-role"
-    namespace = var.namespace
+    namespace = kubernetes_namespace_v1.this.metadata[0].name
     annotations = {
       "eks.amazonaws.com/role-arn" = module.karpenter.node_iam_role_arn
     }

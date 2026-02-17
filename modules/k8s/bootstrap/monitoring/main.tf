@@ -31,6 +31,11 @@ variable "cluster_oidc_provider_arn" {
   type = string
 }
 
+variable "storage_class" {
+  type = string
+  default = ""
+}
+
 variable "coder" {
     type = object({
         db = object({
@@ -87,21 +92,9 @@ variable "domain_name" {
     type = string
 }
 
-variable "cert_config" {
-  type = object({
-    create_secret = bool
-    name          = string
-    kind          = optional(string, "ClusterIssuer")
-    issuer        = optional(string, "issuer")
-    store    = optional(string, "issuer")
-  })
-  default = {
-    create_secret = true
-    name          = "grafana-tls"
-    kind       = "ClusterIssuer"
-    issuer        = "issuer"
-    store        = "issuer"
-  }
+variable "lb_class" {
+  type = string
+  default = "service.k8s.aws/nlb"
 }
 
 variable "tolerations" {
@@ -109,16 +102,20 @@ variable "tolerations" {
   default = []
 }
 
-locals {
-  normalized_domain_name = split(".", var.domain_name)[0]
-  apex_domain = join(".", slice(split(".", var.domain_name), length(split(".", var.domain_name))-2, length(split(".", var.domain_name))))
-  ssl_vol_friendly_name = replace(var.cert_config.name, ".", "-")
-  daemonset_tolerations = [{
-    effect = "NoSchedule"
+variable "system_tolerations" {
+  description = "(Optional) Override if you need to adjust where critical monitoring addons need to be moved."
+  type = list(map(any))
+  default = [{
+    key      = "CriticalAddonsOnly"
     operator = "Exists"
   }]
-  system_tolerations = [{
-    key      = "CriticalAddonsOnly"
+}
+
+variable "daemonset_tolerations" {
+  description = "(Optional) Override if you need to adjust where monitoring DaemonSets need to be placed."
+  type = list(map(any))
+  default = [{
+    effect = "NoSchedule"
     operator = "Exists"
   }]
 }
@@ -161,209 +158,6 @@ resource "kubernetes_namespace_v1" "this" {
     }
 }
 
-locals {
-  common_name   = "grafana.${trimprefix(trimprefix(var.domain_name, "https://"), "http://")}"
-  wildcard_name = "*.${local.common_name}"
-  cert_refresh_interval = "2160h" # 90 days
-  cert_renew_before = "360h" # 15 days
-  secret_refresh_interval = "1812h0m0s" # 75.5 days
-  tls_secret_key = "tls.key"
-  tls_secret_crt = "tls.crt"
-  tls_remote_key = "tls-${local.common_name}.key"
-  tls_remote_crt = "tls-${local.common_name}.crt"
-}
-
-resource "kubernetes_manifest" "pull" {
-
-  field_manager {
-    force_conflicts = true
-  }
-
-  wait {
-    fields = {
-      "status.conditions[0].type" = "Ready"
-    }
-  }
-  
-  timeouts {
-    create = "1m"
-    update = "1m"
-    delete = "30s"
-  }
-
-  manifest = {
-    apiVersion = "external-secrets.io/v1"
-    kind = "ExternalSecret"
-    metadata = {
-      name = var.cert_config.name 
-      namespace = kubernetes_namespace_v1.this.metadata[0].name
-    }
-    spec = {
-      secretStoreRef = {
-        kind = "ClusterSecretStore"
-        name = var.cert_config.store
-      }
-      refreshPolicy = "Periodic"
-      refreshInterval = local.secret_refresh_interval
-      target = {
-        name = local.ssl_vol_friendly_name
-        creationPolicy = "Orphan"
-        deletionPolicy = "Retain"
-        template = {
-          type = "kubernetes.io/tls"
-          metadata = {
-            labels = {
-              "controller.cert-manager.io/fao" = "true"
-            }
-            annotations = {
-              "cert-manager.io/alt-names" = "${local.wildcard_name},${local.common_name}"                                                                                                                                
-              "cert-manager.io/certificate-name" = var.cert_config.name                                                                                     
-              "cert-manager.io/common-name" = local.common_name 
-              "cert-manager.io/ip-sans" = ""
-              "cert-manager.io/issuer-group" = ""                                                                                                                   
-              "cert-manager.io/issuer-kind" = "ClusterIssuer"                                                                                               
-              "cert-manager.io/issuer-name" = var.cert_config.issuer
-              "cert-manager.io/uri-sans" = ""
-            }
-          }
-        }
-      }
-      data = [{
-        secretKey = local.tls_secret_crt
-        remoteRef = {
-          key = local.tls_remote_crt
-        }
-      },{
-        secretKey = local.tls_secret_key
-        remoteRef = {
-          key = local.tls_remote_key
-        }
-      }]
-    }
-  }
-}
-
-resource "time_sleep" "wait" {
-  # Let the secret create first if it exists in AWS Secrets Manager.
-  depends_on = [ kubernetes_manifest.pull ]
-  create_duration = "30s"
-}
-
-## 
-# Requires the cert-manager
-## 
-
-resource "kubernetes_manifest" "certificate" {
-
-  depends_on = [ time_sleep.wait ]
-
-  field_manager {
-    force_conflicts = true
-  }
-
-  wait {
-    condition {
-      type   = "Ready"
-      status = "True"
-    }
-  }
-
-  timeouts {
-    create = "10m"
-    update = "10m"
-    delete = "30s"
-  }
-
-  manifest = {
-    apiVersion = "cert-manager.io/v1"
-    kind = "Certificate"
-    metadata = {
-      name = var.cert_config.name
-      namespace = kubernetes_namespace_v1.this.metadata[0].name
-    }
-    spec = {
-      commonName = local.common_name
-      dnsNames = [
-        local.common_name,
-        local.wildcard_name
-      ]
-      duration = local.cert_refresh_interval
-      renewBefore = local.cert_renew_before
-      issuerRef = {
-        kind = var.cert_config.kind
-        name = var.cert_config.issuer
-      }
-      secretName = local.ssl_vol_friendly_name
-      privateKey = {
-        rotationPolicy = "Never"
-        algorithm = "RSA"
-        encoding = "PKCS1"
-        size = "2048"
-      }
-    }
-  }
-}
-
-resource "kubernetes_manifest" "push" {
-
-  depends_on = [ kubernetes_manifest.certificate ]
-
-  field_manager {
-    force_conflicts = true
-  }
-
-  wait {
-    condition {
-      type   = "Ready"
-      status = "True"
-    }
-  }
-
-  timeouts {
-    create = "10m"
-    update = "10m"
-    delete = "30s"
-  }
-
-  manifest = {
-    apiVersion = "external-secrets.io/v1alpha1"
-    kind = "PushSecret"
-    metadata = {
-      name = var.cert_config.name 
-      namespace = kubernetes_namespace_v1.this.metadata[0].name
-    }
-    spec = {
-      updatePolicy = "Replace"
-      deletionPolicy = "None"
-      refreshInterval = local.secret_refresh_interval
-      secretStoreRefs = [{
-        kind = "ClusterSecretStore"
-        name = var.cert_config.store
-      }]
-      selector = {
-        secret = {
-          name = kubernetes_manifest.certificate.manifest.spec.secretName
-        } 
-      }
-      data = [{
-        match = {
-          secretKey = local.tls_secret_crt
-          remoteRef = {
-            remoteKey = local.tls_remote_crt
-          }
-        }
-      },{
-        match = {
-          secretKey = local.tls_secret_key
-          remoteRef = {
-            remoteKey = local.tls_remote_key
-          }
-        }
-      }]
-    }
-  }
-}
-
 resource "helm_release" "coder-observe" {
   name             = "coder-observe"
   namespace        = kubernetes_namespace_v1.this.metadata[0].name
@@ -398,10 +192,19 @@ resource "helm_release" "coder-observe" {
     }
     prometheus = {
       server = {
-        tolerations = local.system_tolerations
+        tolerations = var.system_tolerations
+        persistentVolume = {
+          enabled = true
+          storageClassName = var.storage_class
+        }
       }
       alertmanager = {
-        tolerations = local.system_tolerations
+        enabled = true
+        tolerations = var.system_tolerations
+        persistence = {
+          enabled = true
+          storageClass = var.storage_class
+        }
       }
     }
     grafana = {
@@ -421,13 +224,11 @@ resource "helm_release" "coder-observe" {
             ssl_mode = var.grafana.db.sslmode
         }
         server = {
-            root_url = "https://${local.common_name}"
-            domain = local.common_name
+            root_url = "https://${var.domain_name}"
+            domain = var.domain_name
             enforce_domain = true
             http_port = 3000
-            protocol = "https"
-            cert_file = "/mnt/grafana-tls/tls.crt"
-            cert_key =  "/mnt/grafana-tls/tls.key" 
+            protocol = "http"
         }
         users = {
             allow_sign_up = false
@@ -437,12 +238,12 @@ resource "helm_release" "coder-observe" {
       useStatefulSet = true
       readinessProbe = {
         httpGet = {
-          scheme = "HTTPS"
+          scheme = "HTTP"
         }
       }
       livenessProbe = {
         httpGet = {
-          scheme = "HTTPS"
+          scheme = "HTTP"
         }
       }
       persistence = {
@@ -458,24 +259,17 @@ resource "helm_release" "coder-observe" {
         enabled = true
         externalTrafficPolicy = "Cluster"
         internalTrafficPolicy = "Cluster"
-        loadBalancerClass = "service.k8s.aws/nlb"
+        loadBalancerClass = var.lb_class
         port = 443
         targetPort = 3000
         type = "LoadBalancer"
       }
-      extraSecretMounts = [{
-        name = kubernetes_manifest.certificate.manifest.spec.secretName
-        mountPath = "/mnt/grafana-tls"
-        secretName = kubernetes_manifest.certificate.manifest.spec.secretName
-        readOnly = true
-        optional = false
-        subPath = ""
-      }]
+      tolerations = var.system_tolerations
     }
     grafana-agent = {
         enabled = true
         controller = {
-          tolerations = local.daemonset_tolerations
+          tolerations = var.daemonset_tolerations
         }
         discovery = <<-EOF
             // Discover k8s nodes
@@ -564,22 +358,35 @@ resource "helm_release" "coder-observe" {
         }
       }
       lokiCanary = {
-        tolerations = local.daemonset_tolerations
+        tolerations = var.daemonset_tolerations
       }
       backend = {
-        tolerations = local.system_tolerations
+        tolerations = var.system_tolerations
+        persistence = {
+          volumeClaimsEnabled = false
+          # storageClass = var.storage_class
+        }
       }
       resultsCache = {
-        tolerations = local.system_tolerations
+        tolerations = var.system_tolerations
       }
       chunksCache = {
-        tolerations = local.system_tolerations
+        tolerations = var.system_tolerations
+        persistence = {
+          enabled = true
+          storageClass = var.storage_class
+        }
       }
-      storage = {
-        tolerations = local.system_tolerations
+      minio = {
+        enable = false
+        # tolerations = var.system_tolerations
       }
       write = {
-        tolerations = local.system_tolerations
+        tolerations = var.system_tolerations
+        persistence = {
+          volumeClaimsEnabled = false
+          # storageClass = var.storage_class
+        }
       }
       serviceAccount = {
         create = true

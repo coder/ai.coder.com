@@ -226,18 +226,8 @@ resource "kubernetes_persistent_volume_claim_v1" "home" {
   }
 }
 
-locals {
-  coder_bin = "/opt/coder/bin"
-  init_script = <<-EOF
-  if [ -x ${local.coder_bin}/coder ]; then
-    exec ${local.coder_bin}/coder agent ;
-  fi
-  ${coder_agent.main.init_script}
-  EOF
-}
-
 resource "kubernetes_deployment_v1" "main" {
-  count = data.coder_workspace.me.start_count
+  count            = data.coder_workspace.me.start_count
   wait_for_rollout = false
   metadata {
     name      = "coder-${data.coder_workspace.me.id}"
@@ -299,7 +289,7 @@ resource "kubernetes_deployment_v1" "main" {
           for_each = var.host_ip != "" ? [1] : []
           content {
             hostnames = [replace(replace(data.coder_workspace.me.access_url, "https://", ""), "http://", "")]
-            ip = var.host_ip
+            ip        = var.host_ip
           }
         }
 
@@ -307,16 +297,16 @@ resource "kubernetes_deployment_v1" "main" {
           name              = "dev"
           image             = "codercom/enterprise-base:ubuntu"
           image_pull_policy = "IfNotPresent"
-          command           = ["sh", "-c", local.init_script]
+          command           = ["sh", "-c", coder_agent.main.init_script]
           security_context {
             run_as_user = "1000"
           }
           env {
-            name = "CODER_AGENT_AUTH"
+            name  = "CODER_AGENT_AUTH"
             value = "token"
           }
           env {
-            name = "CODER_AGENT_URL"
+            name  = "CODER_AGENT_URL"
             value = data.coder_workspace.me.access_url
           }
           env {
@@ -340,12 +330,6 @@ resource "kubernetes_deployment_v1" "main" {
             read_only  = false
           }
 
-          volume_mount {
-            name = "coder-bin"
-            mount_path = local.coder_bin
-            read_only = true
-          }
-
         }
 
         volume {
@@ -353,14 +337,6 @@ resource "kubernetes_deployment_v1" "main" {
           persistent_volume_claim {
             claim_name = kubernetes_persistent_volume_claim_v1.home.metadata.0.name
             read_only  = false
-          }
-        }
-
-        volume {
-          name = "coder-bin"
-          host_path {
-            path = local.coder_bin
-            type = "Directory"
           }
         }
 

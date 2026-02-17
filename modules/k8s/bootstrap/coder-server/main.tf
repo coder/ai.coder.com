@@ -13,6 +13,18 @@ terraform {
   }
 }
 
+variable "release_name" {
+  description = "The release name of the installed Helm app."
+  type = string
+  default = "coder"
+}
+
+variable "chart_name" {
+  description = "The chart name of the installed Helm app."
+  type = string
+  default = "coder"
+}
+
 variable "cluster_name" {
   type = string
 }
@@ -33,12 +45,12 @@ variable "policy_resource_account" {
 
 variable "policy_name" {
   type    = string
-  default = null
+  default = "coder-srv"
 }
 
 variable "role_name" {
   type    = string
-  default = null
+  default = "coder-srv"
 }
 
 ##
@@ -54,7 +66,7 @@ variable "helm_timeout" {
   default = 300 # In Seconds
 }
 
-variable "helm_version" {
+variable "chart_version" {
   type    = string
   default = "2.25.1"
 }
@@ -64,6 +76,8 @@ variable "coder" {
     access_url = string
     wildcard_url = string
     redirect = optional(bool, true)
+    mount_ssl = optional(bool, false)
+    mount_ssl_name = optional(string, "cert")
     image_repo = optional(string, "ghcr.io/coder/coder")
     image_tag = optional(string, "latest")
     image_pull_policy = optional(string, "IfNotPresent")
@@ -85,7 +99,7 @@ variable "coder" {
   })
 }
 
-variable "prom" {
+variable "prometheus" {
   type = object({
     enable = optional(bool, true)
     collect_agent_status = optional(bool, true)
@@ -184,23 +198,6 @@ variable "pod_aaf_pref_sched_ie" {
     })
   }))
   default = []
-}
-
-variable "cert_config" {
-  type = object({
-    create_secret = bool
-    name          = string
-    kind          = optional(string, "ClusterIssuer")
-    issuer        = optional(string, "issuer")
-    store    = optional(string, "issuer")
-  })
-  default = {
-    create_secret = true
-    name          = "coder-tls"
-    kind       = "ClusterIssuer"
-    issuer        = "issuer"
-    store        = "issuer"
-  }
 }
 
 variable "db" {
@@ -306,7 +303,10 @@ locals {
   coder = {
     CODER_ACCESS_URL             = var.coder.access_url
     CODER_WILDCARD_ACCESS_URL    = var.coder.wildcard_url
-    CODER_REDIRECT_TO_ACCESS_URL = var.coder.redirect
+
+    # TLS Termination handled on the LB
+    CODER_REDIRECT_TO_ACCESS_URL = var.coder.mount_ssl
+    CODER_TLS_ENABLE = var.coder.mount_ssl
 
     CODER_ENABLE_TERRAFORM_DEBUG_MODE = var.coder.tf_debug_mode
     CODER_TRACE_LOGS                  = var.coder.trace_logs
@@ -321,9 +321,9 @@ locals {
     CODER_ALLOW_CUSTOM_QUIET_HOURS          = var.coder.allow_custom_quiet
   }
   prom = {
-    CODER_PROMETHEUS_ENABLE              = var.prom.enable
-    CODER_PROMETHEUS_COLLECT_AGENT_STATS = var.prom.collect_agent_status
-    CODER_PROMETHEUS_COLLECT_DB_METRICS  = var.prom.collect_db_metrics
+    CODER_PROMETHEUS_ENABLE              = var.prometheus.enable
+    CODER_PROMETHEUS_COLLECT_AGENT_STATS = var.prometheus.collect_agent_status
+    CODER_PROMETHEUS_COLLECT_DB_METRICS  = var.prometheus.collect_db_metrics
   }
   db = {
     CODER_PG_CONNECTION_URL = "postgresql://${var.db.username}:${var.db.password}@${var.db.url}/${var.db.db}"
@@ -404,7 +404,7 @@ locals {
     local.aibridge
   ) : { 
     name = k, 
-    value = tostring(v) 
+    value = tostring(v)
   } if lookup(local.secrets, k, null) == null ], [
     for k,v in local.secrets : { 
       name = k, 
@@ -416,10 +416,6 @@ locals {
       } 
     } if v != null
   ])
-}
-
-output "env" {
-  value = local.env
 }
 
 resource "kubernetes_secret_v1" "coder" {
@@ -468,10 +464,8 @@ locals {
 }
 
 locals {
-  region      = var.policy_resource_region == null ? data.aws_region.this.region : var.policy_resource_region
-  account_id  = var.policy_resource_account == null ? data.aws_caller_identity.this.account_id : var.policy_resource_account
-  policy_name = var.policy_name == null ? "coder-srv" : var.policy_name
-  role_name   = var.role_name == null ? "coder-srv" : var.role_name
+  region      = data.aws_region.this.region
+  account_id  = data.aws_caller_identity.this.account_id
 }
 
 module "provisioner-policy" {
@@ -479,8 +473,8 @@ module "provisioner-policy" {
   count       = var.coder.prov_rep_cnt == 0 ? 0 : 1
 
   source      = "../../../security/policy"
-  name        = local.policy_name
-  path         = "/${var.cluster_name}/${data.aws_region.this.region}/"
+  name        = var.policy_name
+  path         = "/${var.cluster_name}/${local.region}/"
   description = "Coder Terraform External Provisioner Policy"
   policy_json = data.aws_iam_policy_document.provisioner-policy.json
 }
@@ -490,8 +484,8 @@ module "provisioner-oidc-role" {
   count        = var.coder.prov_rep_cnt == 0 ? 0 : 1
 
   source       = "../../../security/role/access-entry"
-  name         = local.role_name
-  path         = "/${var.cluster_name}/${data.aws_region.this.region}/"
+  name         = var.role_name
+  path         = "/${var.cluster_name}/${local.region}/"
   cluster_name = var.cluster_name
   policy_arns = {
     "AmazonEC2ReadOnlyAccess" = "arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess"
@@ -510,255 +504,73 @@ resource "kubernetes_namespace_v1" "this" {
   }
 }
 
-locals {
-  ssl_vol_friendly_name = replace(var.cert_config.name, ".", "-")
-}
-
-##
-# Store SSL/TLS certs in Secrets Manager.
-# Used to avoid throttling Let's Encrypt:
-# https://letsencrypt.org/docs/rate-limits/
-##
-
-locals {
-  common_name   = trimprefix(trimprefix(var.coder.access_url, "https://"), "http://")
-  wildcard_name = trimprefix(trimprefix(var.coder.wildcard_url, "https://"), "http://")
-  cert_refresh_interval = "2160h" # 90 days
-  cert_renew_before = "360h" # 15 days
-  secret_refresh_interval = "1812h0m0s" # 75.5 days
-  tls_secret_key = "tls.key"
-  tls_secret_crt = "tls.crt"
-  tls_remote_key = "tls-${local.common_name}.key"
-  tls_remote_crt = "tls-${local.common_name}.crt"
-}
-
-resource "kubernetes_manifest" "pull" {
-
-  field_manager {
-    force_conflicts = true
-  }
-
-  wait {
-    fields = {
-      "status.conditions[0].type" = "Ready"
-    }
-  }
+resource "kubernetes_service_v1" "coder" {
   
-  timeouts {
-    create = "1m"
-    update = "1m"
-    delete = "30s"
-  }
+  wait_for_load_balancer = true
 
-  manifest = {
-    apiVersion = "external-secrets.io/v1"
-    kind = "ExternalSecret"
-    metadata = {
-      name = var.cert_config.name 
-      namespace = kubernetes_namespace_v1.this.metadata[0].name
+  metadata {
+    name      = var.release_name
+    namespace = kubernetes_namespace_v1.this.metadata[0].name
+    labels = {}
+    annotations = var.svc_annot
+  }
+  spec {
+    type = "LoadBalancer"
+    load_balancer_class = var.lb_class
+    port {
+      name = "http"
+      port = 80
+      protocol = "TCP"
+      target_port = "http"
     }
-    spec = {
-      secretStoreRef = {
-        kind = "ClusterSecretStore"
-        name = var.cert_config.store
-      }
-      refreshPolicy = "Periodic"
-      refreshInterval = local.secret_refresh_interval
-      target = {
-        name = local.ssl_vol_friendly_name
-        creationPolicy = "Orphan"
-        deletionPolicy = "Retain"
-        template = {
-          type = "kubernetes.io/tls"
-          metadata = {
-            labels = {
-              "controller.cert-manager.io/fao" = "true"
-            }
-            annotations = {
-              "cert-manager.io/alt-names" = "${local.wildcard_name},${local.common_name}"                                                                                                                                
-              "cert-manager.io/certificate-name" = var.cert_config.name                                                                                     
-              "cert-manager.io/common-name" = local.common_name 
-              "cert-manager.io/ip-sans" = ""
-              "cert-manager.io/issuer-group" = ""                                                                                                                   
-              "cert-manager.io/issuer-kind" = "ClusterIssuer"                                                                                               
-              "cert-manager.io/issuer-name" = var.cert_config.issuer
-              "cert-manager.io/uri-sans" = ""
-            }
-          }
-        }
-      }
-      data = [{
-        secretKey = local.tls_secret_crt
-        remoteRef = {
-          key = local.tls_remote_crt
-        }
-      },{
-        secretKey = local.tls_secret_key
-        remoteRef = {
-          key = local.tls_remote_key
-        }
-      }]
+    port {
+      name = "https"
+      port = 443
+      protocol = "TCP"
+      target_port = "http"
     }
-  }
-}
-
-resource "time_sleep" "wait" {
-  # Let the secret create first if it exists in AWS Secrets Manager.
-  depends_on = [ kubernetes_manifest.pull ]
-  create_duration = "30s"
-}
-
-## 
-# Requires the cert-manager
-## 
-
-resource "kubernetes_manifest" "certificate" {
-
-  depends_on = [ time_sleep.wait ]
-
-  field_manager {
-    force_conflicts = true
-  }
-
-  wait {
-    condition {
-      type   = "Ready"
-      status = "True"
-    }
-  }
-
-  timeouts {
-    create = "10m"
-    update = "10m"
-    delete = "30s"
-  }
-
-  manifest = {
-    apiVersion = "cert-manager.io/v1"
-    kind = "Certificate"
-    metadata = {
-      name = var.cert_config.name
-      namespace = kubernetes_namespace_v1.this.metadata[0].name
-    }
-    spec = {
-      commonName = local.common_name
-      dnsNames = [
-        local.common_name,
-        local.wildcard_name
-      ]
-      duration = local.cert_refresh_interval
-      renewBefore = local.cert_renew_before
-      issuerRef = {
-        kind = var.cert_config.kind
-        name = var.cert_config.issuer
-      }
-      secretName = local.ssl_vol_friendly_name
-      privateKey = {
-        rotationPolicy = "Never"
-        algorithm = "RSA"
-        encoding = "PKCS1"
-        size = "2048"
-      }
-    }
-  }
-}
-
-resource "kubernetes_manifest" "push" {
-
-  depends_on = [ kubernetes_manifest.certificate ]
-
-  field_manager {
-    force_conflicts = true
-  }
-
-  wait {
-    condition {
-      type   = "Ready"
-      status = "True"
-    }
-  }
-
-  timeouts {
-    create = "10m"
-    update = "10m"
-    delete = "30s"
-  }
-
-  manifest = {
-    apiVersion = "external-secrets.io/v1alpha1"
-    kind = "PushSecret"
-    metadata = {
-      name = var.cert_config.name 
-      namespace = kubernetes_namespace_v1.this.metadata[0].name
-    }
-    spec = {
-      updatePolicy = "Replace"
-      deletionPolicy = "None"
-      refreshInterval = local.secret_refresh_interval
-      secretStoreRefs = [{
-        kind = "ClusterSecretStore"
-        name = var.cert_config.store
-      }]
-      selector = {
-        secret = {
-          name = kubernetes_manifest.certificate.manifest.spec.secretName
-        } 
-      }
-      data = [{
-        match = {
-          secretKey = local.tls_secret_crt
-          remoteRef = {
-            remoteKey = local.tls_remote_crt
-          }
-        }
-      },{
-        match = {
-          secretKey = local.tls_secret_key
-          remoteRef = {
-            remoteKey = local.tls_remote_key
-          }
-        }
-      }]
+    selector = {
+      "app.kubernetes.io/instance" = var.chart_name
+      "app.kubernetes.io/name"     = var.release_name
     }
   }
 }
 
 resource "kubernetes_service_v1" "prometheus" {
+  count = var.prometheus.enable ? 1 : 0
   metadata {
-    name      = "coder-prometheus"
+    name      = "${var.release_name}-prometheus"
     namespace = kubernetes_namespace_v1.this.metadata[0].name
-    # labels    = local.app_labels
+    labels = {}
   }
   spec {
     type       = "ClusterIP"
     cluster_ip = "None"
     port {
-      name        = "prom-http"
+      name        = "http"
       protocol    = "TCP"
       port        = 2112
       target_port = 2112
     }
     selector = {
-      "app.kubernetes.io/instance" = "coder-v2"
-      "app.kubernetes.io/name"     = "coder"
+      "app.kubernetes.io/instance" = var.chart_name
+      "app.kubernetes.io/name"     = var.release_name
     }
   }
 }
 
 resource "helm_release" "coder-server" {
 
-  depends_on = [ kubernetes_manifest.push ]
-
-  name             = "coder"
+  name             = var.release_name
   namespace        = kubernetes_namespace_v1.this.metadata[0].name
-  chart            = "coder"
+  chart            = var.chart_name
   repository       = "https://helm.coder.com/v2"
   create_namespace = false
   upgrade_install  = true
   skip_crds        = false
   wait             = true
   wait_for_jobs    = true
-  version          = var.helm_version
+  version          = var.chart_version
   timeout          = var.helm_timeout
 
   values = [yamlencode({
@@ -770,20 +582,15 @@ resource "helm_release" "coder-server" {
         pullSecrets = var.coder.image_pull_secrets
       }
       env = local.env
-      tls = {
-        secretNames = [ local.ssl_vol_friendly_name ]
-      }
-      podAnnotations = {
+      podAnnotations = var.prometheus.enable ? {
         "prometheus.io/scrape" = "true"
-        "prometheus.io/port"   = "2112"
-      }
+        "prometheus.io/port"   = kubernetes_service_v1.prometheus[0].spec[0].port[0].port
+      } : {}
       service = {
-        enable                = true
-        type                  = "LoadBalancer"
-        sessionAffinity       = "None"
-        externalTrafficPolicy = "Cluster"
-        loadBalancerClass     = var.lb_class
-        annotations           = var.svc_annot
+        enable                = false
+      }
+      tls = {
+        secretNames = var.coder.mount_ssl ? [ var.coder.mount_ssl_name ] : []
       }
       replicaCount = var.coder.rep_cnt
       resources = {

@@ -18,6 +18,11 @@ terraform {
 # https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.13.2/docs/install/iam_policy.json
 ##
 
+variable "release_name" {
+  type = string
+  default = "aws-load-balancer-controller"
+}
+
 variable "cluster_name" {
   type = string
 }
@@ -36,16 +41,6 @@ variable "policy_name" {
   default = ""
 }
 
-variable "policy_resource_region" {
-  type    = string
-  default = ""
-}
-
-variable "policy_resource_account" {
-  type    = string
-  default = ""
-}
-
 variable "tags" {
   type    = map(string)
   default = {}
@@ -57,6 +52,7 @@ variable "namespace" {
 
 variable "chart_version" {
   type = string
+  default = "3.0.0"
 }
 
 variable "enable_cert_manager" {
@@ -105,8 +101,8 @@ data "aws_region" "this" {}
 data "aws_caller_identity" "this" {}
 
 locals {
-  region      = var.policy_resource_region == "" ? data.aws_region.this.region : var.policy_resource_region
-  account_id  = var.policy_resource_account == "" ? data.aws_caller_identity.this.account_id : var.policy_resource_account
+  account_id = data.aws_caller_identity.this.account_id
+  region = data.aws_region.this.region
   policy_name = var.policy_name == "" ? "lb-ctrl" : var.policy_name
   role_name   = var.role_name == "" ? "lb-ctrl" : var.role_name
 }
@@ -145,7 +141,7 @@ locals {
 }
 
 resource "helm_release" "lb-controller" {
-  name             = "aws-load-balancer-controller"
+  name             = var.release_name
   namespace        = var.namespace
   chart            = "aws-load-balancer-controller"
   repository       = "https://aws.github.io/eks-charts"
@@ -179,44 +175,44 @@ resource "helm_release" "lb-controller" {
   })]
 }
 
-resource "kubernetes_manifest" "alb-class-params" {
-  count = var.create_alb_class ? 1 : 0
-  depends_on = [helm_release.lb-controller]
-  manifest = {
-    apiVersion = "elbv2.k8s.aws/v1beta1"
-    kind       = "IngressClassParams"
-    metadata = {
-      labels = {
-        "app.kubernetes.io/name" : "aws-load-balancer-controller"
-      }
-      name = "alb"
-    }
-  }
-}
+# resource "kubernetes_manifest" "alb-class-params" {
+#   count = var.create_alb_class ? 1 : 0
+#   depends_on = [helm_release.lb-controller]
+#   manifest = {
+#     apiVersion = "elbv2.k8s.aws/v1beta1"
+#     kind       = "IngressClassParams"
+#     metadata = {
+#       labels = {
+#         "app.kubernetes.io/name" : var.release_name
+#       }
+#       name = "alb"
+#     }
+#   }
+# }
 
-resource "kubernetes_manifest" "alb-class" {
-  count = var.create_alb_class ? 1 : 0
-  depends_on = [helm_release.lb-controller, kubernetes_manifest.alb-class-params[0]]
-  manifest = {
-    apiVersion = "networking.k8s.io/v1"
-    kind       = "IngressClass"
-    metadata = {
-      labels = {
-        "app.kubernetes.io/name" : "aws-load-balancer-controller"
-      }
-      name = "alb"
-    }
-    spec = {
-      controller = "ingress.k8s.aws/alb"
-      parameters = {
-        apiGroup = "elbv2.k8s.aws"
-        kind     = "IngressClassParams"
-        name     = "alb"
-      }
-    }
-  }
-}
+# resource "kubernetes_manifest" "alb-class" {
+#   count = var.create_alb_class ? 1 : 0
+#   depends_on = [helm_release.lb-controller, kubernetes_manifest.alb-class-params[0]]
+#   manifest = {
+#     apiVersion = "networking.k8s.io/v1"
+#     kind       = "IngressClass"
+#     metadata = {
+#       labels = {
+#         "app.kubernetes.io/name" : var.release_name
+#       }
+#       name = "alb"
+#     }
+#     spec = {
+#       controller = "ingress.k8s.aws/alb"
+#       parameters = {
+#         apiGroup = "elbv2.k8s.aws"
+#         kind     = "IngressClassParams"
+#         name     = "alb"
+#       }
+#     }
+#   }
+# }
 
-output "oidc_role_arn" {
-  value = module.oidc-role.role_arn
-}
+# output "oidc_role_arn" {
+#   value = module.oidc-role.role_arn
+# }

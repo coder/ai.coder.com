@@ -1,36 +1,10 @@
 ##
 # Database Infrastructure
-## 
-
-variable "coder_username" {
-  description = "Coder DB's username."
-  type        = string
-  default     = "coder"
-}
-
-variable "coder_password" {
-  description = "Coder DB's password."
-  type        = string
-  sensitive   = true
-  default     = "th1s1sn0tas3cur3pass0wrd"
-}
-
-variable "grafana_username" {
-  description = "Grafana DB's username."
-  type        = string
-  default     = "grafana"
-}
-
-variable "grafana_password" {
-  description = "Grafana DB's password."
-  type        = string
-  sensitive   = true
-  default     = "th1s1sn0tas3cur3pass0wrd"
-}
+##
 
 resource "aws_security_group" "postgres" {
   vpc_id      = module.vpc.vpc_id
-  name        = "${var.name}-${local.normalized_domain_name}-pgsql"
+  name        = "${local.formatted_name}-pgsql"
   description = "security group for postgres all egress traffic"
   tags = {
     Name = "PostgreSQL"
@@ -52,38 +26,38 @@ resource "aws_vpc_security_group_egress_rule" "postgres" {
 }
 
 resource "aws_db_subnet_group" "coder" {
-  name       = "${var.name}-${local.normalized_domain_name}-coder"
-  subnet_ids = local.private_subnet_ids
+  name       = "${local.formatted_name}-coder"
+  subnet_ids = module.vpc.private_subnets
 
   tags = {
-    Name = "${var.name}-${local.normalized_domain_name}-coder"
+    Name = "${local.formatted_name}-coder"
   }
 }
 
 resource "time_static" "coder_snapshot" {
   triggers = {
-    run_on_ip_change = "${var.name}-${local.normalized_domain_name}-coder"
+    run_on_ip_change = "${local.formatted_name}-coder"
   }
 }
 
 resource "aws_db_instance" "coder" {
-  identifier        = "${var.name}-${local.normalized_domain_name}-coder"
-  instance_class    = "db.t4g.medium"
-  allocated_storage = 50
-  engine            = "postgres"
-  engine_version    = "15.12"
-  username               = var.coder_username
-  password               = var.coder_password
-  db_name                = "coder"
-  db_subnet_group_name   = aws_db_subnet_group.coder.name
-  vpc_security_group_ids = [aws_security_group.postgres.id]
-  publicly_accessible    = false
-  snapshot_identifier = null
-  skip_final_snapshot    = false
+  identifier                = "${local.formatted_name}-coder"
+  instance_class            = "db.t4g.medium"
+  allocated_storage         = 50
+  engine                    = "postgres"
+  engine_version            = "15.12"
+  username                  = var.coder_username
+  password                  = var.coder_password
+  db_name                   = "coder"
+  db_subnet_group_name      = aws_db_subnet_group.coder.name
+  vpc_security_group_ids    = [aws_security_group.postgres.id]
+  publicly_accessible       = false
+  snapshot_identifier       = null
+  skip_final_snapshot       = false
   final_snapshot_identifier = "coder-${replace(time_static.coder_snapshot.rfc3339, ":", "-")}"
 
   tags = {
-    Name = "${var.name}-${local.normalized_domain_name}-coder"
+    Name = "${local.formatted_name}-coder"
   }
   lifecycle {
     ignore_changes = [
@@ -94,28 +68,28 @@ resource "aws_db_instance" "coder" {
 
 resource "time_static" "grafana_snapshot" {
   triggers = {
-    run_on_ip_change = "${var.name}-${local.normalized_domain_name}-grafana"
+    run_on_ip_change = "${local.formatted_name}-grafana"
   }
 }
 
 resource "aws_db_instance" "grafana" {
-  identifier             = "${var.name}-${local.normalized_domain_name}-grafana"
-  instance_class         = "db.t4g.medium"
-  allocated_storage      = 50
-  engine                 = "postgres"
-  engine_version         = "15.12"
-  username               = var.grafana_username
-  password               = var.grafana_password
-  db_name                = "grafana"
-  db_subnet_group_name   = aws_db_subnet_group.coder.name
-  vpc_security_group_ids = [aws_security_group.postgres.id]
-  publicly_accessible    = false
-  snapshot_identifier = null
-  skip_final_snapshot    = false
+  identifier                = "${local.formatted_name}-grafana"
+  instance_class            = "db.t4g.medium"
+  allocated_storage         = 50
+  engine                    = "postgres"
+  engine_version            = "15.12"
+  username                  = var.grafana_username
+  password                  = var.grafana_password
+  db_name                   = "grafana"
+  db_subnet_group_name      = aws_db_subnet_group.coder.name
+  vpc_security_group_ids    = [aws_security_group.postgres.id]
+  publicly_accessible       = false
+  snapshot_identifier       = null
+  skip_final_snapshot       = false
   final_snapshot_identifier = "grafana-${replace(time_static.coder_snapshot.rfc3339, ":", "-")}"
 
   tags = {
-    Name = "${var.name}-${local.normalized_domain_name}-grafana"
+    Name = "${local.formatted_name}-grafana"
   }
   lifecycle {
     ignore_changes = [

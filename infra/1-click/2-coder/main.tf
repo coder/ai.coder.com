@@ -1,53 +1,27 @@
-terraform {
-  required_version = ">= 1.0"
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = ">= 5.46"
-    }
-    helm = {
-      source  = "hashicorp/helm"
-      version = ">= 3.1.1"
-    }
-    kubernetes = {
-      source = "hashicorp/kubernetes"
-    }
-    external = {
-      source  = "hashicorp/external"
-      version = ">= 2.3.5"
-    }
-    http = {
-      source  = "hashicorp/http"
-    }
-    coderd = {
-      source  = "coder/coderd"
-      version = "0.0.12"
-    }
-    time = {
-      source = "hashicorp/time"
-    }
-    dns = {
-      source = "hashicorp/dns"
-    }
-  }
-}
-
 ##
-# Remote State Resources
+# Global Inputs + Providers
 ##
 
-data "aws_vpc" "this" {
-  tags = {
-    "Name" = "${var.name}-${local.normalized_domain_name}"
-  }
+locals {
+  formatted_name         = "${var.name}-${local.normalized_domain_name}"
+  normalized_domain_name = split(".", var.domain_name)[0]
 }
+
+provider "aws" {
+  region  = var.region
+  profile = var.profile
+}
+
+data "aws_region" "this" {}
 
 data "aws_eks_cluster" "coder" {
-  name = "${var.name}-${local.normalized_domain_name}"
+  name   = local.formatted_name
+  region = var.region
 }
 
 data "aws_eks_cluster_auth" "coder" {
-  name = "${var.name}-${local.normalized_domain_name}"
+  name   = local.formatted_name
+  region = var.region
 }
 
 data "aws_iam_openid_connect_provider" "coder" {
@@ -55,29 +29,27 @@ data "aws_iam_openid_connect_provider" "coder" {
 }
 
 ##
-# Global Inputs + Providers
+# Coder MUST be in a reachable state by now
 ##
 
-variable "region" {
-  description = "The AWS region of the deployment."
-  type        = string
-  default     = "us-east-2"
+data "aws_eip" "coder" {
+  region = var.region
+  tags = {
+    Name = "${local.formatted_name}-coder-0"
+  }
 }
 
-variable "name" {
-  description = "Name for created resources and tag prefix."
-  type        = string
-  default     = "coder"
-}
-
-variable "profile" {
-  type    = string
-  default = "default"
-}
-
-provider "aws" {
-  region  = var.region
-  profile = var.profile
+data "http" "login" {
+  url    = "http://${data.aws_eip.coder.public_ip}/api/v2/users/login"
+  method = "POST"
+  request_headers = {
+    Host   = var.domain_name
+    Accept = "application/json"
+  }
+  request_body = jsonencode({
+    email    = var.coder_admin_email
+    password = var.coder_admin_password
+  })
 }
 
 provider "helm" {
@@ -94,56 +66,7 @@ provider "kubernetes" {
   token                  = data.aws_eks_cluster_auth.coder.token
 }
 
-provider "dns" {}
-
-locals {
-  normalized_domain_name = split(".", var.domain_name)[0]
-}
-
-##
-# Login and Fetch Authentication Token
-##
-
-variable "domain_name" {
-  type = string
-}
-
-variable "coder_admin_email" {
-  type    = string
-  default = "admin@coder.com"
-}
-
-variable "coder_admin_password" {
-  type      = string
-  default   = "Th1s1sN0TS3CuR3!!"
-  sensitive = true
-}
-
-##
-# Coder MUST be in a reachable state by now
-##
-
-data "aws_eip" "coder" {
-  tags = {
-    Name = "${var.name}-${local.normalized_domain_name}-coder-0"
-  }
-}
-
-data "http" "login" {
-  url = "https://${data.aws_eip.coder.public_ip}/api/v2/users/login"
-  insecure = true
-  method = "POST"
-  request_headers = {
-    Host = var.domain_name
-    Accept = "application/json"
-  }
-  request_body = jsonencode({
-    email    = var.coder_admin_email
-    password = var.coder_admin_password
-  })
-}
-
 provider "coderd" {
-  url = "https://${var.domain_name}"
+  url   = "http://${data.aws_eip.coder.public_ip}"
   token = jsondecode(data.http.login.response_body).session_token
 }

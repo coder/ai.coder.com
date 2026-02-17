@@ -4,7 +4,58 @@
 ## 
 
 ##
-# NodeClass + NodePool for Coder Server, Provisioner, & Workspaces
+# EBS CSI StorageClasses
+##
+
+resource "kubernetes_manifest" "default-sc" {
+  manifest = {
+    apiVersion = "storage.k8s.io/v1"
+    kind       = "StorageClass"
+    metadata = {
+      name = "default"
+      annotations = {
+        "storageclass.kubernetes.io/is-default-class" = "true"
+      }
+    }
+    provisioner       = "ebs.csi.aws.com"
+    volumeBindingMode = "WaitForFirstConsumer"
+    allowedTopologies = [{
+      matchLabelExpressions = [{
+        key    = "topology.ebs.csi.aws.com/zone"
+        values = [for az in var.azs : "${data.aws_region.this.region}${az}"]
+      }]
+    }]
+    parameters = {
+      type      = "gp3"
+      encrypted = "true"
+    }
+  }
+}
+
+resource "kubernetes_manifest" "automode-sc" {
+  manifest = {
+    apiVersion = "storage.k8s.io/v1"
+    kind       = "StorageClass"
+    metadata = {
+      name = "automode"
+    }
+    provisioner       = "ebs.csi.eks.amazonaws.com"
+    volumeBindingMode = "WaitForFirstConsumer"
+    allowedTopologies = [{
+      matchLabelExpressions = [{
+        key    = "eks.amazonaws.com/compute-type"
+        values = ["auto"]
+      }]
+    }]
+    parameters = {
+      type      = "gp3"
+      encrypted = "true"
+    }
+  }
+}
+
+##
+# NodeClass(es) for Coder (Server, Provisioner, & Workspaces)
 ##
 
 data "kubernetes_service_account_v1" "kptr" {
@@ -14,21 +65,40 @@ data "kubernetes_service_account_v1" "kptr" {
   }
 }
 
-
 locals {
   nodeclass_configs = {
     "coder" = {
-      user_data = <<-EOF
+      api_version = "karpenter.k8s.aws/v1"
+      kind        = "EC2NodeClass"
+      user_data   = <<-EOT
         MIME-Version: 1.0
         Content-Type: multipart/mixed; boundary="//"
 
         --//
         Content-Type: application/node.eks.aws
 
-        ${file("${path.module}/scripts/nodeconfig.yaml")}
-
+        apiVersion: node.eks.aws/v1alpha1
+        kind: NodeConfig
+        spec:
+          kubelet:
+            config:
+              registryPullQPS: 30
+        
         --//--
-      EOF
+      EOT
+      subnet_selector = [{
+        tags = {
+          "karpenter.sh/discovery" = "${local.formatted_name}"
+        }
+      }]
+      sg_selector = [{
+        # Use for EKS AutoMode. AWS manages this, not TF: https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/eks_cluster#cluster_security_group_id-1
+        id = data.aws_eks_cluster.coder.vpc_config[0].cluster_security_group_id
+        # tags = {
+        #   # If AutoMode is enabled, THIS BREAKS. Communication to CoreDNS locked behind system nodes. Kptr SG cant talk to AutoMode's SGs (only trusts itself and another AWS-managed SG)
+        #   "karpenter.sh/discovery" = "${local.formatted_name}-karpenter"
+        # }
+      }]
       block_device_mappings = [{
         deviceName = "/dev/xvda"
         ebs = {
@@ -47,8 +117,8 @@ resource "kubernetes_manifest" "nodeclass" {
   for_each = local.nodeclass_configs
 
   manifest = {
-    apiVersion = "karpenter.k8s.aws/v1"
-    kind       = "EC2NodeClass"
+    apiVersion = each.value.api_version
+    kind       = each.value.kind
     metadata = {
       name = each.key
     }
@@ -57,30 +127,43 @@ resource "kubernetes_manifest" "nodeclass" {
       amiSelectorTerms = [{
         alias = "al2023@latest"
       }]
-      subnetSelectorTerms = [{
-        tags = {
-          "karpenter.sh/discovery" = "${var.name}-${local.normalized_domain_name}"
-        }
-      }]
-      securityGroupSelectorTerms = [{
-        tags = {
-          "karpenter.sh/discovery" = "${var.name}-${local.normalized_domain_name}"
-        }
-      }]
-      blockDeviceMappings = each.value.block_device_mappings
-      userData            = each.value.user_data
+      subnetSelectorTerms        = each.value.subnet_selector
+      securityGroupSelectorTerms = each.value.sg_selector
+      blockDeviceMappings        = each.value.block_device_mappings
+      userData                   = each.value.user_data
     }
   }
 }
 
+##
+# NodePool(s) for Coder (Server, Provisioner, & Workspaces)
+##
+
 locals {
   nodepool_configs = {
-    "coder" = {
-      node_expires_after              = "Never"
+    # "automode" = {
+    #   node_expires_after              = "24h"
+    #   disruption_consolidation_policy = "WhenEmpty"
+    #   disruption_consolidate_after    = "1m"
+    #   instance_type                   = "t3a.large"
+    #   node_class_ref = {
+    #     group = "eks.amazonaws.com"
+    #     kind  = "NodeClass"
+    #     name  = "default"
+    #   }
+    #   taints                          = []
+    # }
+    "karpenter" = {
+      node_expires_after              = "24h"
       disruption_consolidation_policy = "WhenEmpty"
       disruption_consolidate_after    = "1m"
-      instance_type =                  "t3a.large"
-      taints                          = []
+      instance_type                   = "t3a.large"
+      node_class_ref = {
+        group = "karpenter.k8s.aws"
+        kind  = "EC2NodeClass"
+        name  = "coder"
+      }
+      taints = []
     }
   }
 }
@@ -88,7 +171,7 @@ locals {
 resource "kubernetes_manifest" "nodepool" {
 
   depends_on = [kubernetes_manifest.nodeclass]
-  for_each = local.nodepool_configs
+  for_each   = local.nodepool_configs
 
   field_manager {
     force_conflicts = true
@@ -121,7 +204,8 @@ resource "kubernetes_manifest" "nodepool" {
             "node.coder.io/managed-by" = "karpenter"
             "node.coder.io/name"       = "coder"
             "node.coder.io/part-of"    = "coder"
-            "node.coder.io/used-for"   = each.key
+            # "eks.amazonaws.com/compute-type" = "auto"
+            "node.coder.io/used-for" = each.key
           }
         }
         spec = {
@@ -145,14 +229,10 @@ resource "kubernetes_manifest" "nodepool" {
             }, {
             key      = "node.kubernetes.io/instance-type"
             operator = "In"
-            values   = [ each.value.instance_type ]
+            values   = [each.value.instance_type]
           }]
-          nodeClassRef = {
-            group = "karpenter.k8s.aws"
-            kind  = "EC2NodeClass"
-            name  = each.key
-          }
-          expireAfter = each.value.node_expires_after
+          nodeClassRef = each.value.node_class_ref
+          expireAfter  = each.value.node_expires_after
         }
       }
       disruption = {
@@ -169,7 +249,6 @@ resource "kubernetes_manifest" "nodepool" {
 
 resource "kubernetes_daemon_set_v1" "img-fetch" {
 
-  depends_on = [kubernetes_manifest.nodepool]
   for_each = local.nodepool_configs
 
   metadata {
@@ -196,12 +275,14 @@ resource "kubernetes_daemon_set_v1" "img-fetch" {
       }
 
       spec {
+
+        # Select's Coder-specific nodes. Do not pull on system nodes.
         node_selector = kubernetes_manifest.nodepool[each.key].manifest.spec.template.metadata.labels
 
         toleration {
-          key      = "dedicated"
-          value    = each.key
-          effect   = "NoSchedule"
+          key    = "dedicated"
+          value  = each.key
+          effect = "NoSchedule"
         }
 
         termination_grace_period_seconds = 5
@@ -224,207 +305,6 @@ resource "kubernetes_daemon_set_v1" "img-fetch" {
             limits = {
               cpu    = "10m"
               memory = "10Mi"
-            }
-          }
-        }
-      }
-    }
-  }
-}
-
-##
-# EBS CSI Default StorageClass
-##
-
-resource "kubernetes_manifest" "default-sc" {
-  manifest = {
-    apiVersion = "storage.k8s.io/v1"
-    kind       = "StorageClass"
-    metadata = {
-      name = "default"
-      annotations = {
-        "storageclass.kubernetes.io/is-default-class" = "true"
-      }
-    }
-    provisioner       = "ebs.csi.aws.com"
-    volumeBindingMode = "WaitForFirstConsumer"
-    parameters = {
-      type      = "gp3"
-      encrypted = "true"
-    }
-  }
-}
-
-##
-# Cert-Manager ClusterIssuer for CA
-##
-
-# If R53 enabled, then fetch service account from cert-manager for IAM Role
-variable "r53_config" {
-  description = "Enable to use Route53 as a DNS01 provider for ACME challenges."
-  type = object({
-    enabled = bool
-  })
-  default = {
-    enabled     = true
-  }
-}
-
-data "kubernetes_service_account_v1" "r53" {
-
-  count = var.r53_config.enabled ? 1 : 0
-
-  metadata {
-    name = "crt-mgr"
-    namespace = "cert-manager"
-  }
-}
-
-# If CF enabled, then fetch secret from cert-manager for token
-variable "cf_config" {
-  description = "Enable to use CloudFlare as a DNS01 provider for ACME challenges."
-  type = object({
-    enabled = bool
-    email = string
-    name = optional(string, "cloudflare")
-    namespace = optional(string, "cert-manager")
-  })
-  default = {
-    enabled     = false
-    email       = ""
-    name = ""
-    namespace = ""
-  }
-}
-
-data "kubernetes_secret_v1" "cf" {
-
-  count = var.cf_config.enabled ? 1 : 0
-
-  metadata {
-    name      = var.cf_config.name
-    namespace = var.cf_config.namespace
-  }
-}
-
-locals {
-  dns01_r53 = ! var.r53_config.enabled ? null : {
-    route53 = {
-      region = var.region
-      role   = data.kubernetes_service_account_v1.r53[0].metadata[0].annotations["eks.amazonaws.com/role-arn"]
-      auth = {
-        kubernetes = {
-          serviceAccountRef = {
-            name = data.kubernetes_service_account_v1.r53[0].metadata[0].name
-          }
-        }
-      }
-    }
-  }
-  dns01_cf = ! var.cf_config.enabled ? null : {
-    cloudflare = {
-      apiTokenSecretRef = {
-        key  = data.kubernetes_secret_v1.cf[0].metadata[0].annotations["custom.kubernetes.secret/key"]
-        name = data.kubernetes_secret_v1.cf[0].metadata[0].name
-      }
-      email = data.kubernetes_secret_v1.cf[0].metadata[0].annotations["custom.kubernetes.secret/email"]
-    }
-  }
-}
-
-resource "kubernetes_manifest" "issuer" {
-
-  field_manager {
-    force_conflicts = true
-  }
-
-  wait {
-    condition {
-      type   = "Ready"
-      status = "True"
-    }
-  }
-
-  timeouts {
-    create = "10m"
-    update = "10m"
-    delete = "30s"
-  }
-
-  manifest = {
-    apiVersion = "cert-manager.io/v1"
-    kind       = "ClusterIssuer"
-    metadata = {
-      labels = {}
-      name   = "issuer"
-    }
-    spec = {
-      acme = {
-        privateKeySecretRef = {
-          name = "issuer-account-key"
-        }
-        server = "https://acme-v02.api.letsencrypt.org/directory"
-        solvers = [
-          {
-            dns01 = merge(
-              local.dns01_r53, 
-              local.dns01_cf
-            )
-          }
-        ]
-      }
-    }
-  }
-}
-
-##
-# External-Secrets ClusterStore for syncing TLS/SSL
-##
-
-data "kubernetes_service_account_v1" "sm" {
-  metadata {
-    name      = "external-secrets"
-    namespace = "ext-sec"
-  }
-}
-
-resource "kubernetes_manifest" "secret-store" {
-
-  field_manager {
-    force_conflicts = true
-  }
-
-  wait {
-    condition {
-      type   = "Ready"
-      status = "True"
-    }
-  }
-
-  timeouts {
-    create = "10m"
-    update = "10m"
-    delete = "30s"
-  }
-
-  manifest = {
-    apiVersion = "external-secrets.io/v1"
-    kind       = "ClusterSecretStore"
-    metadata = {
-      labels = {}
-      name   = "issuer"
-    }
-    spec = {
-      provider = {
-        aws = {
-          service = "SecretsManager"
-          region  = var.region
-          auth = {
-            jwt = {
-              serviceAccountRef = {
-                name      = data.kubernetes_service_account_v1.sm.metadata[0].name
-                namespace = data.kubernetes_service_account_v1.sm.metadata[0].namespace
-              }
             }
           }
         }
