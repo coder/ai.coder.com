@@ -41,9 +41,10 @@ This will create the following resources:
 Deploying this will take 20-30 minutes to setup everything (AWS resources, K8s Addons, DNS resolution, and Coder). Cleaning is ~20 min. The below items are required to run this:
 
 ### OSS
-- [Terraform](https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli)
-- [Terragrunt](https://terragrunt.gruntwork.io/docs/getting-started/install/)
-- [AWS Account](https://docs.aws.amazon.com/accounts/latest/reference/manage-acct-creating.html) + [CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
+- [Terraform >= v1.14.1](https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli)
+- [Terragrunt (>= v0.78.0)](https://terragrunt.gruntwork.io/docs/getting-started/install/)
+- [AWS CLI (>= v2.33.23)](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
+- [AWS Account](https://docs.aws.amazon.com/accounts/latest/reference/manage-acct-creating.html)
 - [AWS Bedrock/Anthropic Agreement Completed](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access.html).
 - [AWS Route53 Domain](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/domain-register.html#domain-register-procedure-section)
 
@@ -55,7 +56,10 @@ Deploying this will take 20-30 minutes to setup everything (AWS resources, K8s A
 
 1. Create or acquire an AWS account
 2. Login as a user with AdministratorAccess
-3. Setup your local machine to have an [AWS profile](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html). When running `aws login` or `aws configure`, this will automatically setup a `default` profile for you.
+3. Setup your local machine to have an [AWS profile](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html). 
+  - When running `aws configure`, this will automatically setup a `default` profile for you. 
+  - If using `aws configure sso` you must manually set the profile name to `default`. Afterwards, you can login with `aws sso login`
+  - If using `aws login` follow this [thread](https://github.com/hashicorp/terraform-provider-aws/issues/45316) to see the fix.
 
 4. Purchase/Register a domain in Route53 and tie it to a public zone. When purchasing, it'll create a zone in a few minutes, wait for this. If using an existing domain, cleanup any conflicting A/AAAA/CNAME/TXT records.
 
@@ -138,6 +142,14 @@ CODER_VERSION=<Your Coder Version>
 Make sure that the version is ALWAYS greater than the previous.
 
 # Troubleshooting
+
+- When logging in to AWS you might run into issues such as: `An error occurred (InvalidRequestException)`. Make sure that:
+  - Your spelling is correct.
+  - The correct region for your SSO Start URL is set.
+  - You're consuming the correct SSO URL.
+
+- When initializing the project, and if you ran `aws login`, you might run into: `Error: failed to refresh cached credentials, no EC2 IMDS role found`.
+  - View this [thread]((https://github.com/hashicorp/terraform-provider-aws/issues/45316)) to see how to workaround this. Otherwise, try the other options to login (manually setting the profile/credentials, or use AWS SSO).
 
 - To verify the state of the infrastructure, visit the AWS Console and look at the pages of following AWS services that this solution deploys/manages:
   - EC2
