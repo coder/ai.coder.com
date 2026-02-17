@@ -4,4 +4,4 @@ set -ae -o pipefail
 
 source coder.env
 
-terragrunt run --all --non-interactive apply
+terragrunt run --all --non-interactive --config root.hcl apply

@@ -4,4 +4,4 @@ set -ae -o pipefail
 
 source coder.env
 
-terragrunt run --all --non-interactive destroy
+terragrunt run --all --non-interactive --config root.hcl destroy
