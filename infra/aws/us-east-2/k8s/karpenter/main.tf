@@ -1,48 +1,6 @@
-terraform {
-  required_providers {
-    aws = {
-      source = "hashicorp/aws"
-    }
-    helm = {
-      source  = "hashicorp/helm"
-      version = ">= 3.1.1"
-    }
-    kubernetes = {
-      source = "hashicorp/kubernetes"
-    }
-  }
-  backend "s3" {}
-}
-
-variable "cluster_name" {
-  type = string
-}
-
-variable "cluster_oidc_provider_arn" {
-  type = string
-}
-
-variable "cluster_region" {
-  type = string
-}
-
-variable "cluster_profile" {
-  type    = string
-  default = "default"
-}
-
-variable "addon_version" {
-  type = string
-}
-
-variable "addon_namespace" {
-  type    = string
-  default = "default"
-}
-
 provider "aws" {
-  region  = var.cluster_region
-  profile = var.cluster_profile
+  region  = var.region
+  profile = var.profile
 }
 
 data "aws_eks_cluster" "this" {
@@ -51,6 +9,10 @@ data "aws_eks_cluster" "this" {
 
 data "aws_eks_cluster_auth" "this" {
   name = var.cluster_name
+}
+
+data "aws_iam_openid_connect_provider" "this" {
+  url = data.aws_eks_cluster.this.identity[0].oidc[0].issuer
 }
 
 provider "helm" {
@@ -161,66 +123,85 @@ locals {
 }
 
 module "karpenter-addon" {
+
   source                    = "../../../../../modules/k8s/bootstrap/karpenter"
   cluster_name              = var.cluster_name
-  cluster_oidc_provider_arn = var.cluster_oidc_provider_arn
+  cluster_oidc_provider = trimprefix(data.aws_iam_openid_connect_provider.this.url, "https://")
+  cluster_oidc_provider_arn = data.aws_iam_openid_connect_provider.this.arn
 
   namespace     = var.addon_namespace
   chart_version = var.addon_version
-  node_selector = {
-    "node.amazonaws.io/managed-by" : "asg"
-  }
+
+  node_selector = {}
+  tolerations = [{
+    key = "CriticalAddonsOnly"
+    operator = "Exists"
+  }]
+  topology_spread = []
+
+  iam_role_use_name_prefix      = true
+  node_iam_role_use_name_prefix = true
+  replicas                      = 2
   karpenter_controller_role_policies = {
     "AmazonEFSCSIDriverPolicy" = "arn:aws:iam::aws:policy/service-role/AmazonEFSCSIDriverPolicy"
   }
-  ec2nodeclass_configs = [{
-    name                 = "coder-server-class"
-    subnet_selector_tags = local.provisioner_subnet_tags
-    sg_selector_tags     = local.provisioner_sg_tags
-    }, {
-    name                 = "coder-ws-class"
-    subnet_selector_tags = local.ws_all_subnet_tags
-    sg_selector_tags     = local.ws_all_sg_tags
-    ami_alias            = "al2023@latest" # Use /dev/xvda
-    user_data            = <<-EOF
-    apiVersion: node.eks.aws/v1alpha1
-    kind: NodeConfig
-    spec:
-      kubelet:
-        config:
-          registryPullQPS: 30
-    EOF
-    block_device_mappings = [{
-      device_name = "/dev/xvda"
-      ebs = {
-        volume_size = "500Gi"
-        volume_type = "gp3"
-      }
-    }]
-    # # Bottlerocket configs.
-    # ami_alias        = "bottlerocket@latest" # Use /dev/xvda + /dev/xvdb
-    # user_data        = <<-EOF
-    # [settings.kubernetes]
-    # 'registry-qps' = 30
-    # [settings.kernel.sysctl]
-    # 'user.max_user_namespaces' = "16384"
-    # EOF
-    # block_device_mappings = [{
-    #   device_name = "/dev/xvda"
-    #   ebs = {
-    #     volume_size = "500Gi"
-    #     volume_type = "gp3"
-    #   }
-    #   }, {
-    #   device_name = "/dev/xvdb"
-    #   ebs = {
-    #     volume_size = "500Gi"
-    #     volume_type = "gp3"
-    #   }
-    # }]
-    }, {
-    name                 = "coder-provisioner-class"
-    subnet_selector_tags = local.provisioner_subnet_tags
-    sg_selector_tags     = local.provisioner_sg_tags
-  }]
 }
+
+  # namespace     = var.addon_namespace
+  # chart_version = var.addon_version
+  # node_selector = {
+  #   "node.amazonaws.io/managed-by" : "asg"
+  # }
+  # karpenter_controller_role_policies = {
+  #   "AmazonEFSCSIDriverPolicy" = "arn:aws:iam::aws:policy/service-role/AmazonEFSCSIDriverPolicy"
+  # }
+  # ec2nodeclass_configs = [{
+  #   name                 = "coder-server-class"
+  #   subnet_selector_tags = local.provisioner_subnet_tags
+  #   sg_selector_tags     = local.provisioner_sg_tags
+  #   }, {
+  #   name                 = "coder-ws-class"
+  #   subnet_selector_tags = local.ws_all_subnet_tags
+  #   sg_selector_tags     = local.ws_all_sg_tags
+  #   ami_alias            = "al2023@latest" # Use /dev/xvda
+  #   user_data            = <<-EOF
+  #   apiVersion: node.eks.aws/v1alpha1
+  #   kind: NodeConfig
+  #   spec:
+  #     kubelet:
+  #       config:
+  #         registryPullQPS: 30
+  #   EOF
+  #   block_device_mappings = [{
+  #     device_name = "/dev/xvda"
+  #     ebs = {
+  #       volume_size = "500Gi"
+  #       volume_type = "gp3"
+  #     }
+  #   }]
+  #   # # Bottlerocket configs.
+  #   # ami_alias        = "bottlerocket@latest" # Use /dev/xvda + /dev/xvdb
+  #   # user_data        = <<-EOF
+  #   # [settings.kubernetes]
+  #   # 'registry-qps' = 30
+  #   # [settings.kernel.sysctl]
+  #   # 'user.max_user_namespaces' = "16384"
+  #   # EOF
+  #   # block_device_mappings = [{
+  #   #   device_name = "/dev/xvda"
+  #   #   ebs = {
+  #   #     volume_size = "500Gi"
+  #   #     volume_type = "gp3"
+  #   #   }
+  #   #   }, {
+  #   #   device_name = "/dev/xvdb"
+  #   #   ebs = {
+  #   #     volume_size = "500Gi"
+  #   #     volume_type = "gp3"
+  #   #   }
+  #   # }]
+  #   }, {
+  #   name                 = "coder-provisioner-class"
+  #   subnet_selector_tags = local.provisioner_subnet_tags
+  #   sg_selector_tags     = local.provisioner_sg_tags
+  # }]

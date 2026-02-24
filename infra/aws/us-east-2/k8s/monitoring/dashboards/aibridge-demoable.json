@@ -36,7 +36,7 @@
     },
     {
       "datasource": {
-        "type": "grafana-postgresql-datasource",
+        "type": "postgres",
         "uid": "aezivxsm5pnggc"
       },
       "fieldConfig": {
@@ -86,7 +86,7 @@
       "targets": [
         {
           "datasource": {
-            "type": "grafana-postgresql-datasource",
+            "type": "postgres",
             "uid": "aezivxsm5pnggc"
           },
           "editorMode": "code",
@@ -139,7 +139,7 @@
     },
     {
       "datasource": {
-        "type": "grafana-postgresql-datasource",
+        "type": "postgres",
         "uid": "aezivxsm5pnggc"
       },
       "fieldConfig": {
@@ -276,7 +276,7 @@
       "targets": [
         {
           "datasource": {
-            "type": "grafana-postgresql-datasource",
+            "type": "postgres",
             "uid": "aezivxsm5pnggc"
           },
           "editorMode": "code",
@@ -429,7 +429,7 @@
         },
         {
           "datasource": {
-            "type": "grafana-postgresql-datasource",
+            "type": "postgres",
             "uid": "aezivxsm5pnggc"
           },
           "editorMode": "code",
@@ -660,7 +660,7 @@
     },
     {
       "datasource": {
-        "type": "grafana-postgresql-datasource",
+        "type": "postgres",
         "uid": "aezivxsm5pnggc"
       },
       "fieldConfig": {
@@ -728,7 +728,7 @@
       "targets": [
         {
           "datasource": {
-            "type": "grafana-postgresql-datasource",
+            "type": "postgres",
             "uid": "aezivxsm5pnggc"
           },
           "editorMode": "code",
@@ -768,7 +768,7 @@
     },
     {
       "datasource": {
-        "type": "grafana-postgresql-datasource",
+        "type": "postgres",
         "uid": "aezivxsm5pnggc"
       },
       "fieldConfig": {
@@ -865,7 +865,7 @@
       "targets": [
         {
           "datasource": {
-            "type": "grafana-postgresql-datasource",
+            "type": "postgres",
             "uid": "aezivxsm5pnggc"
           },
           "editorMode": "code",
@@ -918,7 +918,7 @@
     },
     {
       "datasource": {
-        "type": "grafana-postgresql-datasource",
+        "type": "postgres",
         "uid": "aezivxsm5pnggc"
       },
       "fieldConfig": {
@@ -1029,7 +1029,7 @@
       "targets": [
         {
           "datasource": {
-            "type": "grafana-postgresql-datasource",
+            "type": "postgres",
             "uid": "aezivxsm5pnggc"
           },
           "editorMode": "code",
@@ -1083,7 +1083,7 @@
     },
     {
       "datasource": {
-        "type": "grafana-postgresql-datasource",
+        "type": "postgres",
         "uid": "aezivxsm5pnggc"
       },
       "fieldConfig": {
@@ -1238,7 +1238,7 @@
       "targets": [
         {
           "datasource": {
-            "type": "grafana-postgresql-datasource",
+            "type": "postgres",
             "uid": "aezivxsm5pnggc"
           },
           "editorMode": "code",
@@ -1305,7 +1305,7 @@
           ]
         },
         "datasource": {
-          "type": "grafana-postgresql-datasource",
+          "type": "postgres",
           "uid": "aezivxsm5pnggc"
         },
         "definition": "select username from users where deleted=false;",
@@ -1329,7 +1329,7 @@
           ]
         },
         "datasource": {
-          "type": "grafana-postgresql-datasource",
+          "type": "postgres",
           "uid": "aezivxsm5pnggc"
         },
         "definition": "SELECT DISTINCT provider FROM aibridge_interceptions WHERE provider IS NOT NULL ORDER BY 1;",
@@ -1353,7 +1353,7 @@
           ]
         },
         "datasource": {
-          "type": "grafana-postgresql-datasource",
+          "type": "postgres",
           "uid": "aezivxsm5pnggc"
         },
         "definition": "SELECT DISTINCT model FROM aibridge_interceptions WHERE model IS NOT NULL AND provider ~ '${provider:regex}' ORDER BY 1;",

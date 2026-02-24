@@ -5,7 +5,7 @@
 			"label": "coder-observability-ro",
 			"description": "",
 			"type": "datasource",
-			"pluginId": "grafana-postgresql-datasource",
+			"pluginId": "postgres",
 			"pluginName": "PostgreSQL"
 		}
 	],
@@ -25,7 +25,7 @@
 		},
 		{
 			"type": "datasource",
-			"id": "grafana-postgresql-datasource",
+			"id": "postgres",
 			"name": "PostgreSQL",
 			"version": "12.1.0"
 		},
@@ -79,8 +79,8 @@
 		},
 		{
 			"datasource": {
-				"type": "grafana-postgresql-datasource",
-				"uid": "grafana-postgresql-datasource"
+				"type": "postgres",
+				"uid": "postgres"
 			},
 			"fieldConfig": {
 				"defaults": {
@@ -216,8 +216,8 @@
 			"targets": [
 				{
 					"datasource": {
-						"type": "grafana-postgresql-datasource",
-						"uid": "grafana-postgresql-datasource"
+						"type": "postgres",
+						"uid": "postgres"
 					},
 					"editorMode": "code",
 					"format": "table",
@@ -265,8 +265,8 @@
 		},
 		{
 			"datasource": {
-				"type": "grafana-postgresql-datasource",
-				"uid": "grafana-postgresql-datasource"
+				"type": "postgres",
+				"uid": "postgres"
 			},
 			"fieldConfig": {
 				"defaults": {
@@ -313,8 +313,8 @@
 			"targets": [
 				{
 					"datasource": {
-						"type": "grafana-postgresql-datasource",
-						"uid": "grafana-postgresql-datasource"
+						"type": "postgres",
+						"uid": "postgres"
 					},
 					"editorMode": "code",
 					"format": "table",
@@ -379,8 +379,8 @@
 		},
 		{
 			"datasource": {
-				"type": "grafana-postgresql-datasource",
-				"uid": "grafana-postgresql-datasource"
+				"type": "postgres",
+				"uid": "postgres"
 			},
 			"fieldConfig": {
 				"defaults": {
@@ -476,8 +476,8 @@
 			"targets": [
 				{
 					"datasource": {
-						"type": "grafana-postgresql-datasource",
-						"uid": "grafana-postgresql-datasource"
+						"type": "postgres",
+						"uid": "postgres"
 					},
 					"editorMode": "code",
 					"format": "time_series",
@@ -516,8 +516,8 @@
 		},
 		{
 			"datasource": {
-				"type": "grafana-postgresql-datasource",
-				"uid": "grafana-postgresql-datasource"
+				"type": "postgres",
+				"uid": "postgres"
 			},
 			"fieldConfig": {
 				"defaults": {
@@ -582,8 +582,8 @@
 			"targets": [
 				{
 					"datasource": {
-						"type": "grafana-postgresql-datasource",
-						"uid": "grafana-postgresql-datasource"
+						"type": "postgres",
+						"uid": "postgres"
 					},
 					"editorMode": "code",
 					"format": "table",
@@ -635,8 +635,8 @@
 		},
 		{
 			"datasource": {
-				"type": "grafana-postgresql-datasource",
-				"uid": "grafana-postgresql-datasource"
+				"type": "postgres",
+				"uid": "postgres"
 			},
 			"fieldConfig": {
 				"defaults": {
@@ -744,8 +744,8 @@
 			"targets": [
 				{
 					"datasource": {
-						"type": "grafana-postgresql-datasource",
-						"uid": "grafana-postgresql-datasource"
+						"type": "postgres",
+						"uid": "postgres"
 					},
 					"editorMode": "code",
 					"format": "table",
@@ -798,8 +798,8 @@
 		},
 		{
 			"datasource": {
-				"type": "grafana-postgresql-datasource",
-				"uid": "grafana-postgresql-datasource"
+				"type": "postgres",
+				"uid": "postgres"
 			},
 			"fieldConfig": {
 				"defaults": {
@@ -951,8 +951,8 @@
 			"targets": [
 				{
 					"datasource": {
-						"type": "grafana-postgresql-datasource",
-						"uid": "grafana-postgresql-datasource"
+						"type": "postgres",
+						"uid": "postgres"
 					},
 					"editorMode": "code",
 					"format": "table",
@@ -1012,8 +1012,8 @@
 				"allValue": ".+",
 				"current": {},
 				"datasource": {
-					"type": "grafana-postgresql-datasource",
-					"uid": "grafana-postgresql-datasource"
+					"type": "postgres",
+					"uid": "postgres"
 				},
 				"definition": "select username from users where deleted=false;",
 				"description": "",
@@ -1031,8 +1031,8 @@
 				"allValue": ".+",
 				"current": {},
 				"datasource": {
-					"type": "grafana-postgresql-datasource",
-					"uid": "grafana-postgresql-datasource"
+					"type": "postgres",
+					"uid": "postgres"
 				},
 				"definition": "SELECT DISTINCT provider FROM aibridge_interceptions WHERE provider IS NOT NULL ORDER BY 1;",
 				"description": "",
@@ -1050,8 +1050,8 @@
 				"allValue": ".+",
 				"current": {},
 				"datasource": {
-					"type": "grafana-postgresql-datasource",
-					"uid": "grafana-postgresql-datasource"
+					"type": "postgres",
+					"uid": "postgres"
 				},
 				"definition": "SELECT DISTINCT model FROM aibridge_interceptions WHERE model IS NOT NULL AND provider ~ '$${provider:regex}' ORDER BY 1;",
 				"description": "",

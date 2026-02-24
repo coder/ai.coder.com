@@ -5,7 +5,7 @@ terraform {
     }
     helm = {
       source  = "hashicorp/helm"
-      version = "2.17.0"
+      version = ">= 2.17.0"
     }
     kubernetes = {
       source = "hashicorp/kubernetes"
@@ -17,6 +17,11 @@ terraform {
 # https://kubernetes-sigs.github.io/aws-load-balancer-controller/latest/
 # https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.13.2/docs/install/iam_policy.json
 ##
+
+variable "release_name" {
+  type = string
+  default = "aws-load-balancer-controller"
+}
 
 variable "cluster_name" {
   type = string
@@ -36,16 +41,6 @@ variable "policy_name" {
   default = ""
 }
 
-variable "policy_resource_region" {
-  type    = string
-  default = ""
-}
-
-variable "policy_resource_account" {
-  type    = string
-  default = ""
-}
-
 variable "tags" {
   type    = map(string)
   default = {}
@@ -57,6 +52,7 @@ variable "namespace" {
 
 variable "chart_version" {
   type = string
+  default = "3.0.0"
 }
 
 variable "enable_cert_manager" {
@@ -79,21 +75,42 @@ variable "cluster_asg_node_labels" {
   default = {}
 }
 
+variable "vpc_id" {
+  description = "(Optional). Set this when your pods can't use the IMDS to auto-determine this"
+  type = string
+  default = ""
+}
+
+variable "node_selector" {
+  type    = map(string)
+  default = {}
+}
+
+variable "tolerations" {
+  type = list(map(any))
+  default = []
+}
+
+variable "create_alb_class" {
+  type = bool
+  default = true
+}
+
 data "aws_region" "this" {}
 
 data "aws_caller_identity" "this" {}
 
 locals {
-  region      = var.policy_resource_region == "" ? data.aws_region.this.region : var.policy_resource_region
-  account_id  = var.policy_resource_account == "" ? data.aws_caller_identity.this.account_id : var.policy_resource_account
-  policy_name = var.policy_name == "" ? "LBController-${data.aws_region.this.region}" : var.policy_name
-  role_name   = var.role_name == "" ? "lb-controller-${data.aws_region.this.region}" : var.role_name
+  account_id = data.aws_caller_identity.this.account_id
+  region = data.aws_region.this.region
+  policy_name = var.policy_name == "" ? "lb-ctrl" : var.policy_name
+  role_name   = var.role_name == "" ? "lb-ctrl" : var.role_name
 }
 
 module "policy" {
   source      = "../../../security/policy"
   name        = local.policy_name
-  path        = "/"
+  path         = "/${var.cluster_name}/${data.aws_region.this.region}/"
   description = "AWS Load Balancer Controller Policy"
   policy_json = data.aws_iam_policy_document.this.json
 }
@@ -101,6 +118,7 @@ module "policy" {
 module "oidc-role" {
   source       = "../../../security/role/access-entry"
   name         = local.role_name
+  path         = "/${var.cluster_name}/${data.aws_region.this.region}/"
   cluster_name = var.cluster_name
   policy_arns = {
     "AmazonEKSLoadBalancingPolicy" = "arn:aws:iam::aws:policy/AmazonEKSLoadBalancingPolicy",
@@ -123,7 +141,7 @@ locals {
 }
 
 resource "helm_release" "lb-controller" {
-  name             = "aws-load-balancer-controller"
+  name             = var.release_name
   namespace        = var.namespace
   chart            = "aws-load-balancer-controller"
   repository       = "https://aws.github.io/eks-charts"
@@ -133,7 +151,7 @@ resource "helm_release" "lb-controller" {
   wait             = true
   wait_for_jobs    = true
   version          = var.chart_version
-  timeout          = 120 # in seconds
+  timeout          = 300 # in seconds
 
   values = [yamlencode({
     clusterName = var.cluster_name
@@ -145,48 +163,56 @@ resource "helm_release" "lb-controller" {
       automountServiceAccountToken = true
       imagePullSecrets             = []
     }
+    vpcId = var.vpc_id
     enableCertManager      = var.enable_cert_manager
-    nodeSelector           = var.cluster_asg_node_labels
+    nodeSelector           = var.node_selector
+    tolerations = var.tolerations
     serviceTargetENISGTags = local.service_target_eni_sg_tags
+    serviceMutatorWebhookConfig = {
+      # Ref - https://github.com/awslabs/data-on-eks/issues/458
+      failurePolicy = "Ignore"
+    }
   })]
 }
 
-resource "kubernetes_manifest" "alb-class-params" {
-  depends_on = [helm_release.lb-controller]
-  manifest = {
-    apiVersion = "elbv2.k8s.aws/v1beta1"
-    kind       = "IngressClassParams"
-    metadata = {
-      labels = {
-        "app.kubernetes.io/name" : "aws-load-balancer-controller"
-      }
-      name = "alb"
-    }
-  }
-}
+# resource "kubernetes_manifest" "alb-class-params" {
+#   count = var.create_alb_class ? 1 : 0
+#   depends_on = [helm_release.lb-controller]
+#   manifest = {
+#     apiVersion = "elbv2.k8s.aws/v1beta1"
+#     kind       = "IngressClassParams"
+#     metadata = {
+#       labels = {
+#         "app.kubernetes.io/name" : var.release_name
+#       }
+#       name = "alb"
+#     }
+#   }
+# }
 
-resource "kubernetes_manifest" "alb-class" {
-  depends_on = [helm_release.lb-controller, kubernetes_manifest.alb-class-params]
-  manifest = {
-    apiVersion = "networking.k8s.io/v1"
-    kind       = "IngressClass"
-    metadata = {
-      labels = {
-        "app.kubernetes.io/name" : "aws-load-balancer-controller"
-      }
-      name = "alb"
-    }
-    spec = {
-      controller = "ingress.k8s.aws/alb"
-      parameters = {
-        apiGroup = "elbv2.k8s.aws"
-        kind     = "IngressClassParams"
-        name     = "alb"
-      }
-    }
-  }
-}
+# resource "kubernetes_manifest" "alb-class" {
+#   count = var.create_alb_class ? 1 : 0
+#   depends_on = [helm_release.lb-controller, kubernetes_manifest.alb-class-params[0]]
+#   manifest = {
+#     apiVersion = "networking.k8s.io/v1"
+#     kind       = "IngressClass"
+#     metadata = {
+#       labels = {
+#         "app.kubernetes.io/name" : var.release_name
+#       }
+#       name = "alb"
+#     }
+#     spec = {
+#       controller = "ingress.k8s.aws/alb"
+#       parameters = {
+#         apiGroup = "elbv2.k8s.aws"
+#         kind     = "IngressClassParams"
+#         name     = "alb"
+#       }
+#     }
+#   }
+# }
 
-output "oidc_role_arn" {
-  value = module.oidc-role.role_arn
-}
+# output "oidc_role_arn" {
+#   value = module.oidc-role.role_arn
+# }

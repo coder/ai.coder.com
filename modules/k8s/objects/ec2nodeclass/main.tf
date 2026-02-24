@@ -23,6 +23,11 @@ variable "sg_selector_tags" {
   default = {}
 }
 
+variable "user_data" {
+  type    = string
+  default = ""
+}
+
 variable "block_device_mappings" {
   type = list(object({
     device_name = string
@@ -69,6 +74,7 @@ output "manifest" {
         tags = var.sg_selector_tags
       }]
       blockDeviceMappings = local.block_device_mappings
+      userData =  var.user_data
     }
   })
 }

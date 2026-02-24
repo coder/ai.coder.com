@@ -1,87 +1,18 @@
-terraform {
-  required_version = ">= 1.0"
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = ">= 5.46"
-    }
+data "aws_vpc" "this" {
+  tags = {
+    Name = var.vpc_name
   }
-  backend "s3" {}
 }
 
-variable "database_name" {
-  description = "Database name"
-  type        = string
-}
+data "aws_subnets" "private" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.this.id]
+  }
 
-variable "master_username" {
-  description = "Database root username"
-  type        = string
-}
-
-variable "master_password" {
-  description = "Database root password"
-  type        = string
-}
-
-variable "litellm_username" {
-  type = string
-}
-
-variable "litellm_password" {
-  type      = string
-  sensitive = true
-}
-
-variable "grafana_username" {
-  type = string
-}
-
-variable "grafana_password" {
-  type      = string
-  sensitive = true
-}
-
-variable "name" {
-  description = "Name of resource and tag prefix"
-  type        = string
-}
-
-variable "region" {
-  description = "The aws region for database deployment"
-  type        = string
-}
-
-variable "private_subnet_ids" {
-  description = "The deployed private subnet for the database"
-  type        = list(string)
-}
-
-variable "vpc_id" {
-  description = "The deployed vpc id for the database"
-  type        = string
-}
-
-variable "allocated_storage" {
-  description = "The allocated storage size in gb"
-  default     = "20"
-  type        = string
-}
-
-variable "engine_version" {
-  description = "The version to deploy"
-  default     = "15.7"
-  type        = string
-}
-
-variable "instance_class" {
-  description = "The size of db instance class to deploy"
-  default     = "db.m5.large"
-  type        = string
-}
-
-variable "profile" {
-  type = string
+  tags = {
+    Name = "*${var.private_subnet_suffix}*"
+  }
 }
 
 provider "aws" {
@@ -91,55 +22,74 @@ provider "aws" {
 
 # https://developer.hashicorp.com/terraform/tutorials/aws/aws-rds
 resource "aws_db_subnet_group" "db_subnet_group" {
-  name       = "${var.name}-db-subnet-group"
-  subnet_ids = var.private_subnet_ids
+  name       = var.db_subnet_group_name
+  subnet_ids = data.aws_subnets.private.ids
 
   tags = {
-    Name = "${var.name}-db-subnet-group"
+    Name = var.db_subnet_group_name
   }
 }
 
-resource "aws_db_instance" "db" {
-  identifier        = "${var.name}-db"
+resource "random_id" "coder" {
+  keepers = {
+    id = var.coder_db_rds_id
+  }
+  byte_length = 8
+}
+
+resource "aws_db_instance" "coder" {
+  identifier        = var.coder_db_rds_id
   instance_class    = var.instance_class
-  allocated_storage = var.allocated_storage
+  storage_type = "gp2"
+  allocated_storage = 40
   engine            = "postgres"
   engine_version    = "15.12"
   # backup_retention_period = 7
-  username               = var.master_username
-  password               = var.master_password
+  username               = var.coder_username
+  password               = var.coder_password
   db_name                = "coder"
   db_subnet_group_name   = aws_db_subnet_group.db_subnet_group.name
   vpc_security_group_ids = [aws_security_group.allow-port-5432.id]
   publicly_accessible    = false
+  snapshot_identifier = "aidemo-db-2-22-26-7-20-pm-pst"
+  final_snapshot_identifier = "snap-${random_id.coder.hex}"
   skip_final_snapshot    = false
 
   tags = {
-    Name = "${var.name}-rds-db"
+    Name = var.coder_db_rds_id
   }
   lifecycle {
+
     ignore_changes = [
       snapshot_identifier
     ]
   }
 }
 
+resource "random_id" "litellm" {
+  keepers = {
+    id = var.litellm_db_rds_id
+  }
+  byte_length = 8
+}
+
 resource "aws_db_instance" "litellm" {
-  identifier             = "litellm"
+  identifier             = var.litellm_db_rds_id
   instance_class         = "db.m5.large"
   allocated_storage      = 50
   engine                 = "postgres"
   engine_version         = "15.12"
   username               = var.litellm_username
   password               = var.litellm_password
-  db_name                = "litellm"
+  db_name                = var.litellm_db_name
   db_subnet_group_name   = aws_db_subnet_group.db_subnet_group.name
   vpc_security_group_ids = [aws_security_group.allow-port-5432.id]
   publicly_accessible    = false
+  final_snapshot_identifier = "snap-${random_id.litellm.hex}"
   skip_final_snapshot    = false
 
   tags = {
-    Name = "litellm"
+    Name = var.litellm_db_rds_id
   }
   lifecycle {
     ignore_changes = [
@@ -148,32 +98,36 @@ resource "aws_db_instance" "litellm" {
   }
 }
 
+resource "random_id" "grafana" {
+  keepers = {
+    id = var.grafana_db_rds_id
+  }
+  byte_length = 8
+}
+
 resource "aws_db_instance" "grafana" {
-  identifier             = "grafana"
+  identifier             = var.grafana_db_rds_id
   instance_class         = "db.m5.large"
   allocated_storage      = 50
   engine                 = "postgres"
   engine_version         = "15.12"
   username               = var.grafana_username
   password               = var.grafana_password
-  db_name                = "grafana"
+  db_name                = var.grafana_db_name
   db_subnet_group_name   = aws_db_subnet_group.db_subnet_group.name
   vpc_security_group_ids = [aws_security_group.allow-port-5432.id]
   publicly_accessible    = false
+  final_snapshot_identifier = "snap-${random_id.grafana.hex}"
   skip_final_snapshot    = false
 
   tags = {
-    Name = "grafana"
+    Name = var.grafana_db_rds_id
   }
   lifecycle {
     ignore_changes = [
       snapshot_identifier
     ]
   }
-}
-
-data "aws_vpc" "this" {
-  id = var.vpc_id
 }
 
 resource "aws_vpc_security_group_ingress_rule" "postgres" {
@@ -191,31 +145,10 @@ resource "aws_vpc_security_group_egress_rule" "all" {
 }
 
 resource "aws_security_group" "allow-port-5432" {
-  vpc_id      = var.vpc_id
-  name        = "${var.name}-all-port-5432"
+  vpc_id      = data.aws_vpc.this.id
+  name        = "rds-traffic"
   description = "security group for postgres all egress traffic"
   tags = {
-    Name = "${var.name}-postgres-allow-5432"
+    Name = "rds-traffic"
   }
-}
-
-output "rds_port" {
-  description = "Database instance port"
-  value       = aws_db_instance.db.port
-}
-
-output "rds_username" {
-  description = "Database instance root username"
-  value       = aws_db_instance.db.username
-}
-
-output "rds_address" {
-  description = "Database instance address"
-  value       = aws_db_instance.db.address
-}
-
-output "rds_password" {
-  description = "Database instance root password"
-  value       = aws_db_instance.db.password
-  sensitive   = true
 }

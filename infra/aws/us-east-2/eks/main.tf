@@ -1,88 +1,56 @@
-terraform {
-  required_version = ">= 1.0"
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = ">= 5.46"
-    }
-  }
-  backend "s3" {}
-}
-
-variable "name" {
-  description = "The resource name and tag prefix"
-  type        = string
-}
-
-variable "profile" {
-  type = string
-}
-
-variable "region" {
-  description = "The aws region to deploy eks cluster"
-  type        = string
-}
-
-variable "cluster_version" {
-  description = "The eks version"
-  type        = string
-}
-
-variable "cluster_instance_type" {
-  description = "EKS Instance Size/Type"
-  default     = "t3.xlarge"
-  type        = string
-}
-
-variable "vpc_id" {
-  type      = string
-  sensitive = true
-}
-
-variable "private_subnet_ids" {
-  type      = list(string)
-  default   = []
-  sensitive = true
-}
-
-variable "public_subnet_ids" {
-  type      = list(string)
-  default   = []
-  sensitive = true
-}
-
 provider "aws" {
   region  = var.region
   profile = var.profile
 }
 
+data "aws_vpc" "this" {
+  tags = {
+    Name = var.vpc_name
+  }
+}
+
+data "aws_subnets" "public" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.this.id]
+  }
+
+  tags = {
+    Name = "*${var.public_subnet_suffix}*"
+  }
+}
+
+data "aws_subnets" "private" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.this.id]
+  }
+
+  tags = {
+    Name = "*${var.private_subnet_suffix}*"
+  }
+}
+
 locals {
   tags = {
-    Environment              = "prod"
-    Name                     = "${var.name}-eks-cluster"
+    Name                     = var.name
     "karpenter.sh/discovery" = var.name
   }
-  system_subnet_tags = {
-    "subnet.amazonaws.io/system/owned-by" = var.name
+  # Karpenter Security Group Discovery - https://karpenter.sh/v1.0/concepts/nodeclasses/#specsecuritygroupselectorterms
+  tags_kptr_sg_discovery = {
+    "karpenter.sh/discovery" = var.name
   }
-  provisioner_subnet_tags = {
-    "subnet.amazonaws.io/coder-provisioner/owned-by" = var.name
+  labels_system_node = {
+    "scheduling.coder.com/pool" = "system"
   }
-  ws_all_subnet_tags = {
-    "subnet.amazonaws.io/coder-ws-all/owned-by" = var.name
+  taints_system = {
+    key    = "CriticalAddonsOnly"
+    effect = "NO_SCHEDULE"
   }
-  system_sg_tags = {
-    "subnet.amazonaws.io/system/owned-by" = var.name
-  }
-  provisioner_sg_tags = {
-    "sg.amazonaws.io/coder-provisioner/owned-by" = var.name
-  }
-  ws_all_sg_tags = {
-    "sg.amazonaws.io/coder-ws-all/owned-by" = var.name
-  }
-  cluster_asg_node_labels = {
-    "node.amazonaws.io/managed-by" = "asg"
-  }
+  tolerations_system = [{
+    key      = "CriticalAddonsOnly"
+    operator = "Exists"
+  }]
 }
 
 data "aws_iam_policy_document" "sts" {
@@ -103,40 +71,57 @@ resource "aws_iam_policy" "sts" {
 
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
-  version = "~> 20.0"
+  version = "~> 21.15.1"
 
-  vpc_id     = var.vpc_id
-  subnet_ids = toset(concat(var.public_subnet_ids, var.private_subnet_ids))
+  vpc_id     = data.aws_vpc.this.id
+  subnet_ids = toset(concat( 
+    data.aws_subnets.private.ids 
+  ))
 
-  cluster_name                    = var.name
-  cluster_version                 = var.cluster_version
-  cluster_endpoint_public_access  = true
-  cluster_endpoint_private_access = true
+  name                    = var.name
+  kubernetes_version                 = var.eks_version
+  endpoint_public_access  = true
+  endpoint_private_access = true
 
-  create_cluster_security_group = true
+  create_security_group         = true
   create_node_security_group    = true
   create_iam_role               = true
-  cluster_addons = {
+  node_security_group_tags      = local.tags_kptr_sg_discovery
+  create_node_iam_role          = true
+  node_iam_role_use_name_prefix = true
+
+  compute_config = {
+    enabled    = true
+    node_pools = ["system"]
+  }
+
+  addons = {
     coredns = {
-      most_recent = true
+      before_compute = true
     }
     kube-proxy = {
-      most_recent = true
+      before_compute = true
     }
     vpc-cni = {
-      most_recent = true
+      before_compute = true
       configuration_values = jsonencode({
         enableNetworkPolicy = "true"
         nodeAgent = {
           enablePolicyEventLogs = "true"
         }
+        env = {
+          ENABLE_PREFIX_DELEGATION = "true"
+          WARM_PREFIX_TARGET       = "1"
+          WARM_IP_TARGET           = "0"
+          AWS_VPC_K8S_CNI_LOGLEVEL = "DEBUG"
+        }
       })
     }
   }
 
-  attach_cluster_encryption_policy         = false
-  create_kms_key                           = false
-  cluster_encryption_config                = {}
+  attach_encryption_policy                 = false
+  create_kms_key                           = false # Enable unless needed
+  encryption_config                        = null
   enable_cluster_creator_admin_permissions = true
   enable_irsa                              = true
 
@@ -145,9 +130,9 @@ module "eks" {
       min_size     = 0
       max_size     = 10
       desired_size = 0 # Cant be modified after creation. Override from AWS Console
-      labels       = local.cluster_asg_node_labels
+      labels       = local.labels_system_node
 
-      instance_types = [var.cluster_instance_type]
+      instance_types = [var.instance_type]
       capacity_type  = "ON_DEMAND"
       iam_role_additional_policies = {
         AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
@@ -155,7 +140,7 @@ module "eks" {
       }
 
       # System Nodes should not be public
-      subnet_ids = var.private_subnet_ids
+      subnet_ids = data.aws_subnets.private.ids
     }
   }
 

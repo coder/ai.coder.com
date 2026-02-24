@@ -1,9 +1,15 @@
+# Other
+*.zip
+
 # Terraform
-.terraform/
-.terraform.lock.hcl
+.terraform**
 terraform.tfstate*
 **.tfvars**
 tf.plan
+
+# Terragrunt
+backend.tf
+provider.tf
 
 # Helm + Kubernetes
 infra/aws/us-east-2/apps/coder-ws/experiment/prometheus.yaml

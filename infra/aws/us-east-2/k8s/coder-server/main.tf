@@ -1,191 +1,9 @@
-terraform {
-  required_providers {
-    aws = {
-      source = "hashicorp/aws"
-    }
-    helm = {
-      source  = "hashicorp/helm"
-      version = ">= 3.1.1"
-    }
-    kubernetes = {
-      source = "hashicorp/kubernetes"
-    }
-    coderd = {
-      source = "coder/coderd"
-    }
-    acme = {
-      source = "vancluever/acme"
-    }
-    tls = {
-      source = "hashicorp/tls"
-    }
-  }
-  backend "s3" {}
-}
-
-variable "cluster_name" {
-  type = string
-}
-
-variable "cluster_region" {
-  type = string
-}
-
-variable "cluster_profile" {
-  type    = string
-  default = "default"
-}
-
-variable "cluster_oidc_provider_arn" {
-  type = string
-}
-
-variable "acme_server_url" {
-  type    = string
-  default = "https://acme-v02.api.letsencrypt.org/directory"
-}
-
-variable "acme_registration_email" {
-  type = string
-}
-
-variable "addon_version" {
-  type    = string
-  default = "2.25.1"
-}
-
-variable "coder_access_url" {
-  type = string
-}
-
-variable "coder_wildcard_access_url" {
-  type = string
-}
-
-variable "coder_experiments" {
-  type    = list(string)
-  default = []
-}
-
-variable "coder_github_allowed_orgs" {
-  type    = list(string)
-  default = []
-}
-
-variable "coder_builtin_provisioner_count" {
-  type    = number
-  default = 0
-}
-
-variable "coder_github_external_auth_secret_client_secret" {
-  type      = string
-  sensitive = true
-}
-
-variable "coder_github_external_auth_secret_client_id" {
-  type      = string
-  sensitive = true
-}
-
-variable "coder_oauth_secret_client_secret" {
-  type      = string
-  sensitive = true
-}
-
-variable "coder_oauth_secret_client_id" {
-  type      = string
-  sensitive = true
-}
-
-variable "coder_oidc_secret_client_secret" {
-  type      = string
-  sensitive = true
-}
-
-variable "coder_oidc_secret_client_id" {
-  type      = string
-  sensitive = true
-}
-
-variable "coder_oidc_secret_issuer_url" {
-  type      = string
-  sensitive = true
-}
-
-variable "coder_db_secret_url" {
-  type      = string
-  sensitive = true
-}
-
-variable "coder_token" {
-  type      = string
-  sensitive = true
-}
-
-variable "image_repo" {
-  type      = string
-  sensitive = true
-}
-
-variable "image_tag" {
-  type    = string
-  default = "latest"
-}
-
-variable "kubernetes_ssl_secret_name" {
-  type = string
-}
-
-variable "kubernetes_create_ssl_secret" {
-  type    = bool
-  default = true
-}
-
-variable "cloudflare_api_token" {
-  type      = string
-  sensitive = true
-}
-
-variable "oidc_sign_in_text" {
-  type = string
-}
-
-variable "oidc_icon_url" {
-  type = string
-}
-
-variable "oidc_scopes" {
-  type = list(string)
-}
-
-variable "oidc_email_domain" {
-  type = string
-}
-
-variable "anthropic_llm_endpoint" {
-  type      = string
-  sensitive = true
-}
-
-variable "anthropic_llm_key" {
-  type      = string
-  sensitive = true
-}
-
-variable "openai_llm_endpoint" {
-  type      = string
-  sensitive = true
-}
-
-variable "openai_llm_key" {
-  type      = string
-  sensitive = true
-}
-
 provider "aws" {
-  region  = var.cluster_region
-  profile = var.cluster_profile
+  region  = var.region
+  profile = var.profile
 }
+
+data "aws_region" "this" {}
 
 data "aws_eks_cluster" "this" {
   name = var.cluster_name
@@ -193,6 +11,20 @@ data "aws_eks_cluster" "this" {
 
 data "aws_eks_cluster_auth" "this" {
   name = var.cluster_name
+}
+
+data "aws_iam_openid_connect_provider" "this" {
+  url = data.aws_eks_cluster.this.identity[0].oidc[0].issuer
+}
+
+data "aws_db_instance" "coder" {
+  db_instance_identifier = var.coder_db_rds_name
+}
+
+data "aws_vpc" "this" {
+  tags = {
+    Name = var.vpc_name
+  }
 }
 
 provider "helm" {
@@ -209,97 +41,213 @@ provider "kubernetes" {
   token                  = data.aws_eks_cluster_auth.this.token
 }
 
-provider "coderd" {
-  url   = var.coder_access_url
-  token = var.coder_token
+locals {
+  common_name   = trimprefix(trimprefix(var.coder_access_url, "https://"), "http://")
+  wildcard_name = trimprefix(trimprefix(var.coder_wildcard_access_url, "https://"), "http://")
+  ssl_vol_friendly_name = replace(local.common_name, ".", "-")
 }
 
-provider "acme" {
-  server_url = var.acme_server_url
+resource "kubernetes_manifest" "certificate" {
+
+  field_manager {
+    force_conflicts = true
+  }
+
+  wait {
+    condition {
+      type   = "Ready"
+      status = "True"
+    }
+  }
+
+  timeouts {
+    create = "10m"
+    update = "10m"
+    delete = "30s"
+  }
+
+  manifest = {
+    apiVersion = "cert-manager.io/v1"
+    kind = "Certificate"
+    metadata = {
+      name = local.ssl_vol_friendly_name
+      namespace = module.coder-server.namespace
+    }
+    spec = {
+      commonName = local.common_name
+      dnsNames = [
+        local.common_name,
+        local.wildcard_name
+      ]
+      duration = "2160h" # 90 days
+      renewBefore = "360h" # 15 days
+      issuerRef = {
+        kind = "ClusterIssuer"
+        name = "issuer"
+      }
+      secretName = local.ssl_vol_friendly_name
+      privateKey = {
+        rotationPolicy = "Never"
+        algorithm = "RSA"
+        encoding = "PKCS1"
+        size = "2048"
+      }
+    }
+  }
+}
+
+locals {
+  azs = slice(var.azs, 0, 1)
+  pub_subs = [for az in local.azs : "${var.vpc_name}-public-${data.aws_region.this.region}${az}"]
+  release_name = "coder"
+  chart_name = "coder"
+  namespace = "coder"
+}
+
+resource "aws_eip" "coder" {
+  count = length(local.pub_subs)
+  domain           = "vpc"
+  public_ipv4_pool = "amazon"
+  tags = {
+    Name = "coder-eip-${count.index}"
+  }
 }
 
 module "coder-server" {
+
   source = "../../../../../modules/k8s/bootstrap/coder-server"
 
-  cluster_name              = var.cluster_name
-  cluster_oidc_provider_arn = var.cluster_oidc_provider_arn
+  release_name              = local.release_name
+  chart_version             = var.addon_version
+  chart_name                = local.chart_name
+  cluster_name              = data.aws_eks_cluster.this.id
+  cluster_oidc_provider_arn = data.aws_iam_openid_connect_provider.this.arn
 
-  namespace                       = "coder"
-  acme_registration_email         = var.acme_registration_email
-  acme_days_until_renewal         = 90
-  replica_count                   = 2
-  helm_version                    = var.addon_version
-  image_repo                      = var.image_repo
-  image_tag                       = var.image_tag
-  primary_access_url              = var.coder_access_url
-  wildcard_access_url             = var.coder_wildcard_access_url
-  cloudflare_api_token            = var.cloudflare_api_token
-  coder_experiments               = var.coder_experiments
-  coder_builtin_provisioner_count = var.coder_builtin_provisioner_count
-  coder_github_allowed_orgs       = var.coder_github_allowed_orgs
-  anthropic_llm_endpoint          = var.anthropic_llm_endpoint
-  anthropic_llm_key               = var.anthropic_llm_key
-  openai_llm_endpoint             = var.openai_llm_endpoint
-  openai_llm_key                  = var.openai_llm_key
-  ssl_cert_config = {
-    name          = var.kubernetes_ssl_secret_name
-    create_secret = var.kubernetes_create_ssl_secret
+  coder = {
+    access_url   = var.coder_access_url
+    wildcard_url = var.coder_wildcard_access_url
+    mount_ssl = true
+    mount_ssl_name = kubernetes_manifest.certificate.manifest.spec.secretName
+
+    image_repo   = var.image_repo
+    image_tag    = var.image_tag
+
+    rep_cnt      = 2
+    # External Provisioners will be used
+    prov_rep_cnt = var.coder_builtin_provisioner_count
+    experiments = var.coder_experiments
   }
-  oidc_config = {
+
+  db = {
+    url = data.aws_db_instance.coder.endpoint
+    username = var.coder_db_username
+    password = var.coder_db_password
+    db = var.coder_db_name
+  }
+
+  prometheus = {
+    enable = true
+  }
+
+  oidc = {
+    enable = true
     sign_in_text = var.oidc_sign_in_text
     icon_url     = var.oidc_icon_url
     scopes       = var.oidc_scopes
     email_domain = var.oidc_email_domain
+    issuer_url = var.coder_oidc_secret_issuer_url
+    client_id = var.coder_oidc_secret_client_id
+    client_secret = var.coder_oidc_secret_client_secret
   }
-  db_secret_url                             = var.coder_db_secret_url
-  oidc_secret_issuer_url                    = var.coder_oidc_secret_issuer_url
-  oidc_secret_client_id                     = var.coder_oidc_secret_client_id
-  oidc_secret_client_secret                 = var.coder_oidc_secret_client_secret
-  oauth_secret_client_id                    = var.coder_oauth_secret_client_id
-  oauth_secret_client_secret                = var.coder_oauth_secret_client_secret
-  github_external_auth_secret_client_id     = var.coder_github_external_auth_secret_client_id
-  github_external_auth_secret_client_secret = var.coder_github_external_auth_secret_client_secret
-  tags                                      = {}
-  service_annotations = {
-    "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type" = "instance"
-    "service.beta.kubernetes.io/aws-load-balancer-scheme"          = "internet-facing"
-    "service.beta.kubernetes.io/aws-load-balancer-attributes"      = "deletion_protection.enabled=true"
+
+  oauth2 = {
+    enable = true
+    default_provider_enable = false
+    allow_signups = true
+    device_flow = false
+    allowed_orgs = var.coder_github_allowed_orgs
+    client_id = var.coder_oauth_secret_client_id
+    client_secret = var.coder_oauth_secret_client_secret
+    use_extern_auth = false
   }
-  node_selector = {
-    "node.coder.io/managed-by" = "karpenter"
-    "node.coder.io/used-for"   = "coder-server"
-  }
-  tolerations = [{
-    key      = "dedicated"
-    operator = "Equal"
-    value    = "coder-server"
-    effect   = "NoSchedule"
+
+  extern_auth = [{
+    id = "primary-github"
+    type = "github"
+    client_id = var.coder_github_external_auth_secret_client_id
+    client_secret = var.coder_github_external_auth_secret_client_secret
   }]
-  topology_spread_constraints = [{
-    max_skew           = 1
+
+  aibridge = {
+    enabled = true
+    anthropic = {
+      url = var.anthropic_llm_endpoint
+      key = var.anthropic_llm_key
+    }
+    openai = {
+      url = var.openai_llm_endpoint
+      key = var.openai_llm_key
+    }
+  }
+  
+  namespace                       = local.namespace
+  resource_limit = {}
+  resource_request = {
+    cpu = "500m"
+    memory = "1Gi"
+  }
+  lb_class = "service.k8s.aws/nlb"
+  svc_annot = {
+    "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type" = "ip"
+    "service.beta.kubernetes.io/aws-load-balancer-scheme"          = "internet-facing"
+    "service.beta.kubernetes.io/aws-load-balancer-attributes"      = "deletion_protection.enabled=false"
+    "service.beta.kubernetes.io/aws-load-balancer-eip-allocations" = join(",", aws_eip.coder.*.allocation_id)
+    "service.beta.kubernetes.io/aws-load-balancer-subnets"         = join(",", local.pub_subs)
+  }
+  topology_spread = [{
+    max_skew           = 2
     topology_key       = "kubernetes.io/hostname"
     when_unsatisfiable = "ScheduleAnyway"
     label_selector = {
       match_labels = {
-        "app.kubernetes.io/name"    = "coder"
-        "app.kubernetes.io/part-of" = "coder"
+        "app.kubernetes.io/name"    = local.chart_name
+        "app.kubernetes.io/part-of" = local.chart_name
       }
     }
     match_label_keys = [
       "app.kubernetes.io/instance"
     ]
   }]
-  pod_anti_affinity_preferred_during_scheduling_ignored_during_execution = [{
-    weight = 100
-    pod_affinity_term = {
-      label_selector = {
-        match_labels = {
-          "app.kubernetes.io/instance" = "coder-v2"
-          "app.kubernetes.io/name"     = "coder"
-          "app.kubernetes.io/part-of"  = "coder"
-        }
-      }
-      topology_key = "kubernetes.io/hostname"
-    }
+  tolerations = [{
+    key = "CriticalAddonsOnly"
+    operator = "Exists"
+  },{
+    key = "dedicated"
+    value = "general"
+    effect = "NoSchedule"
   }]
+  affinity = {
+    nodeAffinity = {
+      requiredDuringSchedulingIgnoredDuringExecution = {
+        nodeSelectorTerms = [{
+          matchExpressions = [
+            {
+              key = "topology.kubernetes.io/zone"
+              operator = "In"
+              values = [for az in local.azs : "${data.aws_region.this.region}${az}"]
+            },
+            # {
+            #   key = "karpenter.sh/nodepool",
+            #   operator = "Exists"
+            # },
+            {
+              key = "eks.amazonaws.com/compute-type",
+              operator = "In",
+              values = ["auto"]
+            }
+          ]
+        }]
+      }
+    }
+  }
 }
