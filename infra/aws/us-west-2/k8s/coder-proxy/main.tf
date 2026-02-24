@@ -1,114 +1,6 @@
-terraform {
-  required_providers {
-    aws = {
-      source = "hashicorp/aws"
-    }
-    helm = {
-      source  = "hashicorp/helm"
-      version = ">= 3.1.1"
-    }
-    kubernetes = {
-      source = "hashicorp/kubernetes"
-    }
-    coderd = {
-      source = "coder/coderd"
-    }
-    acme = {
-      source = "vancluever/acme"
-    }
-    tls = {
-      source = "hashicorp/tls"
-    }
-  }
-  backend "s3" {}
-}
-
-variable "cluster_name" {
-  type = string
-}
-
-variable "cluster_region" {
-  type = string
-}
-
-variable "cluster_profile" {
-  type    = string
-  default = "default"
-}
-
-variable "acme_server_url" {
-  type    = string
-  default = "https://acme-v02.api.letsencrypt.org/directory"
-}
-
-variable "acme_registration_email" {
-  type = string
-}
-
-variable "addon_version" {
-  type    = string
-  default = "2.25.1"
-}
-
-variable "coder_proxy_name" {
-  type = string
-}
-
-variable "coder_proxy_display_name" {
-  type = string
-}
-
-variable "coder_proxy_icon" {
-  type = string
-}
-
-variable "coder_access_url" {
-  type = string
-  # sensitive = true
-}
-
-variable "coder_proxy_url" {
-  type = string
-  # sensitive = true
-}
-
-variable "coder_proxy_wildcard_url" {
-  type = string
-  # sensitive = true
-}
-
-variable "coder_token" {
-  type      = string
-  sensitive = true
-}
-
-variable "image_repo" {
-  type      = string
-  sensitive = true
-}
-
-variable "image_tag" {
-  type    = string
-  default = "latest"
-}
-
-variable "kubernetes_ssl_secret_name" {
-  type = string
-}
-
-variable "kubernetes_create_ssl_secret" {
-  type    = bool
-  default = true
-}
-
-variable "cloudflare_api_token" {
-  type      = string
-  sensitive = true
-}
-
 provider "aws" {
-  region  = var.cluster_region
-  profile = var.cluster_profile
+  region  = var.region
+  profile = var.profile
 }
 
 data "aws_eks_cluster" "this" {
@@ -118,6 +10,8 @@ data "aws_eks_cluster" "this" {
 data "aws_eks_cluster_auth" "this" {
   name = var.cluster_name
 }
+
+data "aws_region" "this" {}
 
 provider "helm" {
   kubernetes = {
@@ -133,79 +27,158 @@ provider "kubernetes" {
   token                  = data.aws_eks_cluster_auth.this.token
 }
 
-provider "coderd" {
-  url   = var.coder_access_url
-  token = var.coder_token
+data "http" "login" {
+  url    = "${var.coder_access_url}/api/v2/users/login"
+  method = "POST"
+  request_headers = {
+    Accept = "application/json"
+  }
+  request_body = jsonencode({
+    email    = var.coder_admin_email
+    password = var.coder_admin_password
+  })
+
+  retry {
+    attempts = 5
+    min_delay_ms = (5*1000) # 5 seconds 
+  }
 }
 
-provider "acme" {
-  server_url = var.acme_server_url
+provider "coderd" {
+  url   = var.coder_access_url
+  token = jsondecode(data.http.login.response_body).session_token
+}
+
+locals {
+  azs = slice(var.azs, 0, 1)
+  pub_subs = [for az in local.azs : "${var.vpc_name}-public-${data.aws_region.this.region}${az}"]
+  release_name = "coder"
+  chart_name = "coder"
+  namespace = "coder"
+
+  common_name   = trimprefix(trimprefix(var.coder_proxy_url, "https://"), "http://")
+  wildcard_name = trimprefix(trimprefix(var.coder_proxy_wildcard_url, "https://"), "http://")
+  ssl_vol_friendly_name = replace(local.common_name, ".", "-")
+}
+
+resource "kubernetes_manifest" "certificate" {
+
+  field_manager {
+    force_conflicts = true
+  }
+
+  wait {
+    condition {
+      type   = "Ready"
+      status = "True"
+    }
+  }
+
+  timeouts {
+    create = "10m"
+    update = "10m"
+    delete = "30s"
+  }
+
+  manifest = {
+    apiVersion = "cert-manager.io/v1"
+    kind = "Certificate"
+    metadata = {
+      name = local.ssl_vol_friendly_name
+      namespace = module.coder-proxy.namespace
+    }
+    spec = {
+      commonName = local.common_name
+      dnsNames = [
+        local.common_name,
+        local.wildcard_name
+      ]
+      duration = "2160h" # 90 days
+      renewBefore = "360h" # 15 days
+      issuerRef = {
+        kind = "ClusterIssuer"
+        name = "issuer"
+      }
+      secretName = local.ssl_vol_friendly_name
+      privateKey = {
+        rotationPolicy = "Never"
+        algorithm = "RSA"
+        encoding = "PKCS1"
+        size = "2048"
+      }
+    }
+  }
+}
+
+resource "aws_eip" "coder" {
+  count = length(local.pub_subs)
+  domain           = "vpc"
+  public_ipv4_pool = "amazon"
+  tags = {
+    Name = "coder-eip-${count.index}"
+  }
 }
 
 module "coder-proxy" {
+
   source = "../../../../../modules/k8s/bootstrap/coder-proxy"
 
-  namespace                = "coder-proxy"
-  acme_registration_email  = var.acme_registration_email
-  acme_days_until_renewal  = 90
-  replica_count            = 2
-  helm_version             = var.addon_version
-  image_repo               = var.image_repo
-  image_tag                = var.image_tag
-  primary_access_url       = var.coder_access_url
-  proxy_access_url         = var.coder_proxy_url
-  proxy_wildcard_url       = var.coder_proxy_wildcard_url
-  coder_proxy_name         = var.coder_proxy_name
-  coder_proxy_display_name = var.coder_proxy_display_name
-  coder_proxy_icon         = var.coder_proxy_icon
-  proxy_token_config = {
-    name = "coder-proxy"
+  proxy = {
+    access_url = var.coder_proxy_url
+    wildcard_url = var.coder_proxy_wildcard_url
+    coder_access_url = var.coder_access_url
+    mount_ssl = true
+    mount_ssl_name = kubernetes_manifest.certificate.manifest.spec.secretName
+    name = var.coder_proxy_name
+    display_name = var.coder_proxy_display_name
+    icon = var.coder_proxy_icon
+    rep_cnt = 2
+    image_repo = var.image_repo
+    image_tag = var.image_tag
   }
-  cloudflare_api_token = var.cloudflare_api_token
-  ssl_cert_config = {
-    name          = var.kubernetes_ssl_secret_name
-    create_secret = var.kubernetes_create_ssl_secret
+
+  namespace                       = local.namespace
+  resource_limit = {}
+  resource_request = {
+    cpu = "500m"
+    memory = "1Gi"
   }
-  service_annotations = {
-    "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type" = "instance"
+  svc_annot = {
+    "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type" = "ip"
     "service.beta.kubernetes.io/aws-load-balancer-scheme"          = "internet-facing"
-    "service.beta.kubernetes.io/aws-load-balancer-attributes"      = "deletion_protection.enabled=true"
-  }
-  node_selector = {
-    "node.coder.io/managed-by" = "karpenter"
-    "node.coder.io/used-for"   = "coder-proxy"
+    "service.beta.kubernetes.io/aws-load-balancer-attributes"      = "deletion_protection.enabled=false"
+    "service.beta.kubernetes.io/aws-load-balancer-eip-allocations" = join(",", aws_eip.coder.*.allocation_id)
+    "service.beta.kubernetes.io/aws-load-balancer-subnets"         = join(",", local.pub_subs)
   }
   tolerations = [{
-    key      = "dedicated"
-    operator = "Equal"
-    value    = "coder-proxy"
-    effect   = "NoSchedule"
+    key = "CriticalAddonsOnly"
+    operator = "Exists"
   }]
-  topology_spread_constraints = [{
+  topology_spread = [{
     max_skew           = 1
     topology_key       = "kubernetes.io/hostname"
     when_unsatisfiable = "ScheduleAnyway"
     label_selector = {
       match_labels = {
-        "app.kubernetes.io/name"    = "coder"
-        "app.kubernetes.io/part-of" = "coder"
+        "app.kubernetes.io/name"    = local.chart_name
+        "app.kubernetes.io/part-of" = local.chart_name
       }
     }
     match_label_keys = [
       "app.kubernetes.io/instance"
     ]
   }]
-  pod_anti_affinity_preferred_during_scheduling_ignored_during_execution = [{
-    weight = 100
-    pod_affinity_term = {
-      label_selector = {
-        match_labels = {
-          "app.kubernetes.io/instance" = "coder-v2"
-          "app.kubernetes.io/name"     = "coder"
-          "app.kubernetes.io/part-of"  = "coder"
-        }
+  affinity = {
+    nodeAffinity = {
+      requiredDuringSchedulingIgnoredDuringExecution = {
+        nodeSelectorTerms = [{
+          matchExpressions = [{
+            key = "topology.kubernetes.io/zone"
+            operator = "In"
+            values = [for az in local.azs : "${data.aws_region.this.region}${az}"]
+          }]
+        }]
       }
-      topology_key = "kubernetes.io/hostname"
     }
-  }]
+  }
 }

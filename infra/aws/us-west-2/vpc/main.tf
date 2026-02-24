@@ -54,7 +54,7 @@ module "nat" {
   source = "RaJiska/fck-nat/aws"
   version = "~> 1.4.0"
 
-  name      = var.nat_name
+  name      = "${var.region}-${var.nat_name}"
   vpc_id    = module.vpc.vpc_id
   subnet_id = module.vpc.public_subnets[0]
   ha_mode   = true # Enables high-availability mode

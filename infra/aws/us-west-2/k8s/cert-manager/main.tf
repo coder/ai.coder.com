@@ -1,59 +1,6 @@
-terraform {
-  required_providers {
-    aws = {
-      source = "hashicorp/aws"
-    }
-    helm = {
-      source  = "hashicorp/helm"
-      version = "3.1.1"
-    }
-    kubernetes = {
-      source = "hashicorp/kubernetes"
-    }
-  }
-  backend "s3" {}
-}
-
-variable "cluster_name" {
-  type = string
-}
-
-variable "cluster_region" {
-  type = string
-}
-
-variable "cluster_profile" {
-  type    = string
-  default = "default"
-}
-
-variable "cluster_oidc_provider_arn" {
-  type = string
-}
-
-variable "addon_namespace" {
-  type    = string
-  default = "cert-manager"
-}
-
-variable "addon_version" {
-  type    = string
-  default = "1.13.3"
-}
-
-variable "cloudflare_api_token" {
-  type      = string
-  sensitive = true
-}
-
-variable "cloudflare_email" {
-  type      = string
-  sensitive = true
-}
-
 provider "aws" {
-  region  = var.cluster_region
-  profile = var.cluster_profile
+  region  = var.region
+  profile = var.profile
 }
 
 data "aws_eks_cluster" "this" {
@@ -62,6 +9,10 @@ data "aws_eks_cluster" "this" {
 
 data "aws_eks_cluster_auth" "this" {
   name = var.cluster_name
+}
+
+data "aws_iam_openid_connect_provider" "this" {
+  url = data.aws_eks_cluster.this.identity[0].oidc[0].issuer
 }
 
 provider "helm" {
@@ -79,12 +30,17 @@ provider "kubernetes" {
 }
 
 module "cert-manager" {
+  
   source                    = "../../../../../modules/k8s/bootstrap/cert-manager"
+
   cluster_name              = var.cluster_name
-  cluster_oidc_provider_arn = var.cluster_oidc_provider_arn
+  cluster_oidc_provider_arn = data.aws_iam_openid_connect_provider.this.arn
 
   namespace                     = var.addon_namespace
   helm_version                  = var.addon_version
-  cloudflare_token_secret       = var.cloudflare_api_token
-  cloudflare_token_secret_email = var.cloudflare_email
+
+  tolerations = [{
+    key = "CriticalAddonsOnly"
+    operator = "Exists"
+  }]
 }

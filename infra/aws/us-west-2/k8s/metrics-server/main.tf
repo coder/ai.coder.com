@@ -1,42 +1,6 @@
-terraform {
-  required_providers {
-    aws = {
-      source = "hashicorp/aws"
-    }
-    helm = {
-      source  = "hashicorp/helm"
-      version = ">= 3.1.1"
-    }
-  }
-  backend "s3" {}
-}
-
-variable "cluster_name" {
-  type = string
-}
-
-variable "cluster_region" {
-  type = string
-}
-
-variable "cluster_profile" {
-  type    = string
-  default = "default"
-}
-
-variable "addon_namespace" {
-  type    = string
-  default = "kube-system"
-}
-
-variable "addon_version" {
-  type    = string
-  default = "3.13.0"
-}
-
 provider "aws" {
-  region  = var.cluster_region
-  profile = var.cluster_profile
+  region  = var.region
+  profile = var.profile
 }
 
 data "aws_eks_cluster" "this" {
@@ -60,7 +24,8 @@ module "metrics-server" {
 
   namespace     = var.addon_namespace
   chart_version = var.addon_version
-  node_selector = {
-    "node.amazonaws.io/managed-by" = "asg"
-  }
+  tolerations = [{
+    key = "CriticalAddonsOnly"
+    operator = "Exists"
+  }]
 }
