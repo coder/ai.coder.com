@@ -114,12 +114,7 @@ variable "node_selector" {
 }
 
 variable "tolerations" {
-  type = list(object({
-    key      = string
-    operator = optional(string, "Equal")
-    value    = string
-    effect   = optional(string, "NoSchedule")
-  }))
+  type = any
   default = []
 }
 
@@ -136,17 +131,9 @@ variable "topology_spread" {
   default = []
 }
 
-variable "pod_aaf_pref_sched_ie" {
-  type = list(object({
-    weight = number
-    pod_affinity_term = object({
-      label_selector = object({
-        match_labels = map(string)
-      })
-      topology_key = string
-    })
-  }))
-  default = []
+variable "affinity" {
+  type = any
+  default = {}
 }
 
 ##
@@ -217,17 +204,6 @@ resource "kubernetes_secret_v1" "ext-prov" {
 }
 
 locals {
-  pod_aaf_pref_sched_ie = [
-    for k, v in var.pod_aaf_pref_sched_ie : {
-      weight = v.weight
-      podAffinityTerm = {
-        labelSelector = {
-          matchLabels = try(v.pod_affinity_term.label_selector.match_labels, {})
-        }
-        topologyKey = try(v.pod_affinity_term.topology_key, {})
-      }
-    }
-  ]
   topology_spread = [
     for k, v in var.topology_spread : {
       maxSkew           = v.max_skew
@@ -299,11 +275,7 @@ resource "helm_release" "coder-provisioner" {
       replicaCount              = var.coder.rep_cnt
       tolerations               = var.tolerations
       topologySpreadConstraints = local.topology_spread
-      affinity = {
-        podAntiAffinity = {
-          preferredDuringSchedulingIgnoredDuringExecution = local.pod_aaf_pref_sched_ie
-        }
-      }
+      affinity = var.affinity
     }
     provisionerDaemon = {
       keySecretKey                  = kubernetes_secret_v1.ext-prov.metadata[0].annotations["custom.kubernetes.secret/key"]

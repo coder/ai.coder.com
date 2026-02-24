@@ -53,6 +53,11 @@ variable "node_selector" {
   default = {}
 }
 
+variable "affinity" {
+  type = map(any)
+  default = {}
+}
+
 variable "tolerations" {
   type = list(map(any))
   default = []
@@ -110,6 +115,7 @@ resource "helm_release" "ebs-controller" {
       }
       nodeSelector = var.node_selector
       tolerations = var.tolerations
+      affinity = var.affinity
     }
   })]
 }

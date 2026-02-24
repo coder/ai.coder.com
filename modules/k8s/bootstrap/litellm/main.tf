@@ -37,6 +37,7 @@ variable "namespace" {
 variable "chart_version" {
   type    = string
   default = "0.1.830"
+  # 1.81.13
 }
 
 variable "cluster_oidc_provider_arn" {
@@ -54,28 +55,6 @@ data "aws_eks_cluster" "this" {
 
 data "aws_eks_cluster_auth" "this" {
   name = var.cluster_name
-}
-
-variable "registry_config" {
-  type = object({
-    url = optional(string, "oci://ghcr.io")
-    username = string
-    password = string
-  })
-  sensitive = true
-}
-
-provider "helm" {
-  kubernetes = {
-    host                   = data.aws_eks_cluster.this.endpoint
-    cluster_ca_certificate = base64decode(data.aws_eks_cluster.this.certificate_authority[0].data)
-    token                  = data.aws_eks_cluster_auth.this.token
-  }
-  registries = [{
-    url      = nonsensitive(var.registry_config.url)
-    username = nonsensitive(var.registry_config.username)
-    password = var.registry_config.password
-  }]
 }
 
 variable "tags" {
@@ -112,7 +91,7 @@ variable "litellm_master_secret_name" {
   default = "masterkey"
 }
 
-variable "db_config" {
+variable "db" {
   type = object({
     use_existing = optional(bool, false)
     secret_name = optional(string, "postgres")
@@ -144,12 +123,12 @@ variable "service_lb_class" {
   default = "service.k8s.aws/nlb"
 }
 
-variable "service_annotations" {
+variable "svc_annots" {
   type = map(string)
   default = {}
 }
 
-variable "service_port" {
+variable "svc_port" {
   type    = number
   default = 80
 }
@@ -169,13 +148,12 @@ variable "env_vars" {
   default = {}
 }
 
-variable "volumes" {
-  type = list(any)
-  default = []
-}
-
-variable "volume_mounts" {
-  type = list(any)
+variable "mounts" {
+  type = list(object({
+    secret_name = optional(string, "")
+    path = optional(string, "")
+    read_only = optional(bool, false)
+  }))
   default = []
 }
 
@@ -251,14 +229,14 @@ resource "kubernetes_secret_v1" "master-key" {
 
 resource "kubernetes_secret_v1" "db-auth" {
   metadata {
-    name      = nonsensitive(var.db_config.secret_name)
+    name      = nonsensitive(var.db.secret_name)
     namespace = kubernetes_namespace_v1.litellm.metadata[0].name
   }
   data = {
-    username = nonsensitive(var.db_config.username)
-    postgres-password = var.db_config.admin_password
-    password = var.db_config.user_password
-    endpoint = var.db_config.endpoint
+    username = nonsensitive(var.db.username)
+    postgres-password = var.db.admin_password
+    password = var.db.user_password
+    endpoint = var.db.endpoint
   }
   type = "Opaque"
 }
@@ -281,62 +259,38 @@ variable "ssl_cert_config" {
   }
 }
 
-locals {
-  common_name = replace(replace(var.access_url, "https://", ""), "http://", "")
-}
-
-resource "kubernetes_manifest" "cert" {
-
-  count = var.ssl_cert_config.create_secret ? 1 : 0
-
-  field_manager {
-    force_conflicts = true
-  }
-  manifest = {
-    apiVersion = "cert-manager.io/v1"
-    kind       = "Certificate"
-    metadata = {
-      labels    = {} # var.cert_labels
-      name      = var.ssl_cert_config.name
-      namespace = kubernetes_namespace_v1.litellm.metadata[0].name
-    }
-    spec = {
-      secretName  = var.ssl_cert_config.name
-      commonName  = local.common_name
-      dnsNames    = [local.common_name]
-      duration    = "${var.ssl_cert_config.days_until_renewal * 24}h"
-      renewBefore = "8h"
-      additionalOutputFormats = [{
-        type = "CombinedPEM"
-      },{
-        type = "DER"
-      }]
-      issuerRef = {
-        kind = "ClusterIssuer"
-        name = "issuer"
-      }
-    }
+variable "mount_ssl" {
+  type = object({
+    enable = optional(bool, true)
+    secret_name = optional(string, "ssl-cert")
+    path = optional(string, "")
+    key_name = optional(string, "tls.key")
+    crt_name = optional(string, "tls.crt")
+    pem_name = optional(string, "tls-combined.pem")
+  })
+  default = {
+    enable = false
+    name = "ssl-cert"
+    path = "/tmp/ssl/ssl-cert"
+    key_name = "tls.key"
+    crt_name = "tls.crt"
+    pem_name = "tls-combined.pem"
   }
 }
 
 locals {
-  ssl_volume = var.ssl_cert_config.create_secret ? {} : {}
-}
-
-variable "gcloud_auth" {
-  type      = string
-  sensitive = true
-}
-
-resource "kubernetes_secret_v1" "gcloud" {
-  metadata {
-    name      = "gcloud-auth"
-    namespace = kubernetes_namespace_v1.litellm.metadata[0].name
-    labels    = {}
-  }
-  data = {
-    "service_account.json" = var.gcloud_auth
-  }
+  volumes = [ for v in var.mounts : merge(v.secret_name != "" ? {
+    name = v.secret_name
+    secret = {
+      secretName = v.secret_name
+      optional = false
+    }
+  } : null) ]
+  volumeMounts = [ for v in var.mounts : merge(v.secret_name != "" ? {
+    name = v.secret_name
+    mountPath = v.path
+    readOnly = v.read_only
+  } : null) ]
 }
 
 resource "helm_release" "litellm" {
@@ -374,8 +328,8 @@ resource "helm_release" "litellm" {
     service = {
       type = "LoadBalancer"
       loadBalancerClass = var.service_lb_class
-      port = var.service_port
-      annotations = var.service_annotations
+      port = var.svc_port
+      annotations = var.svc_annots
     }
     separateHealthApp = true
     separateHealthPort = var.health_port
@@ -402,9 +356,9 @@ resource "helm_release" "litellm" {
     affinity = var.affinity
 
     db = {
-      deployStandalone = var.db_config.endpoint == "localhost"
-      useExisting = nonsensitive(var.db_config.use_existing)
-      database = nonsensitive(var.db_config.db_name)
+      deployStandalone = var.db.endpoint == "localhost"
+      useExisting = nonsensitive(var.db.use_existing)
+      database = nonsensitive(var.db.db_name)
       url = "postgresql://$(DATABASE_USERNAME):$(DATABASE_PASSWORD)@$(DATABASE_HOST)/$(DATABASE_NAME)"
       secret = {
         name = kubernetes_secret_v1.db-auth.metadata[0].name
@@ -420,7 +374,7 @@ resource "helm_release" "litellm" {
     postgresql = {
       architecture = "standalone"
       auth = {
-        username = var.db_config.username
+        username = var.db.username
         database = "litellm"
         enablePostgresUser = true
 
@@ -465,42 +419,38 @@ resource "helm_release" "litellm" {
 
     envVars = merge({ 
       NO_DOCS = "False"
-    }, merge(var.access_url != "" ? {
-      # PROXY_BASE_URL = "${var.access_url}"
-    } : {}, var.ssl_cert_config.create_secret ? {
-      SSL_CERT_FILE = "/tmp/ssl/${local.common_name}/tls-combined.pem"
-      SSL_KEYFILE_PATH = "/tmp/ssl/${local.common_name}/tls.key"
-      SSL_CERTFILE_PATH = "/tmp/ssl/${local.common_name}/tls.crt"
+    }, var.mount_ssl.enable ? {
+      SSL_CERT_FILE = "${var.mount_ssl.path}/${var.mount_ssl.pem_name}"
+      SSL_KEYFILE_PATH = "${var.mount_ssl.path}/${var.mount_ssl.key_name}"
+      SSL_CERTFILE_PATH = "${var.mount_ssl.path}/${var.mount_ssl.crt_name}"
       SSL_VERIFY = "False"
-    } : {}))
+    } : {},
+      var.env_vars
+    )
     
     extraEnvVars = {}
 
     # Additional volumes on the output Deployment definition.
-    volumes = [{
-      name = kubernetes_manifest.cert[0].manifest.metadata.name
-      secret = {
-        secretName = kubernetes_manifest.cert[0].manifest.metadata.name
-        optional = false
-      }
-    },{
-      name = kubernetes_secret_v1.gcloud.metadata[0].name
-      secret = {
-        secretName = kubernetes_secret_v1.gcloud.metadata[0].name
-        optional = false
-      }
-    }]
 
-    # Additional volumeMounts on the output Deployment definition.
-    volumeMounts = [{
-      name     = kubernetes_manifest.cert[0].manifest.metadata.name
-      mountPath = "/tmp/ssl/${local.common_name}"
-      readOnly  = true
-    },{
-      name     = kubernetes_secret_v1.gcloud.metadata[0].name
-      mountPath = "/tmp/gcloud/"
-      readOnly  = true
-    },]
+    volumes = concat(
+      var.mount_ssl.enable ? [{
+        name = var.mount_ssl.secret_name
+        secret = {
+          secretName = var.mount_ssl.secret_name
+          optional = false
+        }
+      }] : [], 
+      local.volumes
+    )
+
+    volumeMounts = concat(
+      var.mount_ssl.enable ? [{
+        name     = var.mount_ssl.secret_name
+        mountPath = var.mount_ssl.path
+        readOnly  = true
+      }] : [], 
+      local.volumeMounts
+    )
   })]
 }
 

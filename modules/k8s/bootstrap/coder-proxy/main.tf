@@ -13,9 +13,6 @@ terraform {
     coderd = {
       source = "coder/coderd"
     }
-    acme = {
-      source = "vancluever/acme"
-    }
     tls = {
       source = "hashicorp/tls"
     }
@@ -98,14 +95,8 @@ variable "resource_request" {
 }
 
 variable "resource_limit" {
-  type = object({
-    cpu    = string
-    memory = string
-  })
-  default = {
-    cpu    = "500m"
-    memory = "1Gi"
-  }
+  type = map(string)
+  default = {}
 }
 
 variable "svc_annot" {
@@ -124,12 +115,7 @@ variable "node_selector" {
 }
 
 variable "tolerations" {
-  type = list(object({
-    key      = string
-    operator = optional(string, "Equal")
-    value    = string
-    effect   = optional(string, "NoSchedule")
-  }))
+  type = list(any)
   default = []
 }
 
@@ -146,17 +132,9 @@ variable "topology_spread" {
   default = []
 }
 
-variable "pod_aaf_pref_sched_ie" {
-  type = list(object({
-    weight = number
-    pod_affinity_term = object({
-      label_selector = object({
-        match_labels = map(string)
-      })
-      topology_key = string
-    })
-  }))
-  default = []
+variable "affinity" {
+  type = any
+  default = {}
 }
 
 variable "termination_grace_period" {
@@ -184,17 +162,6 @@ locals {
   }
   secret_key = "key"
   secret_keys = keys(local.secrets)
-  pod_aaf_pref_sched_ie = [
-    for k, v in var.pod_aaf_pref_sched_ie : {
-      weight = v.weight
-      podAffinityTerm = {
-        labelSelector = {
-          matchLabels = try(v.pod_affinity_term.label_selector.match_labels, {})
-        }
-        topologyKey = try(v.pod_affinity_term.topology_key, {})
-      }
-    }
-  ]
   topology_spread = [
     for k, v in var.topology_spread : {
       maxSkew           = v.max_skew
@@ -269,7 +236,7 @@ resource "kubernetes_service_v1" "coder" {
       name = "https"
       port = 443
       protocol = "TCP"
-      target_port = "http"
+      target_port = var.proxy.mount_ssl ? "https" : "http"
     }
     selector = {
       "app.kubernetes.io/instance" = var.release_name
@@ -306,7 +273,7 @@ resource "helm_release" "coder-proxy" {
         enable                = false
       }
       tls = {
-        secretNames = var.coder.mount_ssl ? [ var.coder.mount_ssl_name ] : []
+        secretNames = var.proxy.mount_ssl ? [ var.proxy.mount_ssl_name ] : []
       }
       replicaCount = var.proxy.rep_cnt
       resources = {
@@ -319,12 +286,12 @@ resource "helm_release" "coder-proxy" {
       nodeSelector              = var.node_selector
       tolerations               = var.tolerations
       topologySpreadConstraints = local.topology_spread
-      affinity = {
-        podAntiAffinity = {
-          preferredDuringSchedulingIgnoredDuringExecution = local.pod_aaf_pref_sched_ie
-        }
-      }
+      affinity = var.affinity
       terminationGracePeriodSeconds = var.termination_grace_period
     }
   })]
+}
+
+output "namespace" {
+  value = kubernetes_namespace_v1.this.metadata[0].name
 }

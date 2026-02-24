@@ -70,7 +70,7 @@ data "aws_region" "this" {}
 
 data "aws_caller_identity" "this" {}
 
-resource "kubernetes_namespace" "this" {
+resource "kubernetes_namespace_v1" "this" {
   metadata {
     name = var.namespace
   }
@@ -78,7 +78,7 @@ resource "kubernetes_namespace" "this" {
 
 resource "helm_release" "cert-manager" {
   name             = "cert-manager"
-  namespace        = kubernetes_namespace.this.metadata[0].name
+  namespace        = kubernetes_namespace_v1.this.metadata[0].name
   chart            = "cert-manager"
   repository       = "oci://quay.io/jetstack/charts"
   create_namespace = false
@@ -164,52 +164,52 @@ module "oidc-role" {
   tags = var.tags
 }
 
-resource "kubernetes_service_account" "r53" {
+resource "kubernetes_service_account_v1" "r53" {
 
   count = var.r53_config.enabled ? 1 : 0
 
   metadata {
     name      = "${var.r53_config.role_name}"
-    namespace = kubernetes_namespace.this.metadata[0].name
+    namespace = kubernetes_namespace_v1.this.metadata[0].name
     annotations = {
       "eks.amazonaws.com/role-arn" = module.oidc-role[0].role_arn
     }
   }
 }
 
-resource "kubernetes_role" "r53" {
+resource "kubernetes_role_v1" "r53" {
 
   count = var.r53_config.enabled ? 1 : 0
 
   metadata {
     name      = "${var.r53_config.role_name}-tokenrequest"
-    namespace = kubernetes_namespace.this.metadata[0].name
+    namespace = kubernetes_namespace_v1.this.metadata[0].name
   }
   rule {
     api_groups     = [""]
     resources      = ["serviceaccounts/token"]
-    resource_names = [kubernetes_service_account.r53[0].metadata[0].name]
+    resource_names = [kubernetes_service_account_v1.r53[0].metadata[0].name]
     verbs          = ["create"]
   }
 }
 
-resource "kubernetes_role_binding" "r53" {
+resource "kubernetes_role_binding_v1" "r53" {
 
   count = var.r53_config.enabled ? 1 : 0
 
   metadata {
     name      = "${var.r53_config.role_name}-tokenrequest"
-    namespace = kubernetes_namespace.this.metadata[0].name
+    namespace = kubernetes_namespace_v1.this.metadata[0].name
   }
   subject {
     kind      = "ServiceAccount"
     name      = "cert-manager"
-    namespace = kubernetes_namespace.this.metadata[0].name
+    namespace = kubernetes_namespace_v1.this.metadata[0].name
   }
   role_ref {
     api_group = "rbac.authorization.k8s.io"
     kind      = "Role"
-    name      = kubernetes_role.r53[0].metadata[0].name
+    name      = kubernetes_role_v1.r53[0].metadata[0].name
   }
 }
 
@@ -240,13 +240,13 @@ locals {
   cf_annot_email_key = "custom.kubernetes.secret/email"
 }
 
-resource "kubernetes_secret" "cloudflare" {
+resource "kubernetes_secret_v1" "cloudflare" {
 
   count = var.cf_config.enabled ? 1 : 0
 
   metadata {
     name      = var.cf_config.name
-    namespace = kubernetes_namespace.this.metadata[0].name
+    namespace = kubernetes_namespace_v1.this.metadata[0].name
     annotations = {
       "${local.cf_annot_sec_key}" = var.cf_config.key
       "${local.cf_annot_email_key}" = var.cf_config.email

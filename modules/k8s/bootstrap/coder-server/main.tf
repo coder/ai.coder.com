@@ -134,14 +134,8 @@ variable "tags" {
 }
 
 variable "resource_limit" {
-  type = object({
-    cpu    = string
-    memory = string
-  })
-  default = {
-    cpu    = "4000m"
-    memory = "8Gi"
-  }
+  type = map(any)
+  default = {}
 }
 
 variable "svc_annot" {
@@ -165,12 +159,7 @@ variable "node_selector" {
 }
 
 variable "tolerations" {
-  type = list(object({
-    key      = string
-    operator = optional(string, "Equal")
-    value    = string
-    effect   = optional(string, "NoSchedule")
-  }))
+  type = list(any)
   default = []
 }
 
@@ -187,17 +176,9 @@ variable "topology_spread" {
   default = []
 }
 
-variable "pod_aaf_pref_sched_ie" {
-  type = list(object({
-    weight = number
-    pod_affinity_term = object({
-      label_selector = object({
-        match_labels = map(string)
-      })
-      topology_key = string
-    })
-  }))
-  default = []
+variable "affinity" {
+  type = any
+  default = {}
 }
 
 variable "db" {
@@ -401,7 +382,8 @@ locals {
     local.oidc,
     local.oauth2,
     local.extern_auth,
-    local.aibridge
+    local.aibridge,
+    var.coder.env_vars
   ) : { 
     name = k, 
     value = tostring(v)
@@ -439,17 +421,6 @@ data "aws_region" "this" {}
 data "aws_caller_identity" "this" {}
 
 locals {
-  pod_aaf_pref_sched_ie = [
-    for k, v in var.pod_aaf_pref_sched_ie : {
-      weight = v.weight
-      podAffinityTerm = {
-        labelSelector = {
-          matchLabels = try(v.pod_affinity_term.label_selector.match_labels, {})
-        }
-        topologyKey = try(v.pod_affinity_term.topology_key, {})
-      }
-    }
-  ]
   topology_spread = [
     for k, v in var.topology_spread : {
       maxSkew           = v.max_skew
@@ -527,7 +498,7 @@ resource "kubernetes_service_v1" "coder" {
       name = "https"
       port = 443
       protocol = "TCP"
-      target_port = "http"
+      target_port = var.coder.mount_ssl ? "https" : "http"
     }
     selector = {
       "app.kubernetes.io/instance" = var.chart_name
@@ -582,6 +553,10 @@ resource "helm_release" "coder-server" {
         pullSecrets = var.coder.image_pull_secrets
       }
       env = local.env
+      annotations = var.prometheus.enable ? {
+        "prometheus.io/scrape" = "true"
+        "prometheus.io/port"   = kubernetes_service_v1.prometheus[0].spec[0].port[0].port
+      } : {}
       podAnnotations = var.prometheus.enable ? {
         "prometheus.io/scrape" = "true"
         "prometheus.io/port"   = kubernetes_service_v1.prometheus[0].spec[0].port[0].port
@@ -605,11 +580,7 @@ resource "helm_release" "coder-server" {
       nodeSelector              = var.node_selector
       tolerations               = var.tolerations
       topologySpreadConstraints = local.topology_spread
-      affinity = {
-        podAntiAffinity = {
-          preferredDuringSchedulingIgnoredDuringExecution = local.pod_aaf_pref_sched_ie
-        }
-      }
+      affinity = var.affinity
       terminationGracePeriodSeconds = var.termination_grace_period
     }
   })]
