@@ -42,8 +42,8 @@ provider "kubernetes" {
 }
 
 locals {
-  common_name   = trimprefix(trimprefix(var.coder_access_url, "https://"), "http://")
-  wildcard_name = trimprefix(trimprefix(var.coder_wildcard_access_url, "https://"), "http://")
+  common_name           = trimprefix(trimprefix(var.coder_access_url, "https://"), "http://")
+  wildcard_name         = trimprefix(trimprefix(var.coder_wildcard_access_url, "https://"), "http://")
   ssl_vol_friendly_name = replace(local.common_name, ".", "-")
 }
 
@@ -68,9 +68,9 @@ resource "kubernetes_manifest" "certificate" {
 
   manifest = {
     apiVersion = "cert-manager.io/v1"
-    kind = "Certificate"
+    kind       = "Certificate"
     metadata = {
-      name = local.ssl_vol_friendly_name
+      name      = local.ssl_vol_friendly_name
       namespace = module.coder-server.namespace
     }
     spec = {
@@ -79,8 +79,8 @@ resource "kubernetes_manifest" "certificate" {
         local.common_name,
         local.wildcard_name
       ]
-      duration = "2160h" # 90 days
-      renewBefore = "360h" # 15 days
+      duration    = "2160h" # 90 days
+      renewBefore = "360h"  # 15 days
       issuerRef = {
         kind = "ClusterIssuer"
         name = "issuer"
@@ -88,28 +88,46 @@ resource "kubernetes_manifest" "certificate" {
       secretName = local.ssl_vol_friendly_name
       privateKey = {
         rotationPolicy = "Never"
-        algorithm = "RSA"
-        encoding = "PKCS1"
-        size = "2048"
+        algorithm      = "RSA"
+        encoding       = "PKCS1"
+        size           = "2048"
       }
     }
   }
 }
 
 locals {
-  azs = slice(var.azs, 0, 1)
-  pub_subs = [for az in local.azs : "${var.vpc_name}-public-${data.aws_region.this.region}${az}"]
+  azs          = slice(var.azs, 0, 1)
+  pub_subs     = [for az in local.azs : "${var.vpc_name}-public-${data.aws_region.this.region}${az}"]
   release_name = "coder"
-  chart_name = "coder"
-  namespace = "coder"
+  chart_name   = "coder"
+  namespace    = "coder"
 }
 
 resource "aws_eip" "coder" {
-  count = length(local.pub_subs)
+  count            = length(local.pub_subs)
   domain           = "vpc"
   public_ipv4_pool = "amazon"
   tags = {
     Name = "coder-eip-${count.index}"
+  }
+}
+
+resource "kubernetes_pod_disruption_budget_v1" "coder" {
+  metadata {
+    name      = local.release_name
+    namespace = module.coder-server.namespace
+  }
+  spec {
+    # Avoid disrupting ongoing connections.
+    max_unavailable = 1
+    selector {
+      match_labels = {
+        "app.kubernetes.io/instance" = local.release_name
+        "app.kubernetes.io/name"     = local.chart_name
+        "app.kubernetes.io/part-of"  = local.chart_name
+      }
+    }
   }
 }
 
@@ -124,25 +142,25 @@ module "coder-server" {
   cluster_oidc_provider_arn = data.aws_iam_openid_connect_provider.this.arn
 
   coder = {
-    access_url   = var.coder_access_url
-    wildcard_url = var.coder_wildcard_access_url
-    mount_ssl = true
+    access_url     = var.coder_access_url
+    wildcard_url   = var.coder_wildcard_access_url
+    mount_ssl      = true
     mount_ssl_name = kubernetes_manifest.certificate.manifest.spec.secretName
 
-    image_repo   = var.image_repo
-    image_tag    = var.image_tag
+    image_repo = var.image_repo
+    image_tag  = var.image_tag
 
-    rep_cnt      = 2
+    rep_cnt = 2
     # External Provisioners will be used
     prov_rep_cnt = var.coder_builtin_provisioner_count
-    experiments = var.coder_experiments
+    experiments  = var.coder_experiments
   }
 
   db = {
-    url = data.aws_db_instance.coder.endpoint
+    url      = data.aws_db_instance.coder.endpoint
     username = var.coder_db_username
     password = var.coder_db_password
-    db = var.coder_db_name
+    db       = var.coder_db_name
   }
 
   prometheus = {
@@ -150,31 +168,31 @@ module "coder-server" {
   }
 
   oidc = {
-    enable = true
-    sign_in_text = var.oidc_sign_in_text
-    icon_url     = var.oidc_icon_url
-    scopes       = var.oidc_scopes
-    email_domain = var.oidc_email_domain
-    issuer_url = var.coder_oidc_secret_issuer_url
-    client_id = var.coder_oidc_secret_client_id
+    enable        = true
+    sign_in_text  = var.oidc_sign_in_text
+    icon_url      = var.oidc_icon_url
+    scopes        = var.oidc_scopes
+    email_domain  = var.oidc_email_domain
+    issuer_url    = var.coder_oidc_secret_issuer_url
+    client_id     = var.coder_oidc_secret_client_id
     client_secret = var.coder_oidc_secret_client_secret
   }
 
   oauth2 = {
-    enable = true
+    enable                  = true
     default_provider_enable = false
-    allow_signups = true
-    device_flow = false
-    allowed_orgs = var.coder_github_allowed_orgs
-    client_id = var.coder_oauth_secret_client_id
-    client_secret = var.coder_oauth_secret_client_secret
-    use_extern_auth = false
+    allow_signups           = true
+    device_flow             = false
+    allowed_orgs            = var.coder_github_allowed_orgs
+    client_id               = var.coder_oauth_secret_client_id
+    client_secret           = var.coder_oauth_secret_client_secret
+    use_extern_auth         = false
   }
 
   extern_auth = [{
-    id = "primary-github"
-    type = "github"
-    client_id = var.coder_github_external_auth_secret_client_id
+    id            = "primary-github"
+    type          = "github"
+    client_id     = var.coder_github_external_auth_secret_client_id
     client_secret = var.coder_github_external_auth_secret_client_secret
   }]
 
@@ -189,11 +207,11 @@ module "coder-server" {
       key = var.openai_llm_key
     }
   }
-  
-  namespace                       = local.namespace
+
+  namespace      = local.namespace
   resource_limit = {}
   resource_request = {
-    cpu = "500m"
+    cpu    = "500m"
     memory = "1Gi"
   }
   lb_class = "service.k8s.aws/nlb"
@@ -205,7 +223,7 @@ module "coder-server" {
     "service.beta.kubernetes.io/aws-load-balancer-subnets"         = join(",", local.pub_subs)
   }
   topology_spread = [{
-    max_skew           = 2
+    max_skew           = 1
     topology_key       = "kubernetes.io/hostname"
     when_unsatisfiable = "ScheduleAnyway"
     label_selector = {
@@ -219,11 +237,8 @@ module "coder-server" {
     ]
   }]
   tolerations = [{
-    key = "CriticalAddonsOnly"
-    operator = "Exists"
-  },{
-    key = "dedicated"
-    value = "general"
+    key    = "platform"
+    value  = "dedicated"
     effect = "NoSchedule"
   }]
   affinity = {
@@ -232,22 +247,32 @@ module "coder-server" {
         nodeSelectorTerms = [{
           matchExpressions = [
             {
-              key = "topology.kubernetes.io/zone"
+              key      = "topology.kubernetes.io/zone"
               operator = "In"
-              values = [for az in local.azs : "${data.aws_region.this.region}${az}"]
+              values   = [for az in local.azs : "${data.aws_region.this.region}${az}"]
             },
-            # {
-            #   key = "karpenter.sh/nodepool",
-            #   operator = "Exists"
-            # },
             {
-              key = "eks.amazonaws.com/compute-type",
+              key      = "node.coder.io/used-for",
               operator = "In",
-              values = ["auto"]
+              values   = ["platform"]
             }
           ]
         }]
       }
+    }
+    podAntiAffinity = {
+      requiredDuringSchedulingIgnoredDuringExecution = [{
+        weight = 100
+        podAffinityTerm = {
+          labelSelector = {
+            matchLabels = {
+              "app.kubernetes.io/name"    = local.chart_name
+              "app.kubernetes.io/part-of" = local.chart_name
+            }
+          }
+          topologyKey = "kubernetes.io/hostname"
+        }
+      }]
     }
   }
 }

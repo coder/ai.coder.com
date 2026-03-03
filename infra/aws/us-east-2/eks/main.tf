@@ -3,6 +3,8 @@ provider "aws" {
   profile = var.profile
 }
 
+data "aws_caller_identity" "me" {}
+
 data "aws_vpc" "this" {
   tags = {
     Name = var.vpc_name
@@ -53,33 +55,49 @@ locals {
   }]
 }
 
-data "aws_iam_policy_document" "sts" {
+data "aws_iam_policy_document" "ecr-mirror" {
+  
   statement {
-    effect    = "Allow"
-    actions   = ["sts:*"]
+    effect  = "Allow"
+    actions = ["ecr:CreateRepository"]
     resources = ["*"]
+  }
+
+  statement {
+    effect  = "Allow"
+    actions = ["ecr:GetAuthorizationToken"]
+    resources = ["*"]
+  }
+
+  statement {
+    effect  = "Allow"
+    actions = [
+      "ecr:BatchImportUpstreamImage",
+      "ecr:BatchGetImage",
+      "ecr:GetDownloadUrlForLayer"
+    ]
+    resources = [ "arn:aws:ecr:${var.region}:${data.aws_caller_identity.me.account_id}:repository/cache/*" ]
   }
 }
 
-resource "aws_iam_policy" "sts" {
-  name_prefix = "sts"
-  path        = "/"
-  description = "Assume Role Policy"
-  policy      = data.aws_iam_policy_document.sts.json
-  tags        = local.tags
+resource "aws_iam_policy" "ecr-mirror" {
+  name_prefix = "ecr-mirror-auto"
+  description = "Allows ECR pull-through cache automation including repository creation"
+  path = "/${var.region}/auto-mode/"
+  policy      = data.aws_iam_policy_document.ecr-mirror.json
 }
 
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "~> 21.15.1"
 
-  vpc_id     = data.aws_vpc.this.id
-  subnet_ids = toset(concat( 
-    data.aws_subnets.private.ids 
+  vpc_id = data.aws_vpc.this.id
+  subnet_ids = toset(concat(
+    data.aws_subnets.private.ids
   ))
 
   name                    = var.name
-  kubernetes_version                 = var.eks_version
+  kubernetes_version      = var.eks_version
   endpoint_public_access  = true
   endpoint_private_access = true
 
@@ -90,9 +108,13 @@ module "eks" {
   create_node_iam_role          = true
   node_iam_role_use_name_prefix = true
 
+  node_iam_role_additional_policies = {
+    "ECRMirrorPolicy" = aws_iam_policy.ecr-mirror.arn
+  }
+
+  create_auto_mode_iam_resources = true
   compute_config = {
-    enabled    = true
-    node_pools = ["system"]
+    enabled = true
   }
 
   addons = {
@@ -125,24 +147,183 @@ module "eks" {
   enable_cluster_creator_admin_permissions = true
   enable_irsa                              = true
 
-  eks_managed_node_groups = {
-    system = {
-      min_size     = 0
-      max_size     = 10
-      desired_size = 0 # Cant be modified after creation. Override from AWS Console
-      labels       = local.labels_system_node
+  tags = local.tags
+}
 
-      instance_types = [var.instance_type]
-      capacity_type  = "ON_DEMAND"
-      iam_role_additional_policies = {
-        AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-        STSAssumeRole                = aws_iam_policy.sts.arn
-      }
+resource "aws_eks_access_entry" "auto-mode" {
+  principal_arn =  module.eks.node_iam_role_arn
+  cluster_name  = module.eks.cluster_name
+  type          = "EC2"
+}
 
-      # System Nodes should not be public
-      subnet_ids = data.aws_subnets.private.ids
+resource "aws_eks_access_policy_association" "attach" {
+
+  cluster_name  = module.eks.cluster_name
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSAutoNodePolicy"
+  principal_arn = module.eks.node_iam_role_arn
+
+  access_scope {
+    type = "cluster"
+  }
+}
+
+resource "aws_iam_instance_profile" "auto-mode" {
+  name = module.eks.node_iam_role_name
+  role =  module.eks.node_iam_role_name
+}
+
+provider "kubernetes" {
+  host                   = module.eks.cluster_endpoint
+  cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    args        = ["eks", "get-token", "--cluster-name", var.name, "--region", var.region, "--profile", var.profile]
+    command     = "aws"
+  }
+}
+
+resource "kubernetes_service_account_v1" "auto-mode-node-role" {
+
+  metadata {
+    name = "auto-mode-node-role"
+    namespace = "default"
+    annotations = {
+      "eks.amazonaws.com/role-arn" = module.eks.node_iam_role_arn
+      "eks.amazonaws.com/role-name" = module.eks.node_iam_role_name
     }
   }
+}
 
-  tags = local.tags
+resource "kubernetes_manifest" "sys-default-cls" {
+
+  depends_on = [ 
+    module.eks, 
+    aws_eks_access_entry.auto-mode, 
+    aws_eks_access_policy_association.attach
+  ]
+
+  manifest = {
+    apiVersion = "eks.amazonaws.com/v1"
+    kind       = "NodeClass"
+
+    metadata = {
+      name = "sys-default"
+      labels = {
+        "app.kubernetes.io/managed-by" = "terraform"
+      }
+    }
+
+    spec = {
+      ephemeralStorage = {
+        iops       = 3000
+        size       = "80Gi"
+        throughput = 125
+      }
+
+      networkPolicy          = "DefaultAllow"
+      networkPolicyEventLogs = "Disabled"
+
+      role = module.eks.node_iam_role_name
+
+      securityGroupSelectorTerms = [
+        {
+          id = module.eks.cluster_primary_security_group_id
+        }
+      ]
+
+      snatPolicy = "Random"
+
+      subnetSelectorTerms = [for subnet_id in data.aws_subnets.private.ids : { id = subnet_id }]
+    }
+  }
+}
+
+# Override the System NodePool to restrict number of nodess
+resource "kubernetes_manifest" "system-pool" {
+
+  depends_on = [ 
+    module.eks, 
+    aws_eks_access_entry.auto-mode, 
+    aws_eks_access_policy_association.attach
+  ]
+
+  manifest = {
+    apiVersion = "karpenter.sh/v1"
+    kind       = "NodePool"
+
+    metadata = {
+      name = "coder-system"
+      labels = {
+        "app.kubernetes.io/managed-by" = "terraform"
+      }
+    }
+
+    spec = {
+      disruption = {
+        budgets = [
+          {
+            nodes = "10%"
+          }
+        ]
+        consolidateAfter    = "30s"
+        consolidationPolicy = "WhenEmptyOrUnderutilized"
+      }
+
+      template = {
+        metadata = {}
+
+        spec = {
+          expireAfter = "336h"
+
+          nodeClassRef = {
+            group = split("/", kubernetes_manifest.sys-default-cls.manifest.apiVersion)[0]
+            kind  = kubernetes_manifest.sys-default-cls.manifest.kind
+            name  = kubernetes_manifest.sys-default-cls.manifest.metadata.name
+          }
+
+          requirements = [
+            {
+              key      = "karpenter.sh/capacity-type"
+              operator = "In"
+              values   = ["spot", "on-demand"]
+            },
+            {
+              key      = "eks.amazonaws.com/instance-category"
+              operator = "In"
+              values   = ["c", "m", "r"]
+            },
+            {
+              key      = "eks.amazonaws.com/instance-generation"
+              operator = "Gt"
+              values   = ["4"]
+            },
+            {
+              key      = "kubernetes.io/arch"
+              operator = "In"
+              values   = ["amd64", "arm64"]
+            },
+            {
+              key      = "topology.kubernetes.io/zone"
+              operator = "In"
+              values   = slice([for az in var.azs : "${var.region}${az}"], 0, 1)
+            },
+            {
+              key      = "kubernetes.io/os"
+              operator = "In"
+              values   = ["linux"]
+            }
+          ]
+
+          taints = [
+            {
+              key    = "CriticalAddonsOnly"
+              effect = "NoSchedule"
+            }
+          ]
+
+          terminationGracePeriod = "24h0m0s"
+        }
+      }
+    }
+  }
 }

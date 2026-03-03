@@ -35,7 +35,7 @@ variable "chart_version" {
 ##
 
 variable "coder_db_rds_id" {
-    type = string
+  type = string
 }
 
 variable "coder_db_username" {
@@ -78,7 +78,7 @@ variable "coderd_namespace" {
 ##
 
 variable "loki_s3_bucket_name" {
-    type = string
+  type = string
 }
 
 variable "loki_s3_bucket_region" {
@@ -139,6 +139,6 @@ variable "vpc_name" {
 }
 
 variable "azs" {
-  type = list(string)
+  type    = list(string)
   default = ["a", "b", "c"]
 }

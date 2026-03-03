@@ -30,17 +30,17 @@ provider "kubernetes" {
 }
 
 module "cert-manager" {
-  
-  source                    = "../../../../../modules/k8s/bootstrap/cert-manager"
+
+  source = "../../../../../modules/k8s/bootstrap/cert-manager"
 
   cluster_name              = var.cluster_name
   cluster_oidc_provider_arn = data.aws_iam_openid_connect_provider.this.arn
 
-  namespace                     = var.addon_namespace
-  helm_version                  = var.addon_version
+  namespace    = var.addon_namespace
+  helm_version = var.addon_version
 
   tolerations = [{
-    key = "CriticalAddonsOnly"
+    key      = "CriticalAddonsOnly"
     operator = "Exists"
   }]
 }

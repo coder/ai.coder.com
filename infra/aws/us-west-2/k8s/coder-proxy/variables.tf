@@ -8,8 +8,8 @@ variable "profile" {
 }
 
 variable "azs" {
-  type = list(string)
-  default = ["a","b","c"]
+  type    = list(string)
+  default = ["a", "b", "c"]
 }
 
 variable "vpc_name" {
@@ -64,6 +64,6 @@ variable "coder_admin_email" {
 }
 
 variable "coder_admin_password" {
-  type = string
+  type      = string
   sensitive = true
 }

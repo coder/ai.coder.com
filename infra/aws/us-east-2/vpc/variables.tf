@@ -13,11 +13,11 @@ variable "cluster_name" {
 }
 
 variable "azs" {
-  type = list(string)
+  type    = list(string)
   default = ["a", "b", "c"]
 
   validation {
-    condition = length(var.azs) <= 3
+    condition     = length(var.azs) <= 3
     error_message = "There should only be at most 3 availability zones specified."
   }
 }
@@ -28,17 +28,17 @@ variable "vpc_name" {
 }
 
 variable "vpc_cidr" {
-  type = string
+  type    = string
   default = "10.0.0.0/16"
 }
 
 variable "private_subnet_suffix" {
-  type = string
+  type    = string
   default = "private"
 }
 
 variable "public_subnet_suffix" {
-  type = string
+  type    = string
   default = "public"
 }
 

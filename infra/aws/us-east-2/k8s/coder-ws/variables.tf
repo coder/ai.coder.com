@@ -22,7 +22,7 @@ variable "logstream_addon_version" {
 }
 
 variable "coder_access_url" {
-  type      = string
+  type = string
 }
 
 variable "image_repo" {
@@ -40,6 +40,6 @@ variable "coder_admin_email" {
 }
 
 variable "coder_admin_password" {
-  type = string
+  type      = string
   sensitive = true
 }

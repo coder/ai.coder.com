@@ -60,7 +60,7 @@ locals {
 }
 
 locals {
-  common_name = replace(replace(var.domain_name, "https://", ""), "http://", "")
+  common_name           = replace(replace(var.domain_name, "https://", ""), "http://", "")
   ssl_vol_friendly_name = replace(local.common_name, ".", "-")
 }
 
@@ -85,7 +85,7 @@ resource "kubernetes_manifest" "cert" {
       renewBefore = "8h"
       additionalOutputFormats = [{
         type = "CombinedPEM"
-      },{
+        }, {
         type = "DER"
       }]
       issuerRef = {
@@ -97,40 +97,40 @@ resource "kubernetes_manifest" "cert" {
 }
 
 locals {
-  azs = slice(var.azs, 0, 1)
+  azs      = slice(var.azs, 0, 1)
   pub_subs = [for az in local.azs : "${var.vpc_name}-public-${data.aws_region.this.region}${az}"]
   dashboard_config_maps = {
-    "coder-dashboard-status"  =  {
-        local_path = "${local.dashboards-path}/status.json"
-        mount_path = "/var/lib/grafana/dashboards/coder/0"
-        args = {
-          HELM_NAMESPACE        = var.namespace
-          CODERD_SELECTOR       = local.coderd_selector
-          PROVISIONERD_SELECTOR = local.provisionerd_selector
-          WORKSPACES_SELECTOR   = local.workspaces_selector
-          PROMETHEUS_JOB        = "${var.namespace}/prometheus/server"
-          LOKI_JOB              = "${var.namespace}/loki"
-          GRAFANA_AGENT_JOB     = "${var.namespace}/grafana-agent/grafana-agent"
-        }
+    "coder-dashboard-status" = {
+      local_path = "${local.dashboards-path}/status.json"
+      mount_path = "/var/lib/grafana/dashboards/coder/0"
+      args = {
+        HELM_NAMESPACE        = var.namespace
+        CODERD_SELECTOR       = local.coderd_selector
+        PROVISIONERD_SELECTOR = local.provisionerd_selector
+        WORKSPACES_SELECTOR   = local.workspaces_selector
+        PROMETHEUS_JOB        = "${var.namespace}/prometheus/server"
+        LOKI_JOB              = "${var.namespace}/loki"
+        GRAFANA_AGENT_JOB     = "${var.namespace}/grafana-agent/grafana-agent"
+      }
     },
     "coder-dashboard-coderd" = {
-        local_path = "${local.dashboards-path}/coderd.json"
-        mount_path = "/var/lib/grafana/dashboards/coder/1"
-        args = {
-          DASHBOARD_TIMERANGE = local.dashboard_timerange
-          DASHBOARD_REFRESH   = local.dashboard_refresh
-          CODERD_SELECTOR     = local.coderd_selector
-        }
+      local_path = "${local.dashboards-path}/coderd.json"
+      mount_path = "/var/lib/grafana/dashboards/coder/1"
+      args = {
+        DASHBOARD_TIMERANGE = local.dashboard_timerange
+        DASHBOARD_REFRESH   = local.dashboard_refresh
+        CODERD_SELECTOR     = local.coderd_selector
+      }
     },
     "coder-dashboard-provisionerd" = {
-        local_path = "${local.dashboards-path}/provisionerd.json"
-        mount_path = "/var/lib/grafana/dashboards/coder/2"
-        args = {
-          DASHBOARD_TIMERANGE     = local.dashboard_timerange
-          DASHBOARD_REFRESH       = local.dashboard_refresh
-          PROVISIONERD_SELECTOR   = local.provisionerd_selector
-          NON_WORKSPACES_SELECTOR = local.non_workspaces_selector
-        }
+      local_path = "${local.dashboards-path}/provisionerd.json"
+      mount_path = "/var/lib/grafana/dashboards/coder/2"
+      args = {
+        DASHBOARD_TIMERANGE     = local.dashboard_timerange
+        DASHBOARD_REFRESH       = local.dashboard_refresh
+        PROVISIONERD_SELECTOR   = local.provisionerd_selector
+        NON_WORKSPACES_SELECTOR = local.non_workspaces_selector
+      }
     },
     "coder-dashboard-workspaces" = {
       local_path = "${local.dashboards-path}/workspaces.json"
@@ -163,15 +163,15 @@ locals {
     "coder-dashboard-aibridge" = {
       local_path = "${local.dashboards-path}/aibridge.json"
       mount_path = "/var/lib/grafana/dashboards/coder/6"
-      args      = {}
+      args       = {}
     },
     "coder-dashboard-boundary" = {
       local_path = "${local.dashboards-path}/boundary.json"
       mount_path = "/var/lib/grafana/dashboards/coder/7"
       args = {
-        DASHBOARD_TIMERANGE     = local.dashboard_timerange
-        DASHBOARD_REFRESH       = local.dashboard_refresh
-        NON_WORKSPACE_SELECTOR  = local.non_workspaces_selector
+        DASHBOARD_TIMERANGE    = local.dashboard_timerange
+        DASHBOARD_REFRESH      = local.dashboard_refresh
+        NON_WORKSPACE_SELECTOR = local.non_workspaces_selector
       }
     }
     # {
@@ -191,7 +191,7 @@ locals {
 }
 
 resource "aws_eip" "grafana" {
-  count = length(local.pub_subs)
+  count            = length(local.pub_subs)
   domain           = "vpc"
   public_ipv4_pool = "amazon"
   tags = {
@@ -201,7 +201,7 @@ resource "aws_eip" "grafana" {
 
 module "monitoring" {
 
-  source =  "../../../../../modules/k8s/bootstrap/monitoring"
+  source = "../../../../../modules/k8s/bootstrap/monitoring"
 
   chart_version             = var.chart_version
   chart_timeout             = var.chart_timeout
@@ -255,11 +255,8 @@ module "monitoring" {
     }
   }
   system_tolerations = [{
-    key = "CriticalAddonsOnly"
-    operator = "Exists"
-  },{
-    key = "dedicated"
-    value = "general"
+    key    = "platform"
+    value  = "dedicated"
     effect = "NoSchedule"
   }]
   daemonset_node_selector = {}
@@ -268,27 +265,22 @@ module "monitoring" {
       requiredDuringSchedulingIgnoredDuringExecution = {
         nodeSelectorTerms = [{
           matchExpressions = [{
-            key = "topology.kubernetes.io/zone"
+            key      = "topology.kubernetes.io/zone"
             operator = "In"
-            values = [for az in local.azs : "${data.aws_region.this.region}${az}"]
-          },{
-            key = "karpenter.sh/nodepool",
-            operator = "Exists"
-          },{
-            # Don't allocate towards AutoMode nodes. 
-            # AutoMode's LB Controller doesn't explicitly support EIP Allocations. https://docs.aws.amazon.com/eks/latest/userguide/auto-configure-nlb.html#_commonly_used_annotations
-            key = "eks.amazonaws.com/compute-type",
-            operator = "NotIn",
-            values = ["auto"]
+            values   = [for az in local.azs : "${data.aws_region.this.region}${az}"]
+            }, {
+            key      = "node.coder.io/used-for",
+            operator = "In",
+            values   = ["platform"]
           }]
         }]
       }
     }
   }
   mount_ssl = {
-    enable = true
+    enable      = true
     secret_name = kubernetes_manifest.cert.manifest.metadata.name
-    mount_path = "/tmp/grafana/ssl/"
+    mount_path  = "/tmp/grafana/ssl/"
   }
   loki = {
     s3 = {
@@ -297,9 +289,9 @@ module "monitoring" {
       region        = data.aws_s3_bucket.loki.bucket_region
     }
   }
-  dashboards =   {
-    use_builtins = false
+  dashboards = {
+    use_builtins      = false
     default_home_path = local.default_dashboard_path
-    config_maps = local.dashboard_config_maps
+    config_maps       = local.dashboard_config_maps
   }
 }

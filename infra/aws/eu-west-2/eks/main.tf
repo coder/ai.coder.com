@@ -73,13 +73,13 @@ module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "~> 21.15.1"
 
-  vpc_id     = data.aws_vpc.this.id
-  subnet_ids = toset(concat( 
-    data.aws_subnets.private.ids 
+  vpc_id = data.aws_vpc.this.id
+  subnet_ids = toset(concat(
+    data.aws_subnets.private.ids
   ))
 
   name                    = var.name
-  kubernetes_version                 = var.eks_version
+  kubernetes_version      = var.eks_version
   endpoint_public_access  = true
   endpoint_private_access = true
 
@@ -90,9 +90,9 @@ module "eks" {
   create_node_iam_role          = true
   node_iam_role_use_name_prefix = true
 
+  create_auto_mode_iam_resources = true
   compute_config = {
-    enabled    = true
-    node_pools = ["system"]
+    enabled = true
   }
 
   addons = {
@@ -145,4 +145,147 @@ module "eks" {
   }
 
   tags = local.tags
+}
+
+provider "kubernetes" {
+  host                   = module.eks.cluster_endpoint
+  cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    args        = ["eks", "get-token", "--cluster-name", var.name, "--region", var.region, "--profile", var.profile]
+    command     = "aws"
+  }
+}
+
+resource "kubernetes_manifest" "default-class" {
+
+  depends_on = [module.eks]
+
+  manifest = {
+    apiVersion = "eks.amazonaws.com/v1"
+    kind       = "NodeClass"
+
+    metadata = {
+      name = "coder-default"
+      labels = {
+        "app.kubernetes.io/managed-by" = "terraform"
+      }
+    }
+
+    spec = {
+      ephemeralStorage = {
+        iops       = 3000
+        size       = "80Gi"
+        throughput = 125
+      }
+
+      networkPolicy          = "DefaultAllow"
+      networkPolicyEventLogs = "Disabled"
+      snatPolicy = "Disabled"
+
+      role = module.eks.node_iam_role_name
+
+      securityGroupSelectorTerms = [
+        {
+          id = module.eks.cluster_primary_security_group_id
+        }
+      ]
+      
+      subnetSelectorTerms = [for subnet_id in data.aws_subnets.private.ids : { id = subnet_id }]
+    }
+  }
+}
+
+# Override the System NodePool to restrict number of nodess
+resource "kubernetes_manifest" "system-pool" {
+
+  depends_on = [module.eks]
+
+  manifest = {
+    apiVersion = "karpenter.sh/v1"
+    kind       = "NodePool"
+
+    metadata = {
+      name = "coder-system"
+      labels = {
+        "app.kubernetes.io/managed-by" = "terraform"
+      }
+    }
+
+    spec = {
+      disruption = {
+        budgets = [
+          {
+            nodes = "10%"
+          }
+        ]
+        consolidateAfter    = "30s"
+        consolidationPolicy = "WhenEmptyOrUnderutilized"
+      }
+
+      limits = {
+        nodes = 2
+      }
+
+      template = {
+        metadata = {}
+
+        spec = {
+          expireAfter = "336h"
+
+          nodeClassRef = {
+            group = split("/", kubernetes_manifest.default-class.manifest.apiVersion)[0]
+            kind  = kubernetes_manifest.default-class.manifest.kind
+            name  = kubernetes_manifest.default-class.manifest.metadata.name
+          }
+
+          requirements = [
+            {
+              key      = "karpenter.sh/capacity-type"
+              operator = "In"
+              values   = ["on-demand"]
+            },
+            {
+              key      = "eks.amazonaws.com/instance-category"
+              operator = "In"
+              values   = ["c", "m", "r"]
+            },
+            {
+              key      = "eks.amazonaws.com/instance-generation"
+              operator = "Gt"
+              values   = ["4"]
+            },
+            {
+              key      = "kubernetes.io/arch"
+              operator = "In"
+              values   = ["amd64", "arm64"]
+            },
+            {
+              key      = "topology.kubernetes.io/zone"
+              operator = "In"
+              values   = slice([for az in var.azs : "${var.region}${az}"], 0, 1)
+            },
+            {
+              key      = "kubernetes.io/os"
+              operator = "In"
+              values   = ["linux"]
+            }
+          ]
+
+          taints = [
+            {
+              key    = "CriticalAddonsOnly"
+              effect = "NoSchedule"
+            }
+          ]
+
+          terminationGracePeriod = "24h0m0s"
+        }
+      }
+    }
+  }
+}
+
+output "azs" {
+  value = join(", ", slice([for az in var.azs : "${var.region}${az}"], 0, 1))
 }

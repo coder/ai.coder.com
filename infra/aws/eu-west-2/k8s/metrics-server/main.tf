@@ -25,7 +25,7 @@ module "metrics-server" {
   namespace     = var.addon_namespace
   chart_version = var.addon_version
   tolerations = [{
-    key = "CriticalAddonsOnly"
+    key      = "CriticalAddonsOnly"
     operator = "Exists"
   }]
 }

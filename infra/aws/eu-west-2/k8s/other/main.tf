@@ -72,10 +72,10 @@ locals {
 
 resource "kubernetes_secret_v1" "cf" {
   metadata {
-    name = "cloudflare-token"
+    name      = "cloudflare-token"
     namespace = var.cloudflare_secret_namespace
     annotations = {
-      "custom.kubernetes.secret/key" = local.cf_secret_key
+      "custom.kubernetes.secret/key"   = local.cf_secret_key
       "custom.kubernetes.secret/email" = var.cloudflare_email
     }
   }

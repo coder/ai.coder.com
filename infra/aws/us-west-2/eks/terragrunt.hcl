@@ -10,6 +10,7 @@ dependencies {
 inputs = {
   profile=include.root.locals.CODER_AWS_PROFILE
   region="us-west-2"
+  azs=jsondecode(include.root.locals.CODER_AWS_AZS)
 
   name=include.root.locals.CODER_CLUSTER_NAME
   vpc_name=include.root.locals.CODER_VPC_NAME

@@ -8,7 +8,7 @@ variable "profile" {
 }
 
 variable "azs" {
-  type = list(string)
+  type    = list(string)
   default = ["a", "c"]
 }
 
@@ -88,16 +88,16 @@ variable "coder_db_rds_name" {
 }
 
 variable "coder_db_username" {
-    type = string
+  type = string
 }
 
 variable "coder_db_password" {
-    type = string
-    sensitive = true
+  type      = string
+  sensitive = true
 }
 
 variable "coder_db_name" {
-    type = string
+  type = string
 }
 
 variable "image_repo" {

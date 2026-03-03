@@ -39,8 +39,8 @@ data "http" "login" {
   })
 
   retry {
-    attempts = 5
-    min_delay_ms = (5*1000) # 5 seconds 
+    attempts     = 5
+    min_delay_ms = (5 * 1000) # 5 seconds 
   }
 }
 
@@ -50,14 +50,14 @@ provider "coderd" {
 }
 
 locals {
-  azs = slice(var.azs, 0, 1)
-  pub_subs = [for az in local.azs : "${var.vpc_name}-public-${data.aws_region.this.region}${az}"]
+  azs          = slice(var.azs, 0, 1)
+  pub_subs     = [for az in local.azs : "${var.vpc_name}-public-${data.aws_region.this.region}${az}"]
   release_name = "coder"
-  chart_name = "coder"
-  namespace = "coder"
+  chart_name   = "coder"
+  namespace    = "coder"
 
-  common_name   = trimprefix(trimprefix(var.coder_proxy_url, "https://"), "http://")
-  wildcard_name = trimprefix(trimprefix(var.coder_proxy_wildcard_url, "https://"), "http://")
+  common_name           = trimprefix(trimprefix(var.coder_proxy_url, "https://"), "http://")
+  wildcard_name         = trimprefix(trimprefix(var.coder_proxy_wildcard_url, "https://"), "http://")
   ssl_vol_friendly_name = replace(local.common_name, ".", "-")
 }
 
@@ -82,9 +82,9 @@ resource "kubernetes_manifest" "certificate" {
 
   manifest = {
     apiVersion = "cert-manager.io/v1"
-    kind = "Certificate"
+    kind       = "Certificate"
     metadata = {
-      name = local.ssl_vol_friendly_name
+      name      = local.ssl_vol_friendly_name
       namespace = module.coder-proxy.namespace
     }
     spec = {
@@ -93,8 +93,8 @@ resource "kubernetes_manifest" "certificate" {
         local.common_name,
         local.wildcard_name
       ]
-      duration = "2160h" # 90 days
-      renewBefore = "360h" # 15 days
+      duration    = "2160h" # 90 days
+      renewBefore = "360h"  # 15 days
       issuerRef = {
         kind = "ClusterIssuer"
         name = "issuer"
@@ -102,16 +102,16 @@ resource "kubernetes_manifest" "certificate" {
       secretName = local.ssl_vol_friendly_name
       privateKey = {
         rotationPolicy = "Never"
-        algorithm = "RSA"
-        encoding = "PKCS1"
-        size = "2048"
+        algorithm      = "RSA"
+        encoding       = "PKCS1"
+        size           = "2048"
       }
     }
   }
 }
 
 resource "aws_eip" "coder" {
-  count = length(local.pub_subs)
+  count            = length(local.pub_subs)
   domain           = "vpc"
   public_ipv4_pool = "amazon"
   tags = {
@@ -124,23 +124,23 @@ module "coder-proxy" {
   source = "../../../../../modules/k8s/bootstrap/coder-proxy"
 
   proxy = {
-    access_url = var.coder_proxy_url
-    wildcard_url = var.coder_proxy_wildcard_url
+    access_url       = var.coder_proxy_url
+    wildcard_url     = var.coder_proxy_wildcard_url
     coder_access_url = var.coder_access_url
-    mount_ssl = true
-    mount_ssl_name = kubernetes_manifest.certificate.manifest.spec.secretName
-    name = var.coder_proxy_name
-    display_name = var.coder_proxy_display_name
-    icon = var.coder_proxy_icon
-    rep_cnt = 2
-    image_repo = var.image_repo
-    image_tag = var.image_tag
+    mount_ssl        = true
+    mount_ssl_name   = kubernetes_manifest.certificate.manifest.spec.secretName
+    name             = var.coder_proxy_name
+    display_name     = var.coder_proxy_display_name
+    icon             = var.coder_proxy_icon
+    rep_cnt          = 2
+    image_repo       = var.image_repo
+    image_tag        = var.image_tag
   }
 
-  namespace                       = local.namespace
+  namespace      = local.namespace
   resource_limit = {}
   resource_request = {
-    cpu = "500m"
+    cpu    = "500m"
     memory = "1Gi"
   }
   svc_annot = {
@@ -151,7 +151,7 @@ module "coder-proxy" {
     "service.beta.kubernetes.io/aws-load-balancer-subnets"         = join(",", local.pub_subs)
   }
   tolerations = [{
-    key = "CriticalAddonsOnly"
+    key      = "CriticalAddonsOnly"
     operator = "Exists"
   }]
   topology_spread = [{
@@ -173,12 +173,27 @@ module "coder-proxy" {
       requiredDuringSchedulingIgnoredDuringExecution = {
         nodeSelectorTerms = [{
           matchExpressions = [{
-            key = "topology.kubernetes.io/zone"
+            key      = "topology.kubernetes.io/zone"
             operator = "In"
-            values = [for az in local.azs : "${data.aws_region.this.region}${az}"]
+            values   = [for az in local.azs : "${data.aws_region.this.region}${az}"]
           }]
         }]
       }
     }
+    # podAntiAffinity = {
+    #   preferredDuringSchedulingIgnoredDuringExecution = [{
+    #     weight = 100
+    #     podAffinityTerm = {
+    #       topologyKey = "kubernetes.io/hostname"
+    #       labelSelector = {
+    #         matchLabels = {
+    #           "app.kubernetes.io/instance" = local.release_name
+    #           "app.kubernetes.io/name"     = local.chart_name
+    #           "app.kubernetes.io/part-of"  = local.chart_name
+    #         }
+    #       }
+    #     }
+    #   }]
+    # }
   }
 }
