@@ -274,19 +274,43 @@ resource "helm_release" "coder-observe" {
       #   nodeSelector = var.daemonset_node_selector
       # }
       server = {
-        tolerations = var.system_tolerations
-        affinity = var.system_affinity
+        tsdb = {
+          out_of_order_time_window = "1800s"
+        }
         persistentVolume = {
           enabled = true
-          storageClassName = var.storage_class
+          storageClass = "gp3-automode"
+          # storageClassName = var.storage_class
         }
+        tolerations = var.system_tolerations
+        affinity = var.system_affinity
+        resources = {
+          requests = {
+            cpu = "2"
+            memory = "4Gi"
+          }
+          limits = {
+            cpu = "2"
+            memory = "4Gi"
+          }
+        }
+
+        livenessProbeInitialDelaySeconds = 60
+        livenessProbetimeoutSeconds      = 600
+        livenessProbePeriodSeconds       = 30
+        livenessProbeFailureThreshold    = 100
+
+        readinessProbeInitialDelay = 60
+        readinessProbeTimeout      = 240
+        readinessProbePeriodSeconds       = 15
+        readinessProbeFailureThreshold    = 300
       }
       alertmanager = {
         enabled = true
         tolerations = var.system_tolerations
         affinity = var.system_affinity
         persistence = {
-          enabled = true
+          enabled = false
           storageClass = var.storage_class
         }
       }
@@ -342,6 +366,16 @@ resource "helm_release" "coder-observe" {
       affinity = var.system_affinity
       replicas = 1
       useStatefulSet = true
+      resources = {
+        requests = {
+          cpu = "500m"
+          memory = "512Mi"
+        }
+        limits = {
+          cpu = "1"
+          memory = "2Gi"
+        }
+      }
       readinessProbe = {
         httpGet = {
           scheme = var.mount_ssl.enable ? "HTTPS" : "HTTP"
@@ -501,7 +535,7 @@ resource "helm_release" "coder-observe" {
         }
       }
       minio = {
-        enable = false
+        enabled = false
         # tolerations = var.system_tolerations
       }
       write = {

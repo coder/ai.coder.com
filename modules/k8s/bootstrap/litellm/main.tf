@@ -278,6 +278,16 @@ variable "mount_ssl" {
   }
 }
 
+variable "chart_name" {
+  type = string
+  default = "litellm-helm"
+}
+
+variable "release_name" {
+  type = string
+  default = "litellm"
+}
+
 locals {
   volumes = [ for v in var.mounts : merge(v.secret_name != "" ? {
     name = v.secret_name
@@ -294,9 +304,9 @@ locals {
 }
 
 resource "helm_release" "litellm" {
-  name             = "litellm"
+  name             = var.release_name
   namespace        = var.namespace
-  chart            = "litellm-helm"
+  chart            = var.chart_name
   repository       = "oci://ghcr.io/berriai"
   create_namespace = true
   upgrade_install  = true

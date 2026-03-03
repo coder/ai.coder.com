@@ -92,8 +92,8 @@ variable "rsrc_req" {
     memory = string
   })
   default = {
-    cpu    = "250m"
-    memory = "512Mi"
+    cpu    = "1"
+    memory = "1Gi"
   }
 }
 
@@ -103,8 +103,8 @@ variable "rsrc_lim" {
     memory = string
   })
   default = {
-    cpu    = "1000m"
-    memory = "2Gi"
+    cpu    = "1"
+    memory = "1Gi"
   }
 }
 

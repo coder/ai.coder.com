@@ -91,6 +91,11 @@ variable "tolerations" {
   default = []
 }
 
+variable "affinity" {
+  type = any
+  default = {}
+}
+
 variable "create_alb_class" {
   type = bool
   default = true
@@ -167,6 +172,7 @@ resource "helm_release" "lb-controller" {
     enableCertManager      = var.enable_cert_manager
     nodeSelector           = var.node_selector
     tolerations = var.tolerations
+    affinity = var.affinity
     serviceTargetENISGTags = local.service_target_eni_sg_tags
     serviceMutatorWebhookConfig = {
       # Ref - https://github.com/awslabs/data-on-eks/issues/458
@@ -174,45 +180,3 @@ resource "helm_release" "lb-controller" {
     }
   })]
 }
-
-# resource "kubernetes_manifest" "alb-class-params" {
-#   count = var.create_alb_class ? 1 : 0
-#   depends_on = [helm_release.lb-controller]
-#   manifest = {
-#     apiVersion = "elbv2.k8s.aws/v1beta1"
-#     kind       = "IngressClassParams"
-#     metadata = {
-#       labels = {
-#         "app.kubernetes.io/name" : var.release_name
-#       }
-#       name = "alb"
-#     }
-#   }
-# }
-
-# resource "kubernetes_manifest" "alb-class" {
-#   count = var.create_alb_class ? 1 : 0
-#   depends_on = [helm_release.lb-controller, kubernetes_manifest.alb-class-params[0]]
-#   manifest = {
-#     apiVersion = "networking.k8s.io/v1"
-#     kind       = "IngressClass"
-#     metadata = {
-#       labels = {
-#         "app.kubernetes.io/name" : var.release_name
-#       }
-#       name = "alb"
-#     }
-#     spec = {
-#       controller = "ingress.k8s.aws/alb"
-#       parameters = {
-#         apiGroup = "elbv2.k8s.aws"
-#         kind     = "IngressClassParams"
-#         name     = "alb"
-#       }
-#     }
-#   }
-# }
-
-# output "oidc_role_arn" {
-#   value = module.oidc-role.role_arn
-# }
