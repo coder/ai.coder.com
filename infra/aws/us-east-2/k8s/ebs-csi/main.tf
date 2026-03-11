@@ -40,8 +40,14 @@ module "ebs-controller" {
     value  = "general"
     effect = "NoSchedule"
   }]
+  topology_spread = [{
+    topologyKey = "topology.kubernetes.io/zone"
+    maxSkew = 1
+    whenUnsatisfiable = "ScheduleAnyway"
+  }]
   affinity = {
     nodeAffinity = {
+      preferredDuringSchedulingIgnoredDuringExecution = []
       requiredDuringSchedulingIgnoredDuringExecution = {
         nodeSelectorTerms = [{
           matchExpressions = [
@@ -55,18 +61,24 @@ module "ebs-controller" {
       }
     }
     podAntiAffinity = {
-      requiredDuringSchedulingIgnoredDuringExecution = [{
-        topologyKey = "kubernetes.io/hostname"
+      preferredDuringSchedulingIgnoredDuringExecution = [{
         podAffinityTerm = {
+          topologyKey = "topology.kubernetes.io/zone"
           labelSelector = {
-            matchExpressions = [{
-              key      = "app",
-              operator = "In",
-              values   = ["ebs-csi-controller"]
-            }]
+            matchLabels = {
+              "app" = "ebs-csi-controller"
+            }
           }
         }
         weight = 100
+      }]
+      requiredDuringSchedulingIgnoredDuringExecution = [{
+        topologyKey = "kubernetes.io/hostname"
+        labelSelector = {
+          matchLabels = {
+            "app" = "ebs-csi-controller"
+          }
+        }
       }]
     }
   }

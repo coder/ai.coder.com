@@ -224,7 +224,7 @@ resource "kubernetes_manifest" "system-pool" {
       }
 
       limits = {
-        nodes = 2
+        nodes = 4
       }
 
       template = {

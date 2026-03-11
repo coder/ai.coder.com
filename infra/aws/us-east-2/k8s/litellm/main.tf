@@ -84,7 +84,7 @@ resource "kubernetes_secret_v1" "gcloud" {
 }
 
 locals {
-  azs      = slice(var.azs, 0, 1)
+  azs      = var.azs
   pub_subs = [for az in local.azs : "${var.vpc_name}-public-${data.aws_region.this.region}${az}"]
   # App port is actually being ignored on the LiteLLM app-level. Statically set to 4000
   app_port     = 4000
@@ -93,22 +93,22 @@ locals {
   namespace    = "litellm"
 }
 
-resource "kubernetes_pod_disruption_budget_v1" "litellm" {
-  metadata {
-    name      = local.release_name
-    namespace = module.litellm.namespace
-  }
-  spec {
-    # Avoid disrupting ongoing connections.
-    max_unavailable = 1
-    selector {
-      match_labels = {
-        "app.kubernetes.io/instance" = local.release_name
-        "app.kubernetes.io/name"     = local.release_name
-      }
-    }
-  }
-}
+# resource "kubernetes_pod_disruption_budget_v1" "litellm" {
+#   metadata {
+#     name      = local.release_name
+#     namespace = module.litellm.namespace
+#   }
+#   spec {
+#     # Avoid disrupting ongoing connections.
+#     max_unavailable = 1
+#     selector {
+#       match_labels = {
+#         "app.kubernetes.io/instance" = local.release_name
+#         "app.kubernetes.io/name"     = local.release_name
+#       }
+#     }
+#   }
+# }
 
 resource "aws_eip" "litellm" {
   count            = length(local.pub_subs)
@@ -129,10 +129,9 @@ module "litellm" {
   cluster_oidc_provider_arn = data.aws_iam_openid_connect_provider.this.arn
   namespace                 = var.addon_namespace
 
-  access_url               = var.host_name
-  replicas                 = 8
-  autoscaling_min_replicas = 1
-  autoscaling_max_replicas = 8
+  replicas                 = length(aws_eip.litellm.*.allocation_id)
+  autoscaling_min_replicas = length(aws_eip.litellm.*.allocation_id)
+  autoscaling_max_replicas = 12
 
   litellm_master_key = var.litellm_master_key
 
@@ -141,7 +140,7 @@ module "litellm" {
   svc_annots = {
     "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type"      = "ip"
     "service.beta.kubernetes.io/aws-load-balancer-scheme"               = "internet-facing"
-    "service.beta.kubernetes.io/aws-load-balancer-attributes"           = "deletion_protection.enabled=false"
+    "service.beta.kubernetes.io/aws-load-balancer-attributes"           = "deletion_protection.enabled=false,load_balancing.cross_zone.enabled=true"
     "service.beta.kubernetes.io/aws-load-balancer-healthcheck-protocol" = "https"
     "service.beta.kubernetes.io/aws-load-balancer-healthcheck-port"     = "${local.app_port}"
     "service.beta.kubernetes.io/aws-load-balancer-eip-allocations"      = join(",", aws_eip.litellm.*.allocation_id)
@@ -150,8 +149,21 @@ module "litellm" {
   node_selector = {}
   tolerations = [{
     key    = "platform"
-    value  = "dedicated"
+    value  = "litellm"
     effect = "NoSchedule"
+  }]
+  topology_spread = [{
+    maxSkew           = 1
+    topologyKey       = "topology.kubernetes.io/zone"
+    whenUnsatisfiable = "DoNotSchedule"
+    labelSelector = {
+      matchLabels = {
+        "app.kubernetes.io/name"    = local.release_name
+      }
+    }
+    matchLabelKeys = [
+      "app.kubernetes.io/instance"
+    ]
   }]
   affinity = {
     nodeAffinity = {
@@ -166,11 +178,24 @@ module "litellm" {
             {
               key      = "node.coder.io/used-for",
               operator = "In",
-              values   = ["platform"]
+              values   = ["litellm"]
             }
           ]
         }]
       }
+    }
+    podAntiAffinity = {
+      preferredDuringSchedulingIgnoredDuringExecution = []
+      requiredDuringSchedulingIgnoredDuringExecution = [{
+        labelSelector = {
+          matchExpressions = [{
+            key = "app.kubernetes.io/instance"
+            operator = "In"
+            values = [local.release_name]
+          }]
+        }
+        topologyKey = "kubernetes.io/hostname"
+      }]
     }
   }
 
@@ -256,6 +281,30 @@ module "litellm" {
         }
       },
       {
+        model_name = "claude-opus-4-6"
+        litellm_params = {
+          max_parallel_requests = 50
+          model                 = "vertex_ai/claude-opus-4-6@default"
+          rpm                   = 450
+          tpm                   = 6000000
+          vertex_location       = "us-east5"
+          vertex_project        = "coder-vertex-demos"
+          vertex_credentials    = "/tmp/gcloud/service_account.json"
+        }
+      },
+      {
+        model_name = "claude-opus-4-6"
+        litellm_params = {
+          max_parallel_requests = 50
+          model                 = "vertex_ai/claude-opus-4-6@default"
+          rpm                   = 450
+          tpm                   = 6000000
+          vertex_location       = "europe-west1"
+          vertex_project        = "coder-vertex-demos"
+          vertex_credentials    = "/tmp/gcloud/service_account.json"
+        }
+      },
+      {
         model_name = "claude-opus-4-5"
         litellm_params = {
           max_parallel_requests = 50
@@ -272,6 +321,30 @@ module "litellm" {
         litellm_params = {
           max_parallel_requests = 50
           model                 = "vertex_ai/claude-opus-4-5@20251101"
+          rpm                   = 450
+          tpm                   = 6000000
+          vertex_location       = "europe-west1"
+          vertex_project        = "coder-vertex-demos"
+          vertex_credentials    = "/tmp/gcloud/service_account.json"
+        }
+      },
+      {
+        model_name = "claude-sonnet-4-6"
+        litellm_params = {
+          max_parallel_requests = 50
+          model                 = "vertex_ai/claude-opus-4-6@default"
+          rpm                   = 450
+          tpm                   = 6000000
+          vertex_location       = "us-east5"
+          vertex_project        = "coder-vertex-demos"
+          vertex_credentials    = "/tmp/gcloud/service_account.json"
+        }
+      },
+      {
+        model_name = "claude-sonnet-4-6"
+        litellm_params = {
+          max_parallel_requests = 50
+          model                 = "vertex_ai/claude-opus-4-6@default"
           rpm                   = 450
           tpm                   = 6000000
           vertex_location       = "europe-west1"

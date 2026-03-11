@@ -97,7 +97,7 @@ resource "kubernetes_manifest" "certificate" {
 }
 
 locals {
-  azs          = slice(var.azs, 0, 1)
+  azs          = var.azs
   pub_subs     = [for az in local.azs : "${var.vpc_name}-public-${data.aws_region.this.region}${az}"]
   release_name = "coder"
   chart_name   = "coder"
@@ -113,23 +113,23 @@ resource "aws_eip" "coder" {
   }
 }
 
-resource "kubernetes_pod_disruption_budget_v1" "coder" {
-  metadata {
-    name      = local.release_name
-    namespace = module.coder-server.namespace
-  }
-  spec {
-    # Avoid disrupting ongoing connections.
-    max_unavailable = 1
-    selector {
-      match_labels = {
-        "app.kubernetes.io/instance" = local.release_name
-        "app.kubernetes.io/name"     = local.chart_name
-        "app.kubernetes.io/part-of"  = local.chart_name
-      }
-    }
-  }
-}
+# resource "kubernetes_pod_disruption_budget_v1" "coder" {
+#   metadata {
+#     name      = local.release_name
+#     namespace = module.coder-server.namespace
+#   }
+#   spec {
+#     # Avoid disrupting ongoing connections.
+#     max_unavailable = 1
+#     selector {
+#       match_labels = {
+#         "app.kubernetes.io/instance" = local.release_name
+#         "app.kubernetes.io/name"     = local.chart_name
+#         "app.kubernetes.io/part-of"  = local.chart_name
+#       }
+#     }
+#   }
+# }
 
 module "coder-server" {
 
@@ -150,7 +150,7 @@ module "coder-server" {
     image_repo = var.image_repo
     image_tag  = var.image_tag
 
-    rep_cnt = 2
+    rep_cnt = length(local.pub_subs)
     # External Provisioners will be used
     prov_rep_cnt = var.coder_builtin_provisioner_count
     experiments  = var.coder_experiments
@@ -209,22 +209,30 @@ module "coder-server" {
   }
 
   namespace      = local.namespace
-  resource_limit = {}
+  resource_limit = {
+    cpu    = "2"
+    memory = "4Gi"
+  }
   resource_request = {
     cpu    = "500m"
-    memory = "1Gi"
+    memory = "4Gi"
   }
   lb_class = "service.k8s.aws/nlb"
   svc_annot = {
     "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type" = "ip"
     "service.beta.kubernetes.io/aws-load-balancer-scheme"          = "internet-facing"
-    "service.beta.kubernetes.io/aws-load-balancer-attributes"      = "deletion_protection.enabled=false"
+    "service.beta.kubernetes.io/aws-load-balancer-attributes"      = "deletion_protection.enabled=false,load_balancing.cross_zone.enabled=true"
     "service.beta.kubernetes.io/aws-load-balancer-eip-allocations" = join(",", aws_eip.coder.*.allocation_id)
     "service.beta.kubernetes.io/aws-load-balancer-subnets"         = join(",", local.pub_subs)
   }
+  tolerations = [{
+    key    = "platform"
+    value  = "coder-server"
+    effect = "NoSchedule"
+  }]
   topology_spread = [{
     max_skew           = 1
-    topology_key       = "kubernetes.io/hostname"
+    topology_key       = "topology.kubernetes.io/zone"
     when_unsatisfiable = "ScheduleAnyway"
     label_selector = {
       match_labels = {
@@ -235,11 +243,6 @@ module "coder-server" {
     match_label_keys = [
       "app.kubernetes.io/instance"
     ]
-  }]
-  tolerations = [{
-    key    = "platform"
-    value  = "dedicated"
-    effect = "NoSchedule"
   }]
   affinity = {
     nodeAffinity = {
@@ -254,24 +257,23 @@ module "coder-server" {
             {
               key      = "node.coder.io/used-for",
               operator = "In",
-              values   = ["platform"]
+              values   = ["coder-server"]
             }
           ]
         }]
       }
     }
     podAntiAffinity = {
+      preferredDuringSchedulingIgnoredDuringExecution = []
       requiredDuringSchedulingIgnoredDuringExecution = [{
-        weight = 100
-        podAffinityTerm = {
-          labelSelector = {
-            matchLabels = {
-              "app.kubernetes.io/name"    = local.chart_name
-              "app.kubernetes.io/part-of" = local.chart_name
-            }
-          }
-          topologyKey = "kubernetes.io/hostname"
+        labelSelector = {
+          matchExpressions = [{
+            key = "app.kubernetes.io/instance"
+            operator = "In"
+            values = [local.chart_name]
+          }]
         }
+        topologyKey = "kubernetes.io/hostname"
       }]
     }
   }

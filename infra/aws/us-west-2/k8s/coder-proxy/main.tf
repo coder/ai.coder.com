@@ -138,10 +138,13 @@ module "coder-proxy" {
   }
 
   namespace      = local.namespace
-  resource_limit = {}
+  resource_limit = {
+    cpu = "2"
+    memory = "4Gi"
+  }
   resource_request = {
     cpu    = "500m"
-    memory = "1Gi"
+    memory = "4Gi"
   }
   svc_annot = {
     "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type" = "ip"

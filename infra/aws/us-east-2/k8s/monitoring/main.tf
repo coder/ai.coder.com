@@ -211,8 +211,6 @@ module "monitoring" {
   namespace = var.namespace
 
   lb_class      = "service.k8s.aws/nlb"
-  storage_class = "gp3"
-
   domain_name = var.domain_name
 
   coder = {
@@ -235,6 +233,7 @@ module "monitoring" {
       username = var.grafana_admin_username
       password = var.grafana_admin_password
     }
+    replicas = 2
     db = {
       host     = data.aws_db_instance.grafana.endpoint
       database = data.aws_db_instance.grafana.db_name
@@ -247,46 +246,172 @@ module "monitoring" {
         "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type"      = "ip"
         "service.beta.kubernetes.io/aws-load-balancer-scheme"               = "internet-facing"
         "service.beta.kubernetes.io/aws-load-balancer-attributes"           = "deletion_protection.enabled=false"
+        "service.beta.kubernetes.io/aws-load-balancer-target-group-attributes" = "stickiness.enabled=true,stickiness.type=source_ip"
         "service.beta.kubernetes.io/aws-load-balancer-healthcheck-protocol" = "TCP"
         "service.beta.kubernetes.io/aws-load-balancer-healthcheck-port"     = 3000
         "service.beta.kubernetes.io/aws-load-balancer-eip-allocations"      = join(",", aws_eip.grafana.*.allocation_id)
         "service.beta.kubernetes.io/aws-load-balancer-subnets"              = join(",", local.pub_subs)
       }
     }
-  }
-  system_tolerations = [{
-    key    = "platform"
-    value  = "dedicated"
-    effect = "NoSchedule"
-  }]
-  daemonset_node_selector = {}
-  system_affinity = {
-    nodeAffinity = {
-      requiredDuringSchedulingIgnoredDuringExecution = {
-        nodeSelectorTerms = [{
-          matchExpressions = [{
-            key      = "topology.kubernetes.io/zone"
-            operator = "In"
-            values   = [for az in local.azs : "${data.aws_region.this.region}${az}"]
+    pv = {
+      enabled = false
+      storageClass = "gp3-automode"
+    }
+    tolerations = [{
+      key    = "platform"
+      value  = "observability-platform"
+      effect = "NoSchedule"
+    }]
+    affinity = {
+      nodeAffinity = {
+        requiredDuringSchedulingIgnoredDuringExecution = {
+          nodeSelectorTerms = [{
+            matchExpressions = [{
+              key      = "topology.kubernetes.io/zone"
+              operator = "In"
+              values   = [for az in local.azs : "${data.aws_region.this.region}${az}"]
+              }, {
+              key      = "node.coder.io/used-for",
+              operator = "In",
+              values   = ["observability-platform"]
             }, {
-            key      = "node.coder.io/used-for",
-            operator = "In",
-            values   = ["platform"]
+              key = "beta.kubernetes.io/arch"
+              operator = "In"
+              values = ["arm64"]
+            }]
           }]
+        }
+      }
+      podAntiAffinity = {
+        requiredDuringSchedulingIgnoredDuringExecution = [{
+          topologyKey = "kubernetes.io/hostname"
+          labelSelector = {
+            matchLabels = {
+              "app.kubernetes.io/name" = "grafana"
+            }
+          }
         }]
       }
     }
   }
+  daemonset_node_selector = {}
   mount_ssl = {
     enable      = true
     secret_name = kubernetes_manifest.cert.manifest.metadata.name
     mount_path  = "/tmp/grafana/ssl/"
+  }
+  prometheus = {
+    ooo_window = "1800s"
+    pv = {
+      enabled = true
+      storageClass = "gp3-automode"
+      size = "100Gi"
+    }
+    rsrc = { # Let it be unbounded and run on it's own Node.
+      requests = {
+        cpu = "2"
+        memory = "8Gi"
+      }
+      limits = {
+        cpu = "6"
+        memory = "12Gi"
+      }
+    }
+    tolerations = [{
+      key    = "platform"
+      value  = "prometheus"
+      effect = "NoSchedule"
+    }]
+    affinity = {
+      nodeAffinity = {
+        requiredDuringSchedulingIgnoredDuringExecution = {
+          nodeSelectorTerms = [{
+            matchExpressions = [{
+              key      = "topology.kubernetes.io/zone"
+              operator = "In"
+              values   = [for az in local.azs : "${data.aws_region.this.region}${az}"]
+              }, {
+              key      = "node.coder.io/used-for"
+              operator = "In"
+              values   = ["prometheus"]
+              }, {
+              key = "beta.kubernetes.io/arch"
+              operator = "In"
+              values = ["arm64"]
+            }]
+          }]
+        }
+      }
+    }
+  }
+  alertmanager = {
+    pv = {
+      enabled = true
+      storageClass = "gp3-automode"
+      size = "10Gi"
+    }
+    tolerations = [{
+      key    = "platform"
+      value  = "observability-platform"
+      effect = "NoSchedule"
+    }]
+    affinity = {
+      nodeAffinity = {
+        requiredDuringSchedulingIgnoredDuringExecution = {
+          nodeSelectorTerms = [{
+            matchExpressions = [{
+              key      = "topology.kubernetes.io/zone"
+              operator = "In"
+              values   = [for az in local.azs : "${data.aws_region.this.region}${az}"]
+              }, {
+              key      = "node.coder.io/used-for",
+              operator = "In",
+              values   = ["observability-platform"]
+            }, {
+              key = "beta.kubernetes.io/arch"
+              operator = "In"
+              values = ["arm64"]
+            }]
+          }]
+        }
+      }
+    }
   }
   loki = {
     s3 = {
       chunks_bucket = data.aws_s3_bucket.loki.id
       ruler_bucket  = data.aws_s3_bucket.loki.id
       region        = data.aws_s3_bucket.loki.bucket_region
+    }
+    pv = {
+      enabled = true
+      storageClass = "gp3-automode"
+    }
+    tolerations = [{
+      key    = "platform"
+      value  = "observability-platform"
+      effect = "NoSchedule"
+    }]
+    affinity = {
+      nodeAffinity = {
+        requiredDuringSchedulingIgnoredDuringExecution = {
+          nodeSelectorTerms = [{
+            matchExpressions = [{
+              key      = "topology.kubernetes.io/zone"
+              operator = "In"
+              values   = [for az in local.azs : "${data.aws_region.this.region}${az}"]
+              }, {
+              key      = "node.coder.io/used-for",
+              operator = "In",
+              values   = ["observability-platform"]
+            }, {
+              key = "beta.kubernetes.io/arch"
+              operator = "In"
+              values = ["arm64"]
+            }]
+          }]
+        }
+      }
     }
   }
   dashboards = {

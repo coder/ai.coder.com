@@ -179,6 +179,11 @@ variable "autoscaling_target_memory_use" {
   default = 80
 }
 
+variable "topology_spread" {
+  type = list(any)
+  default = []
+}
+
 variable "node_selector" {
   type = map(string)
   default = {}
@@ -241,24 +246,6 @@ resource "kubernetes_secret_v1" "db-auth" {
   type = "Opaque"
 }
 
-variable "access_url" {
-  type    = string
-  default = ""
-}
-
-variable "ssl_cert_config" {
-  type = object({
-    create_secret = optional(bool, true)
-    name = optional(string, "ssl-certs")
-    days_until_renewal = optional(number, 30)
-  })
-  default = {
-    create_secret = true
-    name = "ssl-certs"
-    days_until_renewal = 30
-  }
-}
-
 variable "mount_ssl" {
   type = object({
     enable = optional(bool, true)
@@ -313,10 +300,11 @@ resource "helm_release" "litellm" {
   skip_crds        = false
   replace          = true
   wait             = true
-  wait_for_jobs    = true
+  wait_for_jobs    = false
   reuse_values     = false
   version          = var.chart_version
   timeout          = 120 # in seconds
+  max_history = 20
 
   values = [yamlencode({
     replicaCount = var.replicas
@@ -362,6 +350,7 @@ resource "helm_release" "litellm" {
     }
 
     nodeSelector = var.node_selector
+    topologySpreadConstraints = var.topology_spread
     tolerations = var.tolerations
     affinity = var.affinity
 

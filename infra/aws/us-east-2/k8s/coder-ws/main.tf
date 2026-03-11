@@ -17,8 +17,6 @@ data "aws_iam_openid_connect_provider" "this" {
   url = data.aws_eks_cluster.this.identity[0].oidc[0].issuer
 }
 
-data "aws_caller_identity" "this" {}
-
 data "http" "login" {
   url    = "${var.coder_access_url}/api/v2/users/login"
   method = "POST"
@@ -109,95 +107,10 @@ locals {
       }]
     }
   }
-
-  reg_mirror = "${data.aws_caller_identity.this.account_id}.dkr.ecr.${var.region}.amazonaws.com"
-  reg_suffix = {
-    "ghcr" = "ghc.io"
-    "k8s" = "registry.k8s.io"
-    "quay" = "quay.io"
-    "docker-hub" = "index.docker.io"
-    "ecr-public" = "public.ecr.aws"
-  }
-}
-
-resource "kubernetes_manifest" "mutate_img_policy" {
-  manifest = {
-    apiVersion = "policies.kyverno.io/v1"
-    kind       = "MutatingPolicy"
-    metadata = {
-      name      = "mutate-ws-image"
-    }
-    spec = {
-      matchConstraints = {
-        matchPolicy = "Equivalent"
-        namespaceSelector = {
-          matchExpressions = [{
-            key = "kubernetes.io/metadata.name"
-            operator = "In"
-            values = [
-              "default", 
-              "litellm", 
-              "observability",
-              "ebs-controller",
-              "coder-ws-experiment",
-              "coder-ws"
-            ]
-          }]
-        }
-        objectSelector = {
-          matchExpressions = [
-            {
-              key = "app.kubernetes.io/name"
-              operator = "NotIn"
-              values = [
-                # "coder-provisioner", 
-                "coder"
-              ]
-            },
-            {
-              key = "app.kubernetes.io/managed-by"
-              operator = "NotIn"
-              values = [
-                # "Helm",
-                "test"
-              ]
-            }
-          ]
-        }
-        resourceRules = [
-          {
-            apiGroups   = [""]
-            apiVersions = ["v1"]
-            operations  = ["CREATE", "UPDATE"]
-            resources   = ["pods"]
-          }
-        ]
-      }
-      mutations = [ for k in ["containers", "initContainers", "ephemeralContainers"] : {
-        patchType = "JSONPatch"
-        jsonPatch = {
-          expression = <<-EOT
-            object.spec.?${k}.orValue([]).map(c, 
-              %{ for suffix,reg in local.reg_suffix ~}
-              image(c.image).registry() == "${reg}" ? 
-              JSONPatch{
-                op: "replace",
-                path: "/spec/${k}/" + string(object.spec.?${k}.orValue([]).indexOf(c)) + "/image",
-                value: "${local.reg_mirror}" + "/" + "${suffix}" + "/" + string(image(c.image).repository()) + ":" + string(image(c.image).tag())
-              } :
-              %{ endfor ~}
-              null
-            ).filter(p, p != null)
-          EOT
-        }
-      } ]
-    }
-  }
 }
 
 module "default-ws" {
 
-  depends_on = [ kubernetes_manifest.mutate_img_policy ]
   source = "../../../../../modules/k8s/bootstrap/coder-provisioner"
 
   release_name              = local.release_name
@@ -213,7 +126,7 @@ module "default-ws" {
     org_name   = "coder"
     image_repo = var.image_repo
     image_tag  = var.image_tag
-    rep_cnt    = 4
+    rep_cnt    = 50
     env_vars = {
       CODER_PROMETHEUS_ENABLE              = "true"
       CODER_PROMETHEUS_COLLECT_AGENT_STATS = "true"
@@ -234,7 +147,6 @@ module "default-ws" {
 
 module "experiment-ws" {
 
-  depends_on = [ kubernetes_manifest.mutate_img_policy ]
   source = "../../../../../modules/k8s/bootstrap/coder-provisioner"
 
   release_name              = local.release_name
@@ -271,7 +183,6 @@ module "experiment-ws" {
 
 module "demo-ws" {
 
-  depends_on = [ kubernetes_manifest.mutate_img_policy ]
   source = "../../../../../modules/k8s/bootstrap/coder-provisioner"
 
   release_name              = local.release_name

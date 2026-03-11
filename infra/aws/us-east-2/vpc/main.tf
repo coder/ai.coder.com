@@ -81,7 +81,6 @@ resource "aws_vpc_endpoint" "svc" {
 }
 
 module "nat" {
-
   source  = "RaJiska/fck-nat/aws"
   version = "~> 1.4.0"
 
@@ -90,6 +89,7 @@ module "nat" {
   subnet_id            = module.vpc.public_subnets[0]
   ha_mode              = true # Enables high-availability mode
   use_cloudwatch_agent = true # Enables Cloudwatch agent and have metrics reported
+  instance_type = "c7gn.medium"
 
   update_route_tables = true
   route_tables_ids = {

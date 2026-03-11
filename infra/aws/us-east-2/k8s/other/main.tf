@@ -71,6 +71,7 @@ resource "kubernetes_manifest" "gp3" {
     }
     provisioner       = "ebs.csi.aws.com"
     volumeBindingMode = "WaitForFirstConsumer"
+    allowVolumeExpansion = true
     allowedTopologies = [{
       matchLabelExpressions = [{
         key    = "topology.ebs.csi.aws.com/zone"
@@ -93,6 +94,7 @@ resource "kubernetes_manifest" "automode-gp3" {
     }
     provisioner       = "ebs.csi.eks.amazonaws.com"
     volumeBindingMode = "WaitForFirstConsumer"
+    allowVolumeExpansion = true
     allowedTopologies = [{
       matchLabelExpressions = [{
         key    = "eks.amazonaws.com/compute-type"
@@ -191,7 +193,7 @@ locals {
       block_device_mappings = [{
         deviceName = "/dev/xvda"
         ebs = {
-          volumeSize          = "100Gi"
+          volumeSize          = "200Gi"
           volumeType          = "gp3"
           encrypted           = false
           deleteOnTermination = true
@@ -239,35 +241,135 @@ resource "kubernetes_manifest" "nodeclass" {
 
 locals {
   nodepool_configs = {
-    "platform" = {
+    # Grafana, Loki, AlertManager (Less resource intense)
+    "observability-platform" = {
       disruption = {
-        consolidation_policy = "WhenEmptyOrUnderutilized"
-        consolidate_after    = "1m"
+        consolidation_policy = "WhenEmpty"
+        consolidate_after    = "72h"
       }
-      node_expires_after              = "Never"
-      instance_types                  = ["t3a.xlarge"]
+      instance_types                  = ["c6g.large", "c6g.xlarge"]
       node_class_ref = {
         group = "eks.amazonaws.com"
         kind  = "NodeClass"
         name  = "platform"
       }
-      # Have platform-apps get deployed here (Coder, LiteLLM, Grafana, Prometheus, etc.)
       taints = [{
         key    = "platform"
-        value  = "dedicated"
+        value  = "observability-platform"
+        effect = "NoSchedule"
+      }]
+    }
+    "grafana" = {
+      disruption = {
+        consolidation_policy = "WhenEmpty"
+        consolidate_after    = "72h"
+      }
+      instance_types                  = ["c6g.medium", "c6g.xlarge"]
+      node_class_ref = {
+        group = "eks.amazonaws.com"
+        kind  = "NodeClass"
+        name  = "platform"
+      }
+      taints = [{
+        key    = "platform"
+        value  = "grafana"
+        effect = "NoSchedule"
+      }]
+    }
+    "alertmanager" = {
+      disruption = {
+        consolidation_policy = "WhenEmpty"
+        consolidate_after    = "72h"
+      }
+      instance_types                  = ["c6g.medium", "c6g.xlarge"]
+      node_class_ref = {
+        group = "eks.amazonaws.com"
+        kind  = "NodeClass"
+        name  = "platform"
+      }
+      taints = [{
+        key    = "platform"
+        value  = "alertmanager"
+        effect = "NoSchedule"
+      }]
+    }
+    "prometheus" = {
+      disruption = {
+        consolidation_policy = "WhenEmpty"
+        consolidate_after    = "72h"
+      }
+      instance_types                  = ["c6g.2xlarge"]
+      node_class_ref = {
+        group = "eks.amazonaws.com"
+        kind  = "NodeClass"
+        name  = "platform"
+      }
+      taints = [{
+        key    = "platform"
+        value  = "prometheus"
+        effect = "NoSchedule"
+      }]
+    }
+    "loki" = {
+      disruption = {
+        consolidation_policy = "WhenEmpty"
+        consolidate_after    = "72h"
+      }
+      instance_types                  = ["c6g.medium", "c6g.xlarge"]
+      node_class_ref = {
+        group = "eks.amazonaws.com"
+        kind  = "NodeClass"
+        name  = "platform"
+      }
+      taints = [{
+        key    = "platform"
+        value  = "loki"
+        effect = "NoSchedule"
+      }]
+    }
+    "litellm" = {
+      disruption = {
+        consolidation_policy = "WhenEmpty"
+        consolidate_after    = "72h"
+      }
+      instance_types                  = ["c6g.xlarge"]
+      node_class_ref = {
+        group = "eks.amazonaws.com"
+        kind  = "NodeClass"
+        name  = "platform"
+      }
+      taints = [{
+        key    = "platform"
+        value  = "litellm"
+        effect = "NoSchedule"
+      }]
+    }
+    "coder-server" = {
+      disruption = {
+        consolidation_policy = "WhenEmpty"
+        consolidate_after    = "72h"
+      }
+      instance_types                  = ["c6g.xlarge"]
+      node_class_ref = {
+        group = "eks.amazonaws.com"
+        kind  = "NodeClass"
+        name  = "platform"
+      }
+      taints = [{
+        key    = "platform"
+        value  = "coder-server"
         effect = "NoSchedule"
       }]
     }
     "coder-provisioner" = {
       disruption = {
         consolidation_policy = "WhenEmptyOrUnderutilized"
-        consolidate_after    = "1m"
+        consolidate_after    = "0s"
         budgets = [{
           nodes = "100%"
         }]
       }
-      node_expires_after              = "24h"
-      instance_types                  = ["t3a.2xlarge"]
+      instance_types                  = ["c6a.xlarge"]
       node_class_ref = {
         group = "eks.amazonaws.com"
         kind  = "NodeClass"
@@ -281,14 +383,13 @@ locals {
     }
     "coder-workspace" = {
       disruption = {
-        consolidation_policy = "WhenEmptyOrUnderutilized"
-        consolidate_after    = "1m"
+        consolidation_policy = "WhenEmpty"
+        consolidate_after    = "0s"
         budgets = [{
           nodes = "100%"
         }]
       }
-      node_expires_after              = "24h"
-      instance_types = ["t3a.xlarge"]
+      instance_types = ["c6a.8xlarge"]
       node_class_ref = {
         group = "karpenter.k8s.aws"
         kind  = "EC2NodeClass"
@@ -298,17 +399,17 @@ locals {
     }
     "coder-workspace-static" = {
       disruption = {
-        consolidation_policy = "WhenEmptyOrUnderutilized"
+        consolidation_policy = "WhenEmpty"
         consolidate_after    = "0s"
         budgets = [{
           nodes = "100%"
         }]
       }
-      replicas                        = 3
+      replicas                        = 2
       limits = {
         nodes = 100
       }
-      instance_types = ["t3a.2xlarge"]
+      instance_types = ["c6a.8xlarge"]
       node_class_ref = {
         group = "karpenter.k8s.aws"
         kind  = "EC2NodeClass"
@@ -348,11 +449,6 @@ resource "kubernetes_manifest" "nodepool" {
       name = each.key
     }
     spec = merge(try(each.value.replicas, null) == null ? {
-      template = {
-        spec = {
-          expireAfter  = each.value.node_expires_after
-        }
-      }
       disruption = {
         consolidationPolicy = try(each.value.disruption.consolidation_policy, "WhenEmptyOrUnderutilized")
         consolidateAfter    = try(each.value.disruption.consolidate_after, "0s")
@@ -374,6 +470,11 @@ resource "kubernetes_manifest" "nodepool" {
           }
         }
         spec = {
+          # https://docs.aws.amazon.com/eks/latest/userguide/automode.html#_features
+          # 21 days (504 hours i.e. ExpireAfter + TerminationGracePeriod) maximum lifetime for AutoMode
+          # https://karpenter.sh/docs/concepts/nodepools/
+          # "Never" works for Karpenter though.
+          expireAfter  = try(each.value.node_expires_after, each.value.node_class_ref != "karpenter.k8s.aws" ? "480h" : "Never")
           taints = each.value.taints == null ? [{
             key    = "dedicated"
             value  = each.key
@@ -382,7 +483,7 @@ resource "kubernetes_manifest" "nodepool" {
           requirements = [{
             key      = "kubernetes.io/arch"
             operator = "In"
-            values   = ["amd64"]
+            values   = ["amd64", "arm64"]
             }, {
             key      = "kubernetes.io/os"
             operator = "In"
@@ -480,7 +581,13 @@ resource "kubernetes_manifest" "issuer" {
 ##
 
 locals {
-  ecr_registry = "750246862020.dkr.ecr.us-east-2.amazonaws.com"
+  prewarm_imgs = [
+    "codercom/enterprise-java:latest",
+    "codercom/enterprise-golang:latest",
+    "codercom/enterprise-node:latest",
+    "codercom/enterprise-base:ubuntu",
+    "public.ecr.aws/f7a1d7a4/coder-aienv:1.1.2"
+  ]
 }
 
 resource "kubernetes_daemon_set_v1" "img-fetch" {
@@ -526,40 +633,13 @@ resource "kubernetes_daemon_set_v1" "img-fetch" {
 
         termination_grace_period_seconds = 5
 
-        init_container {
-          name    = "codercom-java"
-          image   = "codercom/enterprise-java:latest"
-          command = []
-        }
-
-        init_container {
-          name    = "codercom-golang"
-          image   = "codercom/enterprise-golang:latest"
-          command = []
-        }
-
-        init_container {
-          name    = "codercom-node"
-          image   = "codercom/enterprise-node:latest"
-          command = []
-        }
-
-        init_container {
-          name    = "codercom-base"
-          image   = "codercom/enterprise-base:ubuntu"
-          command = []
-        }
-
-        init_container {
-          name = "aienv-base-v1-0-0"
-          image = "${local.ecr_registry}/base-ws:1.0.0"
-          command = []
-        }
-
-        init_container {
-          name = "aienv-base-v1-1-1"
-          image = "${local.ecr_registry}/base-ws:1.1.1"
-          command = []
+        dynamic "init_container" {
+          for_each = toset(local.prewarm_imgs)
+          content {
+            name = replace(init_container.value, "/\\W/", "-")
+            image   = init_container.value
+            command = []
+          }
         }
 
         container {
@@ -578,6 +658,95 @@ resource "kubernetes_daemon_set_v1" "img-fetch" {
           }
         }
       }
+    }
+  }
+}
+
+locals {
+  reg_mirror = "${data.aws_caller_identity.this.account_id}.dkr.ecr.${var.region}.amazonaws.com"
+  reg_suffix = {
+    "ghcr" = "ghcr.io"
+    "k8s" = "registry.k8s.io"
+    "quay" = "quay.io"
+    "docker-hub" = "index.docker.io"
+    "ecr-public" = "public.ecr.aws"
+  }
+}
+
+resource "kubernetes_manifest" "mutate_img_policy" {
+  manifest = {
+    apiVersion = "policies.kyverno.io/v1"
+    kind       = "MutatingPolicy"
+    metadata = {
+      name      = "mutate-ws-image"
+    }
+    spec = {
+      matchConstraints = {
+        matchPolicy = "Equivalent"
+        namespaceSelector = {
+          matchExpressions = [{
+            key = "kubernetes.io/metadata.name"
+            operator = "In"
+            values = [
+              "default", 
+              "litellm", 
+              "observability",
+              "ebs-controller",
+              "coder",
+              "coder-ws-demo",
+              "coder-ws-experiment",
+              "coder-ws"
+            ]
+          }]
+        }
+        objectSelector = {
+          matchExpressions = [
+            {
+              key = "app.kubernetes.io/name"
+              operator = "NotIn"
+              values = [
+                # "coder-provisioner", 
+                # "coder"
+                "test"
+              ]
+            },
+            {
+              key = "app.kubernetes.io/managed-by"
+              operator = "NotIn"
+              values = [
+                # "Helm",
+                "test"
+              ]
+            }
+          ]
+        }
+        resourceRules = [
+          {
+            apiGroups   = [""]
+            apiVersions = ["v1"]
+            operations  = ["CREATE", "UPDATE"]
+            resources   = ["pods"]
+          }
+        ]
+      }
+      mutations = [ for k in ["containers", "initContainers", "ephemeralContainers"] : {
+        patchType = "JSONPatch"
+        jsonPatch = {
+          expression = <<-EOT
+            object.spec.?${k}.orValue([]).map(c, 
+              %{ for suffix,reg in local.reg_suffix ~}
+              image(c.image).registry() == "${reg}" ? 
+              JSONPatch{
+                op: "replace",
+                path: "/spec/${k}/" + string(object.spec.?${k}.orValue([]).indexOf(c)) + "/image",
+                value: "${local.reg_mirror}" + "/" + "${suffix}" + "/" + string(image(c.image).repository()) + ":" + string(image(c.image).tag())
+              } :
+              %{ endfor ~}
+              null
+            ).filter(p, p != null)
+          EOT
+        }
+      } ]
     }
   }
 }

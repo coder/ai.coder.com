@@ -31,11 +31,6 @@ variable "cluster_oidc_provider_arn" {
   type = string
 }
 
-variable "storage_class" {
-  type = string
-  default = ""
-}
-
 variable "namespace" {
   type = string
   default = "coder-observe"
@@ -80,36 +75,141 @@ variable "coder" {
 }
 
 variable "grafana" {
-    type = object({
-        instance_name = optional(string, "Coder Environment")
-        admin = object({
-            username = string
-            password = string
-        })
-        db = object({
-            host = string
-            password = string
-            username = string
-            database = string
-            sslmode = optional(string, "require")
-        })
-        svc = object({
-          port = optional(number, 80)
-          annots = optional(map(string), {})
-        })
-        affinity = optional(map(any), {})
+  type = object({
+    instance_name = optional(string, "Coder Environment")
+    admin = object({
+        username = string
+        password = string
     })
-    sensitive = true
+    db = object({
+        host = string
+        password = string
+        username = string
+        database = string
+        sslmode = optional(string, "require")
+    })
+    svc = object({
+      port = optional(number, 80)
+      annots = optional(map(string), {})
+    })
+    replicas = optional(number, 1)
+    tolerations = optional(list(any), [])
+    affinity = optional(any, {})
+    topology_spread = optional(list(any), [])
+    node_selector = optional(map(string), {})
+    rsrc = optional(object({
+      requests = optional(object({
+        cpu = optional(string, "2")
+        memory = optional(string, "4Gi")
+      }), null)
+      limits = optional(object({
+        cpu = optional(string, "2")
+        memory = optional(string, "4Gi")
+      }), null)
+    }), {
+      requests = null
+      limits = null
+    })
+  })
+  sensitive = true
 }
 
 variable "loki" {
-    type = object({
-        s3 = object({
-            chunks_bucket = string
-            ruler_bucket = string
-            region = string
-        })
+  type = object({
+      s3 = object({
+        chunks_bucket = string
+        ruler_bucket = string
+        region = string
+      })
+      tolerations = optional(list(any), [])
+      affinity = optional(any, {})
+      topology_spread = optional(list(any), [])
+      node_selector = optional(map(string), {})
+      pv = object({
+        enabled = optional(bool, true)
+        storageClass = optional(string, "gp3")
+      })
+      rsrc = optional(object({
+        requests = optional(object({
+          cpu = optional(string, "2")
+          memory = optional(string, "4Gi")
+        }), null)
+        limits = optional(object({
+          cpu = optional(string, "2")
+          memory = optional(string, "4Gi")
+        }), null)
+      }), {
+        requests = null
+        limits = null
+      })
+  })
+}
+
+variable "prometheus" {
+  type = object({
+    ooo_window = optional(string, "1800s")
+    pv = object({
+      enabled = optional(bool, true)
+      storageClass = optional(string, "gp3")
+      size = optional(string, "12Gi")
     })
+    tolerations = optional(list(any), [])
+    affinity = optional(any, {})
+    topology_spread = optional(list(any), [])
+    node_selector = optional(map(string), {})
+    liveliness = optional(object({
+      initial_delay = optional(number, 60)
+      timeout = optional(number, 60)
+      period = optional(number, 60)
+      failure_threshold = optional(number, 10)
+    }), {})
+    readiness = optional(object({
+      initial_delay = optional(number, 60)
+      timeout = optional(number, 60)
+      period = optional(number, 60)
+      failure_threshold = optional(number, 10)
+    }), {})
+    rsrc = optional(object({
+      requests = optional(object({
+        cpu = optional(string, "2")
+        memory = optional(string, "4Gi")
+      }), null)
+      limits = optional(object({
+        cpu = optional(string, "2")
+        memory = optional(string, "4Gi")
+      }), null)
+    }), {
+      requests = null
+      limits = null
+    })
+  })
+}
+
+variable "alertmanager" {
+  type = object({
+    enabled = optional(bool, true)
+    pv = object({
+      enabled = optional(bool, false)
+      storageClass = optional(string, "gp3")
+    })
+    tolerations = optional(list(any), [])
+    affinity = optional(any, {})
+    topology_spread = optional(list(any), [])
+    node_selector = optional(map(string), {})
+    rsrc = optional(object({
+      requests = optional(object({
+        cpu = optional(string, "2")
+        memory = optional(string, "4Gi")
+      }), {})
+      limits = optional(object({
+        cpu = optional(string, "2")
+        memory = optional(string, "4Gi")
+      }), {})
+    }), {
+      requests = {}
+      limits = {}
+    })
+  })
 }
 
 variable "mount_ssl" {
@@ -179,7 +279,17 @@ data "aws_caller_identity" "this" {}
 
 locals {
   role_name   = "loki-s3-access"
+  policy_name = "LokiS3Access-${data.aws_region.this.region}"
 }
+
+module "iam-policy" {
+  source      = "../../../security/policy"
+  name        = local.policy_name
+  path        = "/${var.cluster_name}/${data.aws_region.this.region}/"
+  description = "Loki S3 policy"
+  policy_json = data.aws_iam_policy_document.this.json
+}
+
 
 module "oidc-role" {
   source       = "../../../security/role/access-entry"
@@ -187,7 +297,8 @@ module "oidc-role" {
   path         = "/${var.cluster_name}/${data.aws_region.this.region}/"
   cluster_name = var.cluster_name
   policy_arns = {
-    "AmazonEKSLoadBalancingPolicy" = "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess",
+    "AmazonS3ReadOnlyAccess" = "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess",
+    "LokiS3Policy"     = module.iam-policy.policy_arn
   }
   cluster_policy_arns = {
     "AmazonEKSClusterAdminPolicy" = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy",
@@ -245,6 +356,7 @@ resource "helm_release" "coder-observe" {
   wait_for_jobs    = true
   version          = var.chart_version
   timeout          = var.chart_timeout
+  max_history      = 10
 
   values = [yamlencode({
     global = {
@@ -273,46 +385,53 @@ resource "helm_release" "coder-observe" {
       #   tolerations = var.daemonset_tolerations
       #   nodeSelector = var.daemonset_node_selector
       # }
+      configmapReload = {
+        prometheus = {
+          extraArgs = {
+            "watch-interval" = "30s"
+          }
+        }
+      }
       server = {
         tsdb = {
-          out_of_order_time_window = "1800s"
+          out_of_order_time_window = var.prometheus.ooo_window
         }
-        persistentVolume = {
-          enabled = true
-          storageClass = "gp3-automode"
-          # storageClassName = var.storage_class
+        replicaCount = 1
+        retention = "8h"
+        extraFlags = [
+          # "storage.tsdb.wal-compression",
+          "web.enable-lifecycle",
+          "web.enable-remote-write-receiver"
+        ]
+        extraArgs = {
+          # "storage.tsdb.retention.time" = "1d"
+          # "storage.tsdb.min-block-duration" = "2h"
+          # "storage.tsdb.max-block-duration" = "2h"
         }
-        tolerations = var.system_tolerations
-        affinity = var.system_affinity
-        resources = {
-          requests = {
-            cpu = "2"
-            memory = "4Gi"
-          }
-          limits = {
-            cpu = "2"
-            memory = "4Gi"
-          }
-        }
+        persistentVolume = var.prometheus.pv
+        nodeSelector = var.prometheus.node_selector
+        tolerations = var.prometheus.tolerations
+        affinity = var.prometheus.affinity
+        resources = var.prometheus.rsrc
 
-        livenessProbeInitialDelaySeconds = 60
-        livenessProbetimeoutSeconds      = 600
-        livenessProbePeriodSeconds       = 30
-        livenessProbeFailureThreshold    = 100
+        livenessProbeInitialDelaySeconds = var.prometheus.liveliness.initial_delay
+        livenessProbetimeoutSeconds      = var.prometheus.liveliness.timeout
+        livenessProbePeriodSeconds       = var.prometheus.liveliness.period
+        livenessProbeFailureThreshold    = var.prometheus.liveliness.failure_threshold
 
-        readinessProbeInitialDelay = 60
-        readinessProbeTimeout      = 240
-        readinessProbePeriodSeconds       = 15
-        readinessProbeFailureThreshold    = 300
+        readinessProbeInitialDelay = var.prometheus.readiness.initial_delay
+        readinessProbeTimeout      = var.prometheus.readiness.timeout
+        readinessProbePeriodSeconds       = var.prometheus.readiness.period
+        readinessProbeFailureThreshold    = var.prometheus.readiness.failure_threshold
       }
       alertmanager = {
-        enabled = true
-        tolerations = var.system_tolerations
-        affinity = var.system_affinity
-        persistence = {
-          enabled = false
-          storageClass = var.storage_class
-        }
+        enabled = var.alertmanager.enabled
+        persistence = var.alertmanager.pv
+        nodeSelector = var.alertmanager.node_selector
+        tolerations = var.alertmanager.tolerations
+        affinity = var.alertmanager.affinity
+        # resources = var.alertmanager.rsrc
+        resources = {}
       }
     }
     grafana = {
@@ -360,22 +479,15 @@ resource "helm_release" "coder-observe" {
           http_port = 3000
         })
         users = {
-            allow_sign_up = false
+          allow_sign_up = false
         }
       }
-      affinity = var.system_affinity
-      replicas = 1
+      nodeSelector = var.grafana.node_selector
+      tolerations = var.grafana.tolerations
+      affinity = var.grafana.affinity
+      replicas = var.grafana.replicas
       useStatefulSet = true
-      resources = {
-        requests = {
-          cpu = "500m"
-          memory = "512Mi"
-        }
-        limits = {
-          cpu = "1"
-          memory = "2Gi"
-        }
-      }
+      resources = var.grafana.rsrc
       readinessProbe = {
         httpGet = {
           scheme = var.mount_ssl.enable ? "HTTPS" : "HTTP"
@@ -404,8 +516,6 @@ resource "helm_release" "coder-observe" {
         type = "LoadBalancer"
         annotations = var.grafana.svc.annots
       }
-      tolerations = var.system_tolerations
-      affinity = var.system_affinity
       extraConfigmapMounts = [ for k, v in var.dashboards.config_maps : {
         name = k
         configMap = kubernetes_config_map_v1.dashboard[k].metadata[0].name
@@ -515,32 +625,29 @@ resource "helm_release" "coder-observe" {
         nodeSelector = var.daemonset_node_selector
       }
       backend = {
-        tolerations = var.system_tolerations
-        affinity = var.system_affinity
+        tolerations = var.loki.tolerations
+        affinity = var.loki.affinity
         persistence = {
           volumeClaimsEnabled = false
           # storageClass = var.storage_class
         }
       }
       resultsCache = {
-        tolerations = var.system_tolerations
-        affinity = var.system_affinity
+        tolerations = var.loki.tolerations
+        affinity = var.loki.affinity
       }
       chunksCache = {
-        tolerations = var.system_tolerations
-        affinity = var.system_affinity
-        persistence = {
-          enabled = true
-          storageClass = var.storage_class
-        }
+        tolerations = var.loki.tolerations
+        affinity = var.loki.affinity
+        persistence = var.loki.pv
       }
       minio = {
         enabled = false
         # tolerations = var.system_tolerations
       }
       write = {
-        tolerations = var.system_tolerations
-        affinity = var.system_affinity
+        tolerations = var.loki.tolerations
+        affinity = var.loki.affinity
         persistence = {
           volumeClaimsEnabled = false
           # storageClass = var.storage_class

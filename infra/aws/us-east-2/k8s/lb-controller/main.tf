@@ -54,6 +54,11 @@ module "lb-controller" {
     key      = "CriticalAddonsOnly"
     operator = "Exists"
   }]
+  topology_spread = [{
+    topologyKey = "topology.kubernetes.io/zone"
+    maxSkew = 1
+    whenUnsatisfiable = "ScheduleAnyway"
+  }]
   affinity = {
     nodeAffinity = {
       requiredDuringSchedulingIgnoredDuringExecution = {
@@ -69,16 +74,22 @@ module "lb-controller" {
       }
     }
     podAntiAffinity = {
-      requiredDuringSchedulingIgnoredDuringExecution = [{
-        topologyKey = "kubernetes.io/hostname"
+      preferredDuringSchedulingIgnoredDuringExecution = [{
         weight = 100
         podAffinityTerm = {
+          topologyKey = "topology.kubernetes.io/zone"
           labelSelector = {
-            matchExpressions = [{
-              key      = "app.kubernetes.io/name"
-              operator = "In"
-              values   = [local.release_name]
-            }]
+            matchLabels = {
+              "app.kubernetes.io/name" = local.release_name
+            }
+          }
+        }
+      }]
+      requiredDuringSchedulingIgnoredDuringExecution = [{
+        topologyKey = "kubernetes.io/hostname"
+        labelSelector = {
+          matchLabels = {
+            "app.kubernetes.io/name" = local.release_name
           }
         }
       }]

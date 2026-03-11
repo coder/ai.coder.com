@@ -91,6 +91,11 @@ variable "tolerations" {
   default = []
 }
 
+variable "topology_spread" {
+  type = list(any)
+  default = []
+}
+
 variable "affinity" {
   type = any
   default = {}
@@ -172,6 +177,7 @@ resource "helm_release" "lb-controller" {
     enableCertManager      = var.enable_cert_manager
     nodeSelector           = var.node_selector
     tolerations = var.tolerations
+    topologySpreadConstraints = var.topology_spread
     affinity = var.affinity
     serviceTargetENISGTags = local.service_target_eni_sg_tags
     serviceMutatorWebhookConfig = {
