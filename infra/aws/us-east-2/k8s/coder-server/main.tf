@@ -131,6 +131,53 @@ resource "aws_eip" "coder" {
 #   }
 # }
 
+# ---
+
+resource "aws_iam_user" "bedrock" {
+  name          = "${local.release_name}-bedrock"
+  path          = "/${var.cluster_name}/${var.region}/"
+  force_destroy = true
+
+  tags = {
+    Purpose   = "coder-aibridge"
+    ManagedBy = "terraform"
+  }
+}
+
+data "aws_iam_policy_document" "bedrock" {
+  statement {
+    sid    = "InvokeBedrockModels"
+    effect = "Allow"
+
+    actions = [
+      "bedrock:InvokeModel",
+      "bedrock:InvokeModelWithResponseStream"
+    ]
+
+    resources = [
+      "arn:aws:bedrock:*::foundation-model/*",
+      "arn:aws:bedrock:*:*:inference-profile/*"
+    ]
+  }
+}
+
+resource "aws_iam_policy" "bedrock" {
+  name        = "${local.release_name}-bedrock"
+  description = "Allow Coder AI Bridge to invoke Amazon Bedrock models."
+  policy      = data.aws_iam_policy_document.bedrock.json
+}
+
+resource "aws_iam_user_policy_attachment" "bedrock" {
+  user       = aws_iam_user.bedrock.name
+  policy_arn = aws_iam_policy.bedrock.arn
+}
+
+resource "aws_iam_access_key" "bedrock" {
+  user = aws_iam_user.bedrock.name
+}
+
+# ---
+
 module "coder-server" {
 
   source = "../../../../../modules/k8s/bootstrap/coder-server"
@@ -153,7 +200,9 @@ module "coder-server" {
     rep_cnt = length(local.pub_subs)
     # External Provisioners will be used
     prov_rep_cnt = var.coder_builtin_provisioner_count
-    experiments  = var.coder_experiments
+    env_vars = {
+      CODER_EXPERIMENTS = join(",", var.coder_experiments)
+    }
   }
 
   db = {
@@ -161,6 +210,7 @@ module "coder-server" {
     username = var.coder_db_username
     password = var.coder_db_password
     db       = var.coder_db_name
+    pg_auth  = "awsiamrds"
   }
 
   prometheus = {
@@ -198,24 +248,16 @@ module "coder-server" {
 
   aibridge = {
     enabled = true
-    anthropic = {
-      url = var.anthropic_llm_endpoint
-      key = var.anthropic_llm_key
-    }
-    openai = {
-      url = var.openai_llm_endpoint
-      key = var.openai_llm_key
-    }
   }
 
   namespace      = local.namespace
   resource_limit = {
     cpu    = "2"
-    memory = "4Gi"
+    memory = "2Gi"
   }
   resource_request = {
     cpu    = "500m"
-    memory = "4Gi"
+    memory = "2Gi"
   }
   lb_class = "service.k8s.aws/nlb"
   svc_annot = {
@@ -230,20 +272,21 @@ module "coder-server" {
     value  = "coder-server"
     effect = "NoSchedule"
   }]
-  topology_spread = [{
-    max_skew           = 1
-    topology_key       = "topology.kubernetes.io/zone"
-    when_unsatisfiable = "ScheduleAnyway"
-    label_selector = {
-      match_labels = {
-        "app.kubernetes.io/name"    = local.chart_name
-        "app.kubernetes.io/part-of" = local.chart_name
-      }
-    }
-    match_label_keys = [
-      "app.kubernetes.io/instance"
-    ]
-  }]
+  topology_spread = []
+  # topology_spread = [{
+  #   max_skew           = 1
+  #   topology_key       = "topology.kubernetes.io/zone"
+  #   when_unsatisfiable = "ScheduleAnyway"
+  #   label_selector = {
+  #     match_labels = {
+  #       "app.kubernetes.io/name"    = local.chart_name
+  #       "app.kubernetes.io/part-of" = local.chart_name
+  #     }
+  #   }
+  #   match_label_keys = [
+  #     "app.kubernetes.io/instance"
+  #   ]
+  # }]
   affinity = {
     nodeAffinity = {
       requiredDuringSchedulingIgnoredDuringExecution = {
@@ -265,16 +308,17 @@ module "coder-server" {
     }
     podAntiAffinity = {
       preferredDuringSchedulingIgnoredDuringExecution = []
-      requiredDuringSchedulingIgnoredDuringExecution = [{
-        labelSelector = {
-          matchExpressions = [{
-            key = "app.kubernetes.io/instance"
-            operator = "In"
-            values = [local.chart_name]
-          }]
-        }
-        topologyKey = "kubernetes.io/hostname"
-      }]
+      requiredDuringSchedulingIgnoredDuringExecution = []
+      # requiredDuringSchedulingIgnoredDuringExecution = [{
+      #   labelSelector = {
+      #     matchExpressions = [{
+      #       key = "app.kubernetes.io/instance"
+      #       operator = "In"
+      #       values = [local.chart_name]
+      #     }]
+      #   }
+      #   topologyKey = "kubernetes.io/hostname"
+      # }]
     }
   }
 }

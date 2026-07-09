@@ -1,0 +1,212 @@
+# -- Namespace to deploy into.
+namespace: coder
+createNamespace: true
+
+# ---------------------------------------------------------------------------
+# Wrapper-level configuration (translated into coder.env for the subchart)
+# ---------------------------------------------------------------------------
+
+# -- Coder access URL (e.g. https://ai.coder.com).
+accessUrl: ""
+# -- Coder wildcard access URL (e.g. https://*.ai.coder.com).
+wildcardUrl: ""
+
+# -- Comma-separated list of experiments to enable.
+experiments: ""
+
+provisionerDaemons: 0
+provisionerForceCancelInterval: "10m0s"
+quietHoursDefaultSchedule: "CRON_TZ=America/Los_Angeles 50 23 * * *"
+allowCustomQuietHours: true
+
+terraformDebugMode: true
+traceLogs: true
+traceEnable: true
+logFilter: ".*"
+swaggerEnable: true
+updateCheck: true
+cliUpgradeMessage: true
+
+# -- Arbitrary extra CODER_* env vars. Keys are the env-var name.
+extraEnvVars: {}
+#   CODER_EXPERIMENTS: "multi-organization"
+
+# ---------------------------------------------------------------------------
+# TLS / cert-manager certificate
+# ---------------------------------------------------------------------------
+tls:
+  enabled: false
+  # -- Name of the TLS secret. When certificate.enabled=true this is also
+  # used as the Certificate secretName.
+  secretName: ""
+
+certificate:
+  enabled: false
+  commonName: ""
+  dnsNames: []
+  duration: "2160h"   # 90 days
+  renewBefore: "360h" # 15 days
+  issuerRef:
+    kind: ClusterIssuer
+    name: issuer
+  privateKey:
+    rotationPolicy: Never
+    algorithm: RSA
+    encoding: PKCS1
+    size: 2048
+
+# ---------------------------------------------------------------------------
+# Database
+# ---------------------------------------------------------------------------
+db:
+  # -- Full host:port endpoint.
+  url: ""
+  username: ""
+  password: ""
+  name: coder
+  # -- Authentication mode: "password" or "awsiamrds".
+  pgAuth: password
+
+# ---------------------------------------------------------------------------
+# OIDC
+# ---------------------------------------------------------------------------
+oidc:
+  enabled: false
+  issuerUrl: ""
+  clientId: ""
+  clientSecret: ""
+  signInText: ""
+  iconUrl: ""
+  scopes: []
+  emailDomain: ""
+
+# ---------------------------------------------------------------------------
+# GitHub OAuth2
+# ---------------------------------------------------------------------------
+oauth2:
+  enabled: false
+  defaultProviderEnable: false
+  allowSignups: true
+  deviceFlow: false
+  allowedOrgs: []
+  clientId: ""
+  clientSecret: ""
+
+# ---------------------------------------------------------------------------
+# External auth providers
+# ---------------------------------------------------------------------------
+externalAuth: []
+#  - id: primary-github
+#    type: github
+#    clientId: ""
+#    clientSecret: ""
+
+# ---------------------------------------------------------------------------
+# AI Bridge
+# ---------------------------------------------------------------------------
+aibridge:
+  enabled: false
+  structuredLogging: true
+  anthropic:
+    enabled: false
+    url: ""
+    key: ""
+  openai:
+    enabled: false
+    url: ""
+    key: ""
+  bedrock:
+    enabled: false
+    url: ""
+    region: ""
+    accessKey: ""
+    secretKey: ""
+    model: "global.anthropic.claude-sonnet-4-5-20250929-v1:0"
+    fastModel: "global.anthropic.claude-haiku-4-5-20251001-v1:0"
+
+# ---------------------------------------------------------------------------
+# Prometheus metrics
+# ---------------------------------------------------------------------------
+prometheus:
+  enabled: false
+  collectAgentStats: true
+  collectDbMetrics: true
+
+# ---------------------------------------------------------------------------
+# Service (managed outside the upstream chart, matching the TF module)
+# ---------------------------------------------------------------------------
+service:
+  type: LoadBalancer
+  loadBalancerClass: "service.k8s.aws/nlb"
+  annotations: {}
+
+# ---------------------------------------------------------------------------
+# Pod Disruption Budget
+# ---------------------------------------------------------------------------
+pdb:
+  enabled: false
+  maxUnavailable: 1
+
+# ---------------------------------------------------------------------------
+# Upstream coder subchart overrides
+#
+# The subchart is named "coder" and its values live under ".Values.coder".
+# Inside the subchart the values are nested under ".Values.coder.*", so from
+# the parent chart we address them as "coder.coder.*".
+#
+# Non-secret env vars are loaded from a ConfigMap (<release>-env) via envFrom.
+# Secret env vars are loaded from a Secret (<release>-env-secrets) via envFrom.
+# Both resources are created by this wrapper chart's templates.
+# ---------------------------------------------------------------------------
+coder:
+  coder:
+    image:
+      repo: ghcr.io/coder/coder
+      tag: latest
+      pullPolicy: IfNotPresent
+      pullSecrets: []
+
+    # Additional env entries beyond what envFrom provides.
+    env: []
+
+    # Load all CODER_* variables from the wrapper-managed ConfigMap and Secret.
+    # IMPORTANT: The names below must match the template output names. If you
+    # change the release name from "coder", update these accordingly.
+    envFrom:
+      - configMapRef:
+          name: coder-env
+      - secretRef:
+          name: coder-env-secrets
+    envUseClusterAccessURL: false
+
+    # Disable the upstream chart's Service — we manage our own.
+    service:
+      enable: false
+
+    tls:
+      secretNames: []
+
+    replicaCount: 1
+
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "2Gi"
+      limits:
+        cpu: "2"
+        memory: "2Gi"
+
+    serviceAccount:
+      annotations: {}
+      name: coder
+
+    annotations: {}
+    podAnnotations: {}
+
+    tolerations: []
+    nodeSelector: {}
+    affinity: {}
+    topologySpreadConstraints: []
+
+    # NOTE: terminationGracePeriodSeconds is not configurable in the
+    # upstream coder chart v2.25.1 (hardcoded to 60s).

@@ -3,36 +3,6 @@ provider "aws" {
   profile = var.profile
 }
 
-data "aws_caller_identity" "me" {}
-
-data "aws_vpc" "this" {
-  tags = {
-    Name = var.vpc_name
-  }
-}
-
-data "aws_subnets" "public" {
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.this.id]
-  }
-
-  tags = {
-    Name = "*${var.public_subnet_suffix}*"
-  }
-}
-
-data "aws_subnets" "private" {
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.this.id]
-  }
-
-  tags = {
-    Name = "*${var.private_subnet_suffix}*"
-  }
-}
-
 locals {
   tags = {
     Name                     = var.name
@@ -55,31 +25,6 @@ locals {
   }]
 }
 
-data "aws_iam_policy_document" "ecr-mirror" {
-  
-  statement {
-    effect  = "Allow"
-    actions = ["ecr:CreateRepository"]
-    resources = ["*"]
-  }
-
-  statement {
-    effect  = "Allow"
-    actions = ["ecr:GetAuthorizationToken"]
-    resources = ["*"]
-  }
-
-  statement {
-    effect  = "Allow"
-    actions = [
-      "ecr:BatchImportUpstreamImage",
-      "ecr:BatchGetImage",
-      "ecr:GetDownloadUrlForLayer"
-    ]
-    resources = [ "arn:aws:ecr:${var.region}:${data.aws_caller_identity.me.account_id}:repository/cache/*" ]
-  }
-}
-
 resource "aws_iam_policy" "ecr-mirror" {
   name_prefix = "ecr-mirror-auto"
   description = "Allows ECR pull-through cache automation including repository creation"
@@ -89,7 +34,7 @@ resource "aws_iam_policy" "ecr-mirror" {
 
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
-  version = "~> 21.15.1"
+  version = "~> 21.24.0"
 
   vpc_id = data.aws_vpc.this.id
   subnet_ids = toset(concat(
@@ -146,6 +91,66 @@ module "eks" {
   encryption_config                        = null
   enable_cluster_creator_admin_permissions = true
   enable_irsa                              = true
+
+  tags = local.tags
+}
+
+# https://aws-controllers-k8s.github.io/docs/intro
+# https://github.com/aws-controllers-k8s
+# https://docs.aws.amazon.com/eks/latest/userguide/ack.html
+module "eks-ack-capability" {
+  source = "terraform-aws-modules/eks/aws//modules/capability"
+  version = "~> 21.24.0"
+
+  name         = "eks-ack"
+  cluster_name = module.eks.cluster_name
+  type         = "ACK"
+
+  # IAM Role/Policy
+  iam_role_policies = {
+    AdministratorAccess = "arn:aws:iam::aws:policy/AdministratorAccess"
+  }
+
+  tags = local.tags
+}
+
+# https://docs.aws.amazon.com/eks/latest/userguide/argocd.html
+module "eks-argocd-capability" {
+  source = "terraform-aws-modules/eks/aws//modules/capability"
+  version = "~> 21.24.0"
+
+  type         = "ARGOCD"
+  cluster_name = module.eks.cluster_name
+
+  configuration = {
+    argo_cd = {
+      aws_idc = {
+        idc_instance_arn = one(data.aws_ssoadmin_instances.this.arns)
+        idc_region = "us-east-1"
+      }
+      namespace = "argocd"
+      rbac_role_mapping = [{
+        role = "ADMIN"
+        identity = [{
+          id   = data.aws_identitystore_group.aws_administrator.group_id
+          type = "SSO_GROUP"
+        }]
+      }]
+    }
+  }
+
+  # IAM Role/Policy
+  iam_policy_statements = {
+    ECRRead = {
+      actions = [
+        "ecr:GetAuthorizationToken",
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:BatchGetImage",
+      ]
+      resources = ["*"]
+    }
+  }
 
   tags = local.tags
 }

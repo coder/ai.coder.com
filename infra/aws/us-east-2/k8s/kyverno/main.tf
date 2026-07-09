@@ -38,6 +38,20 @@ resource "kubernetes_namespace_v1" "this" {
   }
 }
 
+locals {
+  nodeAffinity = {
+    requiredDuringSchedulingIgnoredDuringExecution = {
+      nodeSelectorTerms = [{
+        matchExpressions = [{
+          key = "karpenter.sh/nodepool"
+          operator = "In"
+          values = ["system"]
+        }]
+      }]
+    }
+  }
+}
+
 resource "helm_release" "kyverno" {
   name             = var.release_name
   namespace        = try(kubernetes_namespace_v1.this[0].metadata[0].name, var.namespace)
@@ -52,6 +66,15 @@ resource "helm_release" "kyverno" {
   timeout          = 600
 
   values = [yamlencode({
+
+    global = {
+      tolerations = [{
+        effect = "NoSchedule"
+        key = "CriticalAddonsOnly"
+        operator = "Exists"
+      }]
+    }
+
     config = {
       defaultRegistry = "docker.io"
       enableDefaultRegistryMutation = true
@@ -68,17 +91,26 @@ resource "helm_release" "kyverno" {
       }
     }
     
+    crds = {
+      migration = {
+        nodeAffinity = local.nodeAffinity
+      }
+    }
     admissionController = {
       replicas = 3
+      nodeAffinity = local.nodeAffinity
     }
     backgroundController = {
       replicas = 2
+      nodeAffinity = local.nodeAffinity
     }
     cleanupController = {
       replicas = 2
+      nodeAffinity = local.nodeAffinity
     }
     reportsController = {
       replicas = 2
+      nodeAffinity = local.nodeAffinity
     }
   })]
 }

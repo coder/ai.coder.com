@@ -241,7 +241,23 @@ resource "kubernetes_manifest" "nodeclass" {
 
 locals {
   nodepool_configs = {
-    # Grafana, Loki, AlertManager (Less resource intense)
+    "system" = {
+      disruption = {
+        consolidation_policy = "WhenEmptyOrUnderutilized"
+        consolidate_after    = "72h"
+      }
+      instance_types                  = ["c6g.large", "c6g.xlarge", "c6g.2xlarge"]
+      node_class_ref = {
+        group = "eks.amazonaws.com"
+        kind  = "NodeClass"
+        name  = "platform"
+      }
+      taints = [{
+        key    = "CriticalAddonsOnly"
+        value  = "true"
+        effect = "NoSchedule"
+      }]
+    }
     "observability-platform" = {
       disruption = {
         consolidation_policy = "WhenEmpty"
@@ -259,23 +275,23 @@ locals {
         effect = "NoSchedule"
       }]
     }
-    "grafana" = {
-      disruption = {
-        consolidation_policy = "WhenEmpty"
-        consolidate_after    = "72h"
-      }
-      instance_types                  = ["c6g.medium", "c6g.xlarge"]
-      node_class_ref = {
-        group = "eks.amazonaws.com"
-        kind  = "NodeClass"
-        name  = "platform"
-      }
-      taints = [{
-        key    = "platform"
-        value  = "grafana"
-        effect = "NoSchedule"
-      }]
-    }
+    # "grafana" = {
+    #   disruption = {
+    #     consolidation_policy = "WhenEmpty"
+    #     consolidate_after    = "72h"
+    #   }
+    #   instance_types                  = ["c6g.medium", "c6g.xlarge"]
+    #   node_class_ref = {
+    #     group = "eks.amazonaws.com"
+    #     kind  = "NodeClass"
+    #     name  = "platform"
+    #   }
+    #   taints = [{
+    #     key    = "platform"
+    #     value  = "grafana"
+    #     effect = "NoSchedule"
+    #   }]
+    # }
     "alertmanager" = {
       disruption = {
         consolidation_policy = "WhenEmpty"
@@ -329,10 +345,10 @@ locals {
     }
     "litellm" = {
       disruption = {
-        consolidation_policy = "WhenEmpty"
-        consolidate_after    = "72h"
+        consolidation_policy = "WhenEmptyOrUnderutilized"
+        consolidate_after    = "8h"
       }
-      instance_types                  = ["c6g.xlarge"]
+      instance_types                  = ["c6g.xlarge","c6g.2xlarge","c6g.4xlarge"]
       node_class_ref = {
         group = "eks.amazonaws.com"
         kind  = "NodeClass"
@@ -346,10 +362,10 @@ locals {
     }
     "coder-server" = {
       disruption = {
-        consolidation_policy = "WhenEmpty"
-        consolidate_after    = "72h"
+        consolidation_policy = "WhenEmptyOrUnderutilized"
+        consolidate_after    = "8h"
       }
-      instance_types                  = ["c6g.xlarge"]
+      instance_types                  = ["c6g.xlarge","c6g.2xlarge","c6g.4xlarge"]
       node_class_ref = {
         group = "eks.amazonaws.com"
         kind  = "NodeClass"
@@ -364,12 +380,13 @@ locals {
     "coder-provisioner" = {
       disruption = {
         consolidation_policy = "WhenEmptyOrUnderutilized"
-        consolidate_after    = "0s"
+        consolidate_after    = "8h"
         budgets = [{
           nodes = "100%"
         }]
       }
-      instance_types                  = ["c6a.xlarge"]
+      node_expires_after = "8h"
+      instance_types                  = ["c6g.large", "c6g.xlarge", "c6g.2xlarge", "c6g.4xlarge"]
       node_class_ref = {
         group = "eks.amazonaws.com"
         kind  = "NodeClass"
@@ -383,13 +400,13 @@ locals {
     }
     "coder-workspace" = {
       disruption = {
-        consolidation_policy = "WhenEmpty"
-        consolidate_after    = "0s"
+        consolidation_policy = "WhenEmptyOrUnderutilized"
+        consolidate_after    = "4h"
         budgets = [{
           nodes = "100%"
         }]
       }
-      instance_types = ["c6a.8xlarge"]
+      instance_types = ["c6a.4xlarge","c6a.8xlarge"]
       node_class_ref = {
         group = "karpenter.k8s.aws"
         kind  = "EC2NodeClass"
@@ -399,7 +416,7 @@ locals {
     }
     "coder-workspace-static" = {
       disruption = {
-        consolidation_policy = "WhenEmpty"
+        consolidation_policy = "WhenEmptyOrUnderutilized"
         consolidate_after    = "0s"
         budgets = [{
           nodes = "100%"
@@ -409,7 +426,7 @@ locals {
       limits = {
         nodes = 100
       }
-      instance_types = ["c6a.8xlarge"]
+      instance_types = ["c6a.4xlarge","c6a.8xlarge"]
       node_class_ref = {
         group = "karpenter.k8s.aws"
         kind  = "EC2NodeClass"
@@ -502,6 +519,10 @@ resource "kubernetes_manifest" "nodepool" {
       }
     })
   }
+
+  lifecycle {
+    ignore_changes = [ manifest.spec.replicas ]
+  }
 }
 
 ##
@@ -586,7 +607,7 @@ locals {
     "codercom/enterprise-golang:latest",
     "codercom/enterprise-node:latest",
     "codercom/enterprise-base:ubuntu",
-    "public.ecr.aws/f7a1d7a4/coder-aienv:1.1.2"
+    "public.ecr.aws/f7a1d7a4/coder-aienv:1.1.4"
   ]
 }
 

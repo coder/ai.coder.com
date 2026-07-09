@@ -1,0 +1,107 @@
+{{/*
+ConfigMap containing all non-secret CODER_* environment variables.
+Referenced by the upstream coder chart via coder.envFrom.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-env
+  namespace: {{ include "coder.namespace" . }}
+  labels:
+    {{- include "coder.labels" . | nindent 4 }}
+data:
+  CODER_ACCESS_URL: {{ .Values.accessUrl | quote }}
+  CODER_WILDCARD_ACCESS_URL: {{ .Values.wildcardUrl | quote }}
+  CODER_REDIRECT_TO_ACCESS_URL: {{ .Values.tls.enabled | quote }}
+  CODER_ENABLE_TERRAFORM_DEBUG_MODE: {{ .Values.terraformDebugMode | quote }}
+  CODER_TRACE_LOGS: {{ .Values.traceLogs | quote }}
+  CODER_TRACE_ENABLE: {{ .Values.traceEnable | quote }}
+  CODER_LOG_FILTER: {{ .Values.logFilter | quote }}
+  CODER_SWAGGER_ENABLE: {{ .Values.swaggerEnable | quote }}
+  CODER_UPDATE_CHECK: {{ .Values.updateCheck | quote }}
+  CODER_CLI_UPGRADE_MESSAGE: {{ .Values.cliUpgradeMessage | quote }}
+  CODER_PROVISIONER_DAEMONS: {{ .Values.provisionerDaemons | quote }}
+  CODER_PROVISIONER_FORCE_CANCEL_INTERVAL: {{ .Values.provisionerForceCancelInterval | quote }}
+  CODER_QUIET_HOURS_DEFAULT_SCHEDULE: {{ .Values.quietHoursDefaultSchedule | quote }}
+  CODER_ALLOW_CUSTOM_QUIET_HOURS: {{ .Values.allowCustomQuietHours | quote }}
+  {{- if .Values.experiments }}
+  CODER_EXPERIMENTS: {{ .Values.experiments | quote }}
+  {{- end }}
+
+  # Database
+  CODER_PG_AUTH: {{ .Values.db.pgAuth | quote }}
+
+  # Prometheus
+  CODER_PROMETHEUS_ENABLE: {{ .Values.prometheus.enabled | quote }}
+  CODER_PROMETHEUS_COLLECT_AGENT_STATS: {{ .Values.prometheus.collectAgentStats | quote }}
+  CODER_PROMETHEUS_COLLECT_DB_METRICS: {{ .Values.prometheus.collectDbMetrics | quote }}
+
+  # OIDC
+  {{- if .Values.oidc.enabled }}
+  CODER_OIDC_ISSUER_URL: {{ .Values.oidc.issuerUrl | quote }}
+  CODER_OIDC_CLIENT_ID: {{ .Values.oidc.clientId | quote }}
+  CODER_OIDC_SIGN_IN_TEXT: {{ .Values.oidc.signInText | quote }}
+  CODER_OIDC_ICON_URL: {{ .Values.oidc.iconUrl | quote }}
+  {{- if .Values.oidc.scopes }}
+  CODER_OIDC_SCOPES: {{ join "," .Values.oidc.scopes | quote }}
+  {{- end }}
+  CODER_OIDC_EMAIL_DOMAIN: {{ .Values.oidc.emailDomain | quote }}
+  {{- end }}
+
+  # GitHub OAuth2
+  {{- if .Values.oauth2.enabled }}
+  CODER_OAUTH2_GITHUB_DEFAULT_PROVIDER_ENABLE: {{ .Values.oauth2.defaultProviderEnable | quote }}
+  CODER_OAUTH2_GITHUB_CLIENT_ID: {{ .Values.oauth2.clientId | quote }}
+  CODER_OAUTH2_GITHUB_ALLOW_SIGNUPS: {{ .Values.oauth2.allowSignups | quote }}
+  CODER_OAUTH2_GITHUB_DEVICE_FLOW: {{ .Values.oauth2.deviceFlow | quote }}
+  CODER_OAUTH2_GITHUB_ALLOW_EVERYONE: {{ eq (len .Values.oauth2.allowedOrgs) 0 | quote }}
+  {{- if .Values.oauth2.allowedOrgs }}
+  CODER_OAUTH2_GITHUB_ALLOWED_ORGS: {{ join "," .Values.oauth2.allowedOrgs | quote }}
+  {{- end }}
+  {{- else }}
+  CODER_OAUTH2_GITHUB_DEFAULT_PROVIDER_ENABLE: "false"
+  {{- end }}
+
+  # External auth providers
+  {{- range $i, $auth := .Values.externalAuth }}
+  CODER_EXTERNAL_AUTH_{{ $i }}_ID: {{ $auth.id | quote }}
+  CODER_EXTERNAL_AUTH_{{ $i }}_TYPE: {{ $auth.type | quote }}
+  CODER_EXTERNAL_AUTH_{{ $i }}_CLIENT_ID: {{ $auth.clientId | quote }}
+  {{- if $auth.authUrl }}
+  CODER_EXTERNAL_AUTH_{{ $i }}_AUTH_URL: {{ $auth.authUrl | quote }}
+  {{- end }}
+  {{- if $auth.tokenUrl }}
+  CODER_EXTERNAL_AUTH_{{ $i }}_TOKEN_URL: {{ $auth.tokenUrl | quote }}
+  {{- end }}
+  {{- if $auth.revokeUrl }}
+  CODER_EXTERNAL_AUTH_{{ $i }}_REVOKE_URL: {{ $auth.revokeUrl | quote }}
+  {{- end }}
+  {{- if $auth.validateUrl }}
+  CODER_EXTERNAL_AUTH_{{ $i }}_VALIDATE_URL: {{ $auth.validateUrl | quote }}
+  {{- end }}
+  {{- if $auth.regex }}
+  CODER_EXTERNAL_AUTH_{{ $i }}_REGEX: {{ $auth.regex | quote }}
+  {{- end }}
+  {{- end }}
+
+  # AI Bridge
+  CODER_AIBRIDGE_ENABLED: {{ .Values.aibridge.enabled | quote }}
+  CODER_AIBRIDGE_STRUCTURED_LOGGING: {{ .Values.aibridge.structuredLogging | quote }}
+  {{- if .Values.aibridge.anthropic.enabled }}
+  CODER_AIBRIDGE_ANTHROPIC_BASE_URL: {{ .Values.aibridge.anthropic.url | quote }}
+  {{- end }}
+  {{- if .Values.aibridge.openai.enabled }}
+  CODER_AIBRIDGE_OPENAI_BASE_URL: {{ .Values.aibridge.openai.url | quote }}
+  {{- end }}
+  {{- if .Values.aibridge.bedrock.enabled }}
+  CODER_AIBRIDGE_BEDROCK_BASE_URL: {{ .Values.aibridge.bedrock.url | quote }}
+  CODER_AIBRIDGE_BEDROCK_REGION: {{ .Values.aibridge.bedrock.region | quote }}
+  CODER_AIBRIDGE_BEDROCK_ACCESS_KEY: {{ .Values.aibridge.bedrock.accessKey | quote }}
+  CODER_AIBRIDGE_BEDROCK_MODEL: {{ .Values.aibridge.bedrock.model | quote }}
+  CODER_AIBRIDGE_BEDROCK_SMALL_FAST_MODEL: {{ .Values.aibridge.bedrock.fastModel | quote }}
+  {{- end }}
+
+  # Extra env vars
+  {{- range $k, $v := .Values.extraEnvVars }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}

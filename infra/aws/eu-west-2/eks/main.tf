@@ -53,14 +53,6 @@ locals {
   }]
 }
 
-data "aws_iam_policy_document" "sts" {
-  statement {
-    effect    = "Allow"
-    actions   = ["sts:*"]
-    resources = ["*"]
-  }
-}
-
 resource "aws_iam_policy" "sts" {
   name_prefix = "sts"
   path        = "/"

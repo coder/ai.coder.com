@@ -59,20 +59,21 @@ locals {
   namespace    = "coder"
 
   node_selector = {}
-  topology_spread = [{
-    max_skew           = 2
-    topology_key       = "kubernetes.io/hostname"
-    when_unsatisfiable = "ScheduleAnyway"
-    label_selector = {
-      match_labels = {
-        "app.kubernetes.io/name"    = local.chart_name
-        "app.kubernetes.io/part-of" = local.chart_name
-      }
-    }
-    match_label_keys = [
-      "app.kubernetes.io/instance"
-    ]
-  }]
+  topology_spread = []
+  # topology_spread = [{
+  #   max_skew           = 2
+  #   topology_key       = "kubernetes.io/hostname"
+  #   when_unsatisfiable = "ScheduleAnyway"
+  #   label_selector = {
+  #     match_labels = {
+  #       "app.kubernetes.io/name"    = local.chart_name
+  #       "app.kubernetes.io/part-of" = local.chart_name
+  #     }
+  #   }
+  #   match_label_keys = [
+  #     "app.kubernetes.io/instance"
+  #   ]
+  # }]
   tolerations = [{
     key      = "coder"
     operator = "Exists"
@@ -92,20 +93,21 @@ locals {
         }]
       }
     }
-    podAntiAffinity = {
-      preferredDuringSchedulingIgnoredDuringExecution = [{
-        weight = 100
-        podAffinityTerm = {
-          labelSelector = {
-            match_labels = {
-              "app.kubernetes.io/name"    = local.chart_name
-              "app.kubernetes.io/part-of" = local.chart_name
-            }
-          }
-          topologyKey = "kubernetes.io/hostname"
-        }
-      }]
-    }
+    podAntiAffinity = {}
+    # podAntiAffinity = {
+    #   preferredDuringSchedulingIgnoredDuringExecution = [{
+    #     weight = 100
+    #     podAffinityTerm = {
+    #       labelSelector = {
+    #         match_labels = {
+    #           "app.kubernetes.io/name"    = local.chart_name
+    #           "app.kubernetes.io/part-of" = local.chart_name
+    #         }
+    #       }
+    #       topologyKey = "kubernetes.io/hostname"
+    #     }
+    #   }]
+    # }
   }
 }
 
@@ -126,11 +128,26 @@ module "default-ws" {
     org_name   = "coder"
     image_repo = var.image_repo
     image_tag  = var.image_tag
-    rep_cnt    = 50
+    rep_cnt    = 1
+    ws_extra_rules = [{
+      apiGroups = [""]
+      resources = ["configmaps"]
+      verbs = [
+        "create",
+        "delete",
+        "deletecollection",
+        "get",
+        "list",
+        "patch",
+        "update",
+        "watch"
+      ]
+    }]
     env_vars = {
       CODER_PROMETHEUS_ENABLE              = "true"
       CODER_PROMETHEUS_COLLECT_AGENT_STATS = "true"
       CODER_PROMETHEUS_COLLECT_DB_METRICS  = "true"
+      # TF_VAR_namespace = "coder-ws"
     }
   }
 
@@ -162,11 +179,52 @@ module "experiment-ws" {
     org_name   = "experiment"
     image_repo = var.image_repo
     image_tag  = var.image_tag
-    rep_cnt    = 4
+    rep_cnt    = 1
+    ws_extra_rules = [{
+      apiGroups = [""]
+      resources = ["configmaps"]
+      verbs = [
+        "create",
+        "delete",
+        "deletecollection",
+        "get",
+        "list",
+        "patch",
+        "update",
+        "watch"
+      ]
+    },{
+      apiGroups = [""]
+      resources = ["serviceaccounts"]
+      verbs = [
+        "create",
+        "delete",
+        "deletecollection",
+        "get",
+        "list",
+        "patch",
+        "update",
+        "watch"
+      ]
+    },{
+      apiGroups = ["rbac.authorization.k8s.io"]
+      resources = ["clusterrolebindings"]
+      verbs = [
+        "create",
+        "delete",
+        "deletecollection",
+        "get",
+        "list",
+        "patch",
+        "update",
+        "watch"
+      ]
+    }]
     env_vars = {
       CODER_PROMETHEUS_ENABLE              = "true"
       CODER_PROMETHEUS_COLLECT_AGENT_STATS = "true"
       CODER_PROMETHEUS_COLLECT_DB_METRICS  = "true"
+      # TF_VAR_namespace = "coder-ws-experiment"
     }
   }
 
@@ -179,6 +237,25 @@ module "experiment-ws" {
   tolerations     = local.tolerations
   topology_spread = local.topology_spread
   affinity        = local.affinity
+}
+
+data "aws_iam_policy_document" "eks" {
+  statement {
+    effect = "Allow"
+    actions = [
+      "eks:*",
+      "iam:*"
+    ]
+    resources = ["*"]
+  }
+}
+
+module "eks-admin-policy" {
+  source      = "../../../../../modules/security/policy"
+  name        = "demo-ws-eks-policy"
+  path        = "/"
+  description = "Coder External Demo-Provisioner Policy (EKS)"
+  policy_json = data.aws_iam_policy_document.eks.json
 }
 
 module "demo-ws" {
@@ -198,17 +275,61 @@ module "demo-ws" {
     org_name   = "demo"
     image_repo = var.image_repo
     image_tag  = var.image_tag
-    rep_cnt    = 4
+    rep_cnt    = 1
+    ws_extra_rules = [{
+      apiGroups = [""]
+      resources = ["configmaps"]
+      verbs = [
+        "create",
+        "delete",
+        "deletecollection",
+        "get",
+        "list",
+        "patch",
+        "update",
+        "watch"
+      ]
+    },{
+      apiGroups = [""]
+      resources = ["serviceaccounts"]
+      verbs = [
+        "create",
+        "delete",
+        "deletecollection",
+        "get",
+        "list",
+        "patch",
+        "update",
+        "watch"
+      ]
+    },{
+      apiGroups = ["rbac.authorization.k8s.io"]
+      resources = ["clusterrolebindings"]
+      verbs = [
+        "create",
+        "delete",
+        "deletecollection",
+        "get",
+        "list",
+        "patch",
+        "update",
+        "watch"
+      ]
+    }]
     env_vars = {
       CODER_PROMETHEUS_ENABLE              = "true"
       CODER_PROMETHEUS_COLLECT_AGENT_STATS = "true"
       CODER_PROMETHEUS_COLLECT_DB_METRICS  = "true"
+      # TF_VAR_namespace = "coder-ws-experiment"
     }
   }
 
   svc_acc = {
     create = true
     name   = "coder"
+    iam_policy_arns = {
+      "EKSAdminPolicy" = module.eks-admin-policy.policy_arn
+    }
   }
 
   node_selector   = local.node_selector
@@ -217,15 +338,58 @@ module "demo-ws" {
   affinity        = local.affinity
 }
 
+# resource "kubernetes_cluster_role_v1" "coder-ws-demo" {
+#   metadata {
+#     name = "coder-ws-demo"
+#   }
+
+#   rule {
+#     api_groups = ["rbac.authorization.k8s.io"]
+#     resources = ["clusterrolebindings"]
+#     verbs = [
+#       "create",
+#       "delete",
+#       "deletecollection",
+#       "get",
+#       "list",
+#       "patch",
+#       "update",
+#       "watch"
+#     ]
+#   }
+# }
+
+# resource "kubernetes_cluster_role_binding_v1" "coder-cluster-workspace-perms" {
+
+#   depends_on = [module.demo-ws]
+
+#   metadata {
+#     name = "coder-cluster-workspace-perms"
+#   }
+
+#   subject {
+#     kind = "ServiceAccount"
+#     name = "coder"
+#     namespace = "coder-ws-demo"
+#   }
+
+#   role_ref {
+#     api_group = "rbac.authorization.k8s.io"
+#     kind = "ClusterRole"
+#     name = kubernetes_cluster_role_v1.coder-ws-demo.metadata[0].name
+#   }
+# }
+
 module "coder-logstream-kube" {
   
   source = "../../../../../modules/k8s/bootstrap/coder-logstream"
 
   release_name              = "coder-logstream-kube"
-  chart_version             = "0.0.14"
+  chart_version             = "0.0.15"
   chart_name                = "coder-logstream-kube"
 
   namespace = "coder-logstream-kube"
+  image_tag = "v0.0.15"
 
   coder = {
     access_url = var.coder_access_url

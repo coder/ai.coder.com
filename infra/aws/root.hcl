@@ -135,7 +135,7 @@ generate "provider" {
       required_providers {
         aws = {
           source  = "hashicorp/aws"
-          version = "~> 6.32.1"
+          version = "~> 6.52.0"
         }
         helm = {
           source  = "hashicorp/helm"
@@ -144,6 +144,10 @@ generate "provider" {
         kubernetes = {
           source = "hashicorp/kubernetes"
           version = "~> 3.0.1"
+        }
+        grafana = {
+          source = "grafana/grafana"
+          version = "4.28.1"
         }
         external = {
           source = "hashicorp/external"
@@ -172,6 +176,10 @@ generate "provider" {
         coderd = {
           source  = "coder/coderd"
           version = "~> 0.0.12"
+        }
+        argocd = {
+          source  = "argoproj-labs/argocd"
+          version = "~> 7.15.3"
         }
       }
     }

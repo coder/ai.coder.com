@@ -28,4 +28,17 @@ module "metrics-server" {
     key      = "CriticalAddonsOnly"
     operator = "Exists"
   }]
+  affinity = {
+    nodeAffinity = {
+      requiredDuringSchedulingIgnoredDuringExecution = {
+        nodeSelectorTerms = [{
+          matchExpressions = [{
+            key = "karpenter.sh/nodepool"
+            operator = "In"
+            values = ["system"]
+          }]
+        }]
+      }
+    }
+  }
 }

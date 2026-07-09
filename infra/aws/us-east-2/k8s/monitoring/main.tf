@@ -19,10 +19,6 @@ data "aws_db_instance" "coder" {
   db_instance_identifier = var.coder_db_rds_id
 }
 
-data "aws_db_instance" "grafana" {
-  db_instance_identifier = var.grafana_db_rds_id
-}
-
 data "aws_s3_bucket" "loki" {
   bucket = var.loki_s3_bucket_name
 }
@@ -79,7 +75,7 @@ resource "kubernetes_manifest" "cert" {
     }
     spec = {
       secretName  = local.ssl_vol_friendly_name
-      commonName  = local.common_name
+      # commonName  = local.common_name
       dnsNames    = [local.common_name]
       duration    = "${90 * 24}h"
       renewBefore = "8h"
@@ -94,6 +90,74 @@ resource "kubernetes_manifest" "cert" {
       }
     }
   }
+}
+
+data "kubernetes_secret_v1" "cert" {
+  metadata {
+    name = kubernetes_manifest.cert.manifest.spec.secretName
+    namespace = module.monitoring.namespace
+  }
+}
+
+locals {
+  pem_blocks = [
+    for block in regexall(
+      "-----BEGIN CERTIFICATE-----[\\s\\S]*?-----END CERTIFICATE-----",
+      data.kubernetes_secret_v1.cert.data["tls.crt"]
+    ) : block
+  ]
+}
+
+resource "kubernetes_secret_v1" "acm-cert" {
+  metadata {
+    name = "acm-${kubernetes_manifest.cert.manifest.spec.secretName}"
+    namespace = module.monitoring.namespace
+  }
+  data = {
+    "leaf.crt" = local.pem_blocks[0]
+    "intermediate.crt" = join("\n", slice(local.pem_blocks, 1, length(local.pem_blocks)))
+    "tls.key" = data.kubernetes_secret_v1.cert.data["tls.key"]
+  }
+}
+
+resource "kubernetes_manifest" "acm-cert" {
+  field_manager {
+    force_conflicts = true
+  }
+  manifest = {
+    apiVersion = "acm.services.k8s.aws/v1alpha1"
+    kind = "Certificate"
+    metadata = {
+      name      = local.ssl_vol_friendly_name
+      namespace = module.monitoring.namespace
+    }
+    spec = {
+      certificate = {
+        key = "leaf.crt"
+        name = kubernetes_secret_v1.acm-cert.metadata[0].name
+        namespace = module.monitoring.namespace
+      }
+      certificateChain = {
+        key = "intermediate.crt"
+        name = kubernetes_secret_v1.acm-cert.metadata[0].name
+        namespace = module.monitoring.namespace
+      }
+      privateKey = {
+        key = "tls.key"
+        name = kubernetes_secret_v1.acm-cert.metadata[0].name
+        namespace = module.monitoring.namespace
+      }
+    }
+  }
+}
+
+data "aws_acm_certificate" "grafana" {
+
+  depends_on = [kubernetes_manifest.acm-cert]
+
+  region = "us-east-1" # CloudFront requirement
+  domain   = var.domain_name
+  statuses = ["ISSUED"]
 }
 
 locals {
@@ -208,10 +272,13 @@ module "monitoring" {
   cluster_name              = var.cluster_name
   cluster_oidc_provider_arn = data.aws_iam_openid_connect_provider.this.arn
 
+  vpc_name = var.vpc_name
+
   namespace = var.namespace
 
   lb_class      = "service.k8s.aws/nlb"
   domain_name = var.domain_name
+  acm_certificate_arn = data.aws_acm_certificate.grafana.arn
 
   coder = {
     db = {
@@ -229,14 +296,14 @@ module "monitoring" {
     }
   }
   grafana = {
+    replicas = 0
     admin = {
       username = var.grafana_admin_username
       password = var.grafana_admin_password
     }
-    replicas = 2
     db = {
-      host     = data.aws_db_instance.grafana.endpoint
-      database = data.aws_db_instance.grafana.db_name
+      host     = "" # data.aws_db_instance.grafana.endpoint 
+      database = "" # data.aws_db_instance.grafana.db_name
       password = var.grafana_db_password
       username = var.grafana_db_user
     }
@@ -302,10 +369,18 @@ module "monitoring" {
   }
   prometheus = {
     ooo_window = "1800s"
+    readiness = {
+      period = 60
+      failure_threshold = 100
+    }
+    liveness = {
+      period = 60
+      failure_threshold = 100
+    }
     pv = {
       enabled = true
       storageClass = "gp3-automode"
-      size = "100Gi"
+      size = "512Mi"
     }
     rsrc = { # Let it be unbounded and run on it's own Node.
       requests = {

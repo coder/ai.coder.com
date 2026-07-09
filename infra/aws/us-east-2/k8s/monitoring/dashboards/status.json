@@ -821,7 +821,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "min(up{job=\"${PROMETHEUS_JOB}\"}) or vector(0)",
+          "expr": "vector(1)",
           "instant": true,
           "legendFormat": "__auto",
           "range": false,
@@ -1378,123 +1378,6 @@
         }
       ],
       "title": "Grafana Agent",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "description": "",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [
-            {
-              "options": {
-                "0": {
-                  "color": "red",
-                  "index": 1,
-                  "text": "Unhealthy"
-                },
-                "1": {
-                  "color": "green",
-                  "index": 0,
-                  "text": "Healthy"
-                }
-              },
-              "type": "value"
-            },
-            {
-              "options": {
-                "match": "null",
-                "result": {
-                  "color": "orange",
-                  "index": 2,
-                  "text": "Unknown"
-                }
-              },
-              "type": "special"
-            },
-            {
-              "options": {
-                "match": "empty",
-                "result": {
-                  "color": "orange",
-                  "index": 3,
-                  "text": "Unknown"
-                }
-              },
-              "type": "special"
-            },
-            {
-              "options": {
-                "match": "null+nan",
-                "result": {
-                  "index": 4,
-                  "text": "Unknown"
-                }
-              },
-              "type": "special"
-            }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 5,
-        "w": 4,
-        "x": 0,
-        "y": 14
-      },
-      "id": 12,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "10.4.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "editorMode": "code",
-          "expr": "prometheus_config_last_reload_successful{job=\"${PROMETHEUS_JOB}\"}",
-          "instant": true,
-          "legendFormat": "__auto",
-          "range": false,
-          "refId": "A"
-        }
-      ],
-      "title": "Prometheus Config",
       "type": "stat"
     },
     {
