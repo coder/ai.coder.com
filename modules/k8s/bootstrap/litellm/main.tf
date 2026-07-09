@@ -57,6 +57,15 @@ data "aws_eks_cluster_auth" "this" {
   name = var.cluster_name
 }
 
+data "aws_caller_identity" "this" {}
+
+data "aws_region" "this" {}
+
+locals {
+  account_id = data.aws_caller_identity.this.account_id
+  region = data.aws_region.this.region
+}
+
 variable "tags" {
   type = map(string)
   default = {}
@@ -100,6 +109,8 @@ variable "db" {
     admin_password = optional(string, "NoTaGrEaTpAsSwOrD")
     user_password  = optional(string, "NoTaGrEaTpAsSwOrD")
     endpoint = optional(string, "localhost")
+    port = optional(number, 5432)
+    auth_type = optional(string, "postgres")
   })
   default = {
     use_existing = false
@@ -109,6 +120,8 @@ variable "db" {
     admin_password = "NoTaGrEaTpAsSwOrD"
     user_password = "NoTaGrEaTpAsSwOrD"
     endpoint = "localhost"
+    port = 5432
+    auth_type = "postgres"
   }
   sensitive = true
 }
@@ -157,6 +170,22 @@ variable "mounts" {
   default = []
 }
 
+variable "resource_request" {
+  type = object({
+    cpu    = string
+    memory = string
+  })
+  default = {
+    cpu    = "2000m"
+    memory = "4Gi"
+  }
+}
+
+variable "resource_limit" {
+  type = map(any)
+  default = {}
+}
+
 variable "autoscaling_min_replicas" {
   type    = number
   default = 1
@@ -199,12 +228,21 @@ variable "affinity" {
   default = {}
 }
 
+module "rds-policy" {
+  source      = "../../../security/policy"
+  name        = "${local.rds_db_name}-${var.db.db_name}"
+  path         = "/${var.cluster_name}/${local.region}/"
+  description = "LiteLLM DB IAM Access Policy"
+  policy_json = data.aws_iam_policy_document.rds.json
+}
+
 module "oidc-role" {
   source       = "../../../security/role/access-entry"
   name         = "LiteLLM-Bedrock"
   cluster_name = var.cluster_name
   policy_arns = {
     "AmazonBedrockLimitedAccess" = "arn:aws:iam::aws:policy/AmazonBedrockLimitedAccess"
+    "LiteLLMRDSDBPolicy" = module.rds-policy.policy_arn
   }
   cluster_policy_arns = {
     "AmazonEKSClusterAdminPolicy" = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
@@ -303,7 +341,7 @@ resource "helm_release" "litellm" {
   wait_for_jobs    = false
   reuse_values     = false
   version          = var.chart_version
-  timeout          = 120 # in seconds
+  timeout          = 360 # in seconds
   max_history = 20
 
   values = [yamlencode({
@@ -341,6 +379,10 @@ resource "helm_release" "litellm" {
 
     proxy_config = var.proxy_config
 
+    resources =  {
+      requests = var.resource_request
+      limits   = var.resource_limit
+    }
     autoscaling = {
       enabled = true
       minReplicas = var.autoscaling_min_replicas
@@ -354,11 +396,11 @@ resource "helm_release" "litellm" {
     tolerations = var.tolerations
     affinity = var.affinity
 
-    db = {
+    db = merge({
       deployStandalone = var.db.endpoint == "localhost"
       useExisting = nonsensitive(var.db.use_existing)
       database = nonsensitive(var.db.db_name)
-      url = "postgresql://$(DATABASE_USERNAME):$(DATABASE_PASSWORD)@$(DATABASE_HOST)/$(DATABASE_NAME)"
+      
       secret = {
         name = kubernetes_secret_v1.db-auth.metadata[0].name
         usernameKey = "username"
@@ -367,7 +409,11 @@ resource "helm_release" "litellm" {
         endpointKey = "endpoint"
       }
       useStackgresOperator = false
-    }
+    }, var.db.auth_type == "awsiamrds" ? {
+      url = "postgresql://$(DATABASE_USERNAME)@$(DATABASE_HOST)/$(DATABASE_NAME):$(DATABASE_PORT)"
+    }: {
+      url = "postgresql://$(DATABASE_USERNAME):$(DATABASE_PASSWORD)@$(DATABASE_HOST):$(DATABASE_PORT)/$(DATABASE_NAME)"
+    })
 
     # Settings for Bitnami postgresql chart (if db.deployStandalone is true, ignored otherwise)
     postgresql = {
@@ -418,7 +464,12 @@ resource "helm_release" "litellm" {
 
     envVars = merge({ 
       NO_DOCS = "False"
-    }, var.mount_ssl.enable ? {
+      DATABASE_PORT = var.db.port
+      DATABASE_USER = var.db.username
+    }, var.db.auth_type == "awsiamrds" ? {
+      IAM_TOKEN_DB_AUTH = "True"
+    } : {},
+    var.mount_ssl.enable ? {
       SSL_CERT_FILE = "${var.mount_ssl.path}/${var.mount_ssl.pem_name}"
       SSL_KEYFILE_PATH = "${var.mount_ssl.path}/${var.mount_ssl.key_name}"
       SSL_CERTFILE_PATH = "${var.mount_ssl.path}/${var.mount_ssl.crt_name}"

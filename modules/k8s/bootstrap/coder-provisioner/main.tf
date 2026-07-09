@@ -56,6 +56,7 @@ variable "coder" {
     prov_secret_key = optional(string, "key")
     org_name = optional(string, "coder")
     ws_ns = optional(list(string), [])
+    ws_extra_rules = optional(list(any), [])
     image_repo = optional(string, "ghcr.io/coder/coder")
     image_tag = optional(string, "latest")
     image_pull_policy = optional(string, "IfNotPresent")
@@ -78,6 +79,7 @@ variable "svc_acc" {
     create = optional(bool, true)
     name = optional(string, "coder-provisioner")
     annots = optional(map(string), {})
+    iam_policy_arns = optional(map(string), {})
   })
   default = {
     create = true
@@ -166,10 +168,10 @@ module "oidc-role" {
   source       = "../../../security/role/access-entry"
   name         = local.role_name
   cluster_name = var.cluster_name
-  policy_arns = {
+  policy_arns = merge({
     "AmazonEC2ReadOnlyAccess" = "arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess"
     "TFProvisionerPolicy"     = module.iam-policy.policy_arn
-  }
+  }, var.svc_acc.iam_policy_arns)
   cluster_policy_arns = {}
   oidc_principals = {
     "${var.cluster_oidc_provider_arn}" = ["system:serviceaccount:*:*"]
@@ -221,7 +223,8 @@ resource "helm_release" "coder-provisioner" {
   name             = var.release_name
   namespace        = kubernetes_namespace_v1.this.metadata[0].name
   chart            = var.chart_name
-  repository       = "https://helm.coder.com/v2"
+  # repository       = "https://helm.coder.com/v2"
+  repository       = "oci://ghcr.io/jatcod3r/charts"
   create_namespace = false
   upgrade_install  = true
   skip_crds        = false
@@ -244,6 +247,7 @@ resource "helm_release" "coder-provisioner" {
         name              = var.svc_acc.name
         disableCreate     = !var.svc_acc.create
         workspaceNamespaces = [ for v in var.coder.ws_ns : { name = v  } ]
+        extraRules = var.coder.ws_extra_rules
         annotations = merge({
           "eks.amazonaws.com/role-arn" = module.oidc-role.role_arn
         }, var.svc_acc.annots)
@@ -257,6 +261,35 @@ resource "helm_release" "coder-provisioner" {
           CODER_URL = var.coder.access_url
         }, var.coder.env_vars) : { name = k, value = v }
       ]
+      volumeClaimTemplates = [{
+        metadata = {
+          name = "cache"
+        }
+        spec = {
+          accessModes = ["ReadWriteOnce"]
+          storageClassName = "gp3-automode"
+          resources = {
+            requests = {
+              storage = "10Gi"
+            }
+          }
+        }
+      }]
+      # volumes = [{
+      #   name = "cache"
+      #   persistentVolumeClaim = {
+      #     claimName = kubernetes_persistent_volume_claim_v1.cache.metadata[0].name
+      #     readOnly = false
+      #   }
+      # }]
+      volumeMounts = [{
+        mountPath = "/home/coder/.cache/coder"
+        name = "cache"
+        readOnly = false
+      }]
+      podSecurityContext = {
+        fsGroup = 1000
+      }
       securityContext = {
         runAsNonRoot           = true
         runAsUser              = 1000
@@ -284,6 +317,25 @@ resource "helm_release" "coder-provisioner" {
     }
   })]
 }
+
+# resource "kubernetes_persistent_volume_claim_v1" "cache" {
+#   metadata {
+#     name        = "cache"
+#     namespace   = var.namespace
+#     labels      = {}
+#     annotations = {}
+#   }
+#   wait_until_bound = false
+#   spec {
+#     storage_class_name = "gp3-automode"
+#     access_modes = ["ReadWriteOncePod"]
+#     resources {
+#       requests = {
+#         storage = "50Gi"
+#       }
+#     }
+#   }
+# }
 
 output "coderd_organization_id" {
 

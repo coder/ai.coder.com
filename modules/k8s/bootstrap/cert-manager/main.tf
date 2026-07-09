@@ -52,6 +52,11 @@ variable "tolerations" {
   default = []
 }
 
+variable "affinity" {
+  type = map(any)
+  default = {}
+}
+
 ##
 # ACME Certificate Inputs
 ##
@@ -95,14 +100,18 @@ resource "helm_release" "cert-manager" {
     }
     nodeSelector = var.node_selector
     tolerations = var.tolerations
+    affinity = var.affinity
     webhook = {
       tolerations = var.tolerations
+      affinity = var.affinity
     }
     cainjector = {
       tolerations = var.tolerations
+      affinity = var.affinity
     }
     startupapicheck = {
       tolerations = var.tolerations
+      affinity = var.affinity
     }
   })]
 }
