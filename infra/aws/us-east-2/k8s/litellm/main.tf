@@ -36,294 +36,407 @@ provider "helm" {
 }
 
 locals {
-  common_name = replace(replace(var.host_name, "https://", ""), "http://", "")
+  common_name           = replace(replace(var.host_name, "https://", ""), "http://", "")
   ssl_vol_friendly_name = replace(local.common_name, ".", "-")
 }
 
-resource "kubernetes_manifest" "cert" {
+# resource "kubernetes_manifest" "cert" {
 
-  field_manager {
-    force_conflicts = true
-  }
-  manifest = {
-    apiVersion = "cert-manager.io/v1"
-    kind       = "Certificate"
-    metadata = {
-      labels    = {} # var.cert_labels
-      name      = local.ssl_vol_friendly_name
-      namespace = module.litellm.namespace
-    }
-    spec = {
-      secretName  = local.ssl_vol_friendly_name
-      commonName  = local.common_name
-      dnsNames    = [local.common_name]
-      duration    = "${90 * 24}h"
-      renewBefore = "8h"
-      additionalOutputFormats = [{
-        type = "CombinedPEM"
-      },{
-        type = "DER"
-      }]
-      issuerRef = {
-        kind = "ClusterIssuer"
-        name = "issuer"
-      }
-    }
-  }
-}
+#   field_manager {
+#     force_conflicts = true
+#   }
+#   manifest = {
+#     apiVersion = "cert-manager.io/v1"
+#     kind       = "Certificate"
+#     metadata = {
+#       labels    = {} # var.cert_labels
+#       name      = local.ssl_vol_friendly_name
+#       namespace = module.litellm.namespace
+#     }
+#     spec = {
+#       secretName  = local.ssl_vol_friendly_name
+#       commonName  = local.common_name
+#       dnsNames    = [local.common_name]
+#       duration    = "${90 * 24}h"
+#       renewBefore = "8h"
+#       additionalOutputFormats = [{
+#         type = "CombinedPEM"
+#         }, {
+#         type = "DER"
+#       }]
+#       issuerRef = {
+#         kind = "ClusterIssuer"
+#         name = "issuer"
+#       }
+#     }
+#   }
+# }
 
-resource "kubernetes_secret_v1" "gcloud" {
-  metadata {
-    name      = "gcloud-auth"
-    namespace = module.litellm.namespace
-    labels    = {}
-  }
-  data = {
-    "service_account.json" = var.gcloud_auth
-  }
-}
+# resource "kubernetes_secret_v1" "gcloud" {
+#   metadata {
+#     name      = "gcloud-auth"
+#     namespace = module.litellm.namespace
+#     labels    = {}
+#   }
+#   data = {
+#     "service_account.json" = var.gcloud_auth
+#   }
+# }
 
 locals {
-  azs = slice(var.azs, 0, 1)
+  azs      = var.azs
   pub_subs = [for az in local.azs : "${var.vpc_name}-public-${data.aws_region.this.region}${az}"]
   # App port is actually being ignored on the LiteLLM app-level. Statically set to 4000
-  app_port = 4000
-  # release_name = "coder"
-  # chart_name = "coder"
-  # namespace = "coder"
+  app_port     = 4000
+  release_name = "litellm"
+  chart_name   = "litellm-helm"
+  namespace    = "litellm"
 }
 
-resource "aws_eip" "litellm" {
-  count = length(local.pub_subs)
-  domain           = "vpc"
-  public_ipv4_pool = "amazon"
-  tags = {
-    Name = "litellm-eip-${count.index}"
-  }
-}
+# resource "kubernetes_pod_disruption_budget_v1" "litellm" {
+#   metadata {
+#     name      = local.release_name
+#     namespace = module.litellm.namespace
+#   }
+#   spec {
+#     # Avoid disrupting ongoing connections.
+#     max_unavailable = 1
+#     selector {
+#       match_labels = {
+#         "app.kubernetes.io/instance" = local.release_name
+#         "app.kubernetes.io/name"     = local.release_name
+#       }
+#     }
+#   }
+# }
 
-module "litellm" {
-  source = "../../../../../modules/k8s/bootstrap/litellm"
+# resource "aws_eip" "litellm" {
+#   count            = length(local.pub_subs)
+#   domain           = "vpc"
+#   public_ipv4_pool = "amazon"
+#   tags = {
+#     Name = "litellm-eip-${count.index}"
+#   }
+# }
 
-  cluster_name              = var.cluster_name
-  cluster_oidc_provider_arn = data.aws_iam_openid_connect_provider.this.arn
-  namespace                 = var.addon_namespace
+# module "litellm" {
+#   source = "../../../../../modules/k8s/bootstrap/litellm"
+
+#   release_name = local.release_name
+#   chart_name   = local.chart_name
   
-  access_url                 = var.host_name
-  replicas                    = 8
+#   image_config = {
+#     repository = "ghcr.io/berriai/litellm-database"
+#     # tag = "v1.82.0.patch5"
+#     tag = "v1.83.7-stable.patch.1"
+#   }
 
-  litellm_master_key          = var.litellm_master_key
+#   cluster_name              = var.cluster_name
+#   cluster_oidc_provider_arn = data.aws_iam_openid_connect_provider.this.arn
+#   namespace                 = var.addon_namespace
 
-  service_lb_class = "service.k8s.aws/nlb"
-  svc_port = local.app_port
-  svc_annots = {
-    "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type"      = "ip"
-    "service.beta.kubernetes.io/aws-load-balancer-scheme"               = "internet-facing"
-    "service.beta.kubernetes.io/aws-load-balancer-attributes"           = "deletion_protection.enabled=false"
-    "service.beta.kubernetes.io/aws-load-balancer-healthcheck-protocol" = "https"
-    "service.beta.kubernetes.io/aws-load-balancer-healthcheck-port" = "${local.app_port}"
-    "service.beta.kubernetes.io/aws-load-balancer-eip-allocations"      = join(",", aws_eip.litellm.*.allocation_id)
-    "service.beta.kubernetes.io/aws-load-balancer-subnets"              = join(",", local.pub_subs)
-  }
-  node_selector = {}
-  tolerations = [{
-    key = "CriticalAddonsOnly"
-    operator = "Exists"
-  },{
-    key = "dedicated"
-    value = "general"
-    effect = "NoSchedule"
-  }]
-  affinity = {
-    nodeAffinity = {
-      requiredDuringSchedulingIgnoredDuringExecution = {
-        nodeSelectorTerms = [{
-          matchExpressions = [
-            {
-              key = "topology.kubernetes.io/zone"
-              operator = "In"
-              values = [for az in local.azs : "${data.aws_region.this.region}${az}"]
-            },
-            {
-              key = "eks.amazonaws.com/compute-type",
-              operator = "In",
-              values = ["auto"]
-            }
-          ] 
-        }]
-      }
-    }
-  }
+#   replicas                 = length(aws_eip.litellm.*.allocation_id)
+#   autoscaling_min_replicas = length(aws_eip.litellm.*.allocation_id)
+#   autoscaling_max_replicas = 12
 
-  db = {
-    use_existing = true
-    db_name = "litellm"
-    endpoint = data.aws_db_instance.litellm.endpoint
-    username = "litellm"
-    admin_password = var.db_admin_password
-    user_password = var.db_user_password
-  }
+#   resource_limit = {
+#     cpu    = "2"
+#     memory = "2Gi"
+#   }
+#   resource_request = {
+#     cpu    = "500m"
+#     memory = "2Gi"
+#   }
 
-  proxy_config = {
-    general_settings = {
-      master_key = "os.environ/PROXY_MASTER_KEY"
+#   litellm_master_key = var.litellm_master_key
 
-      store_model_in_db = true
-      store_prompts_in_spend_logs = true
-      proxy_batch_write_at = 60
-      database_connection_pool_limit = 10
+#   service_lb_class = "service.k8s.aws/nlb"
+#   svc_port         = local.app_port
+#   svc_annots = {
+#     "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type"      = "ip"
+#     "service.beta.kubernetes.io/aws-load-balancer-scheme"               = "internet-facing"
+#     "service.beta.kubernetes.io/aws-load-balancer-attributes"           = "deletion_protection.enabled=false,load_balancing.cross_zone.enabled=true"
+#     "service.beta.kubernetes.io/aws-load-balancer-healthcheck-protocol" = "https"
+#     "service.beta.kubernetes.io/aws-load-balancer-healthcheck-port"     = "${local.app_port}"
+#     "service.beta.kubernetes.io/aws-load-balancer-eip-allocations"      = join(",", aws_eip.litellm.*.allocation_id)
+#     "service.beta.kubernetes.io/aws-load-balancer-subnets"              = join(",", local.pub_subs)
+#   }
+#   node_selector = {}
+#   tolerations = [{
+#     key    = "platform"
+#     value  = "litellm"
+#     effect = "NoSchedule"
+#   }]
+#   topology_spread = []
+#   # topology_spread = [{
+#   #   maxSkew           = 1
+#   #   topologyKey       = "topology.kubernetes.io/zone"
+#   #   whenUnsatisfiable = "DoNotSchedule"
+#   #   labelSelector = {
+#   #     matchLabels = {
+#   #       "app.kubernetes.io/name"    = local.release_name
+#   #     }
+#   #   }
+#   #   matchLabelKeys = [
+#   #     "app.kubernetes.io/instance"
+#   #   ]
+#   # }]
+#   affinity = {
+#     nodeAffinity = {
+#       requiredDuringSchedulingIgnoredDuringExecution = {
+#         nodeSelectorTerms = [{
+#           matchExpressions = [
+#             {
+#               key      = "topology.kubernetes.io/zone"
+#               operator = "In"
+#               values   = [for az in local.azs : "${data.aws_region.this.region}${az}"]
+#             },
+#             {
+#               key      = "node.coder.io/used-for",
+#               operator = "In",
+#               values   = ["litellm"]
+#             }
+#           ]
+#         }]
+#       }
+#     }
+#     podAntiAffinity = {
+#       preferredDuringSchedulingIgnoredDuringExecution = []
+#       requiredDuringSchedulingIgnoredDuringExecution = []
+#       # requiredDuringSchedulingIgnoredDuringExecution = [{
+#       #   labelSelector = {
+#       #     matchExpressions = [{
+#       #       key = "app.kubernetes.io/instance"
+#       #       operator = "In"
+#       #       values = [local.release_name]
+#       #     }]
+#       #   }
+#       #   topologyKey = "kubernetes.io/hostname"
+#       # }]
+#     }
+#   }
 
-      disable_error_logs = true
-      allow_requests_on_db_unavailable = true
-    }
+#   db = {
+#     use_existing   = true
+#     db_name        = "litellm"
+#     endpoint       = split(":", data.aws_db_instance.litellm.endpoint)[0]
+#     username       = "litellm"
+#     admin_password = var.db_admin_password
+#     user_password  = var.db_user_password
+#     auth_type = "awsiamrds"
+#   }
 
-    litellm_settings = {
-      allowed_fails   = 3
-      cooldown_time   = 30
-      num_retries     = 1
-      request_timeout = 45
-      set_verbose = true
-      json_logs = false
-      cache = false
-    }
+#   proxy_config = {
+#     general_settings = {
+#       master_key = "os.environ/PROXY_MASTER_KEY"
 
-    model_list = [
-      {
-        model_name = "anthropic.claude-opus-4-5-20251101-v1:0"
-        litellm_params = {
-          max_parallel_requests = 50
-          model                 = "vertex_ai/claude-opus-4-5@20251101"
-          rpm                   = 450
-          tpm                   = 6000000
-          vertex_location       = "us-east5"
-          vertex_project = "coder-vertex-demos"
-          vertex_credentials = "/tmp/gcloud/service_account.json"
-        }
-      },
-      {
-        model_name = "anthropic.claude-opus-4-5-20251101-v1:0"
-        litellm_params = {
-          max_parallel_requests = 50
-          model                 = "vertex_ai/claude-opus-4-5@20251101"
-          rpm                   = 450
-          tpm                   = 6000000
-          vertex_location       = "europe-west1"
-          vertex_project = "coder-vertex-demos"
-          vertex_credentials = "/tmp/gcloud/service_account.json"
-        }
-      },
-      {
-        model_name = "anthropic.claude-haiku-4-5-20251001-v1:0"
-        litellm_params = {
-          max_parallel_requests = 50
-          model                 = "vertex_ai/claude-haiku-4-5@20251001"
-          rpm                   = 3000
-          tpm                   = 3000000
-          vertex_location       = "us-east5"
-          vertex_project = "coder-vertex-demos"
-          vertex_credentials = "/tmp/gcloud/service_account.json"
-        }
-      },
-      {
-        model_name = "anthropic.claude-haiku-4-5-20251001-v1:0"
-        litellm_params = {
-          max_parallel_requests = 50
-          model                 = "vertex_ai/claude-haiku-4-5@20251001"
-          rpm                   = 3600
-          tpm                   = 3600000
-          vertex_location       = "europe-west1"
-          vertex_project = "coder-vertex-demos"
-          vertex_credentials = "/tmp/gcloud/service_account.json"
-        }
-      },
-      {
-        model_name = "claude-opus-4-5"
-        litellm_params = {
-          max_parallel_requests = 50
-          model                 = "vertex_ai/claude-opus-4-5@20251101"
-          rpm                   = 450
-          tpm                   = 6000000
-          vertex_location       = "us-east5"
-          vertex_project = "coder-vertex-demos"
-          vertex_credentials = "/tmp/gcloud/service_account.json"
-        }
-      },
-      {
-        model_name = "claude-opus-4-5"
-        litellm_params = {
-          max_parallel_requests = 50
-          model                 = "vertex_ai/claude-opus-4-5@20251101"
-          rpm                   = 450
-          tpm                   = 6000000
-          vertex_location       = "europe-west1"
-          vertex_project = "coder-vertex-demos"
-          vertex_credentials = "/tmp/gcloud/service_account.json"
-        }
-      },
-      {
-        model_name = "claude-sonnet-4-5"
-        litellm_params = {
-          max_parallel_requests = 50
-          model                 = "vertex_ai/claude-sonnet-4-5@20250929"
-          rpm                   = 3000
-          tpm                   = 3000000
-          vertex_location       = "us-east5"
-          vertex_project = "coder-vertex-demos"
-          vertex_credentials = "/tmp/gcloud/service_account.json"
-        }
-      },
-      {
-        model_name = "claude-sonnet-4-5"
-        litellm_params = {
-          max_parallel_requests = 50
-          model                 = "vertex_ai/claude-sonnet-4-5@20250929"
-          rpm                   = 3600
-          tpm                   = 3600000
-          vertex_location       = "europe-west1"
-          vertex_project = "coder-vertex-demos"
-          vertex_credentials = "/tmp/gcloud/service_account.json"
-        }
-      },
-      {
-        model_name = "claude-haiku-4-5"
-        litellm_params = {
-          max_parallel_requests = 50
-          model                 = "vertex_ai/claude-haiku-4-5@20251001"
-          rpm                   = 3000
-          tpm                   = 3000000
-          vertex_location       = "us-east5"
-          vertex_project = "coder-vertex-demos"
-          vertex_credentials = "/tmp/gcloud/service_account.json"
-        }
-      },
-      {
-        model_name = "claude-haiku-4-5"
-        litellm_params = {
-          max_parallel_requests = 50
-          model                 = "vertex_ai/claude-haiku-4-5@20251001"
-          rpm                   = 3600
-          tpm                   = 3600000
-          vertex_location       = "europe-west1"
-          vertex_project = "coder-vertex-demos"
-          vertex_credentials = "/tmp/gcloud/service_account.json"
-        }
-      }
-    ]
+#       store_model_in_db              = true
+#       store_prompts_in_spend_logs    = true
+#       proxy_batch_write_at           = 60
+#       database_connection_pool_limit = 10
 
-    router_settings = {
-      num_retries     = 2
-      routing_strategy = "usage-based-routing-v2"
-    }
-  }
+#       disable_error_logs               = true
+#       allow_requests_on_db_unavailable = true
+#     }
 
-  mount_ssl = {
-    enable = true
-    secret_name = kubernetes_manifest.cert.manifest.metadata.name
-    path = "/tmp/ssl"
-  }
+#     litellm_settings = {
+#       allowed_fails   = 3
+#       cooldown_time   = 30
+#       num_retries     = 1
+#       request_timeout = 45
+#       set_verbose     = true
+#       json_logs       = false
+#       cache           = false
+#     }
 
-  mounts = [{
-    secret_name = kubernetes_secret_v1.gcloud.metadata[0].name
-    path = "/tmp/gcloud/"
-  }]
-}
+#     model_list = [
+#       {
+#         model_name = "anthropic.claude-opus-4-5-20251101-v1:0"
+#         litellm_params = {
+#           max_parallel_requests = 50
+#           model                 = "vertex_ai/claude-opus-4-5@20251101"
+#           rpm                   = 450
+#           tpm                   = 6000000
+#           vertex_location       = "us-east5"
+#           vertex_project        = "coder-vertex-demos"
+#           vertex_credentials    = "/tmp/gcloud/service_account.json"
+#         }
+#       },
+#       {
+#         model_name = "anthropic.claude-opus-4-5-20251101-v1:0"
+#         litellm_params = {
+#           max_parallel_requests = 50
+#           model                 = "vertex_ai/claude-opus-4-5@20251101"
+#           rpm                   = 450
+#           tpm                   = 6000000
+#           vertex_location       = "europe-west1"
+#           vertex_project        = "coder-vertex-demos"
+#           vertex_credentials    = "/tmp/gcloud/service_account.json"
+#         }
+#       },
+#       {
+#         model_name = "anthropic.claude-haiku-4-5-20251001-v1:0"
+#         litellm_params = {
+#           max_parallel_requests = 50
+#           model                 = "vertex_ai/claude-haiku-4-5@20251001"
+#           rpm                   = 3000
+#           tpm                   = 3000000
+#           vertex_location       = "us-east5"
+#           vertex_project        = "coder-vertex-demos"
+#           vertex_credentials    = "/tmp/gcloud/service_account.json"
+#         }
+#       },
+#       {
+#         model_name = "anthropic.claude-haiku-4-5-20251001-v1:0"
+#         litellm_params = {
+#           max_parallel_requests = 50
+#           model                 = "vertex_ai/claude-haiku-4-5@20251001"
+#           rpm                   = 3600
+#           tpm                   = 3600000
+#           vertex_location       = "europe-west1"
+#           vertex_project        = "coder-vertex-demos"
+#           vertex_credentials    = "/tmp/gcloud/service_account.json"
+#         }
+#       },
+#       {
+#         model_name = "claude-opus-4-6"
+#         litellm_params = {
+#           max_parallel_requests = 50
+#           model                 = "vertex_ai/claude-opus-4-6@default"
+#           rpm                   = 450
+#           tpm                   = 6000000
+#           vertex_location       = "us-east5"
+#           vertex_project        = "coder-vertex-demos"
+#           vertex_credentials    = "/tmp/gcloud/service_account.json"
+#         }
+#       },
+#       {
+#         model_name = "claude-opus-4-6"
+#         litellm_params = {
+#           max_parallel_requests = 50
+#           model                 = "vertex_ai/claude-opus-4-6@default"
+#           rpm                   = 450
+#           tpm                   = 6000000
+#           vertex_location       = "europe-west1"
+#           vertex_project        = "coder-vertex-demos"
+#           vertex_credentials    = "/tmp/gcloud/service_account.json"
+#         }
+#       },
+#       {
+#         model_name = "claude-opus-4-5"
+#         litellm_params = {
+#           max_parallel_requests = 50
+#           model                 = "vertex_ai/claude-opus-4-5@20251101"
+#           rpm                   = 450
+#           tpm                   = 6000000
+#           vertex_location       = "us-east5"
+#           vertex_project        = "coder-vertex-demos"
+#           vertex_credentials    = "/tmp/gcloud/service_account.json"
+#         }
+#       },
+#       {
+#         model_name = "claude-opus-4-5"
+#         litellm_params = {
+#           max_parallel_requests = 50
+#           model                 = "vertex_ai/claude-opus-4-5@20251101"
+#           rpm                   = 450
+#           tpm                   = 6000000
+#           vertex_location       = "europe-west1"
+#           vertex_project        = "coder-vertex-demos"
+#           vertex_credentials    = "/tmp/gcloud/service_account.json"
+#         }
+#       },
+#       {
+#         model_name = "claude-sonnet-4-6"
+#         litellm_params = {
+#           max_parallel_requests = 50
+#           model                 = "vertex_ai/claude-sonnet-4-6@default"
+#           rpm                   = 450
+#           tpm                   = 6000000
+#           vertex_location       = "us-east5"
+#           vertex_project        = "coder-vertex-demos"
+#           vertex_credentials    = "/tmp/gcloud/service_account.json"
+#         }
+#       },
+#       {
+#         model_name = "claude-sonnet-4-6"
+#         litellm_params = {
+#           max_parallel_requests = 50
+#           model                 = "vertex_ai/claude-sonnet-4-6@default"
+#           rpm                   = 450
+#           tpm                   = 6000000
+#           vertex_location       = "europe-west1"
+#           vertex_project        = "coder-vertex-demos"
+#           vertex_credentials    = "/tmp/gcloud/service_account.json"
+#         }
+#       },
+#       {
+#         model_name = "claude-sonnet-4-5"
+#         litellm_params = {
+#           max_parallel_requests = 50
+#           model                 = "vertex_ai/claude-sonnet-4-5@20250929"
+#           rpm                   = 3000
+#           tpm                   = 3000000
+#           vertex_location       = "us-east5"
+#           vertex_project        = "coder-vertex-demos"
+#           vertex_credentials    = "/tmp/gcloud/service_account.json"
+#         }
+#       },
+#       {
+#         model_name = "claude-sonnet-4-5"
+#         litellm_params = {
+#           max_parallel_requests = 50
+#           model                 = "vertex_ai/claude-sonnet-4-5@20250929"
+#           rpm                   = 3600
+#           tpm                   = 3600000
+#           vertex_location       = "europe-west1"
+#           vertex_project        = "coder-vertex-demos"
+#           vertex_credentials    = "/tmp/gcloud/service_account.json"
+#         }
+#       },
+#       {
+#         model_name = "claude-haiku-4-5"
+#         litellm_params = {
+#           max_parallel_requests = 50
+#           model                 = "vertex_ai/claude-haiku-4-5@20251001"
+#           rpm                   = 3000
+#           tpm                   = 3000000
+#           vertex_location       = "us-east5"
+#           vertex_project        = "coder-vertex-demos"
+#           vertex_credentials    = "/tmp/gcloud/service_account.json"
+#         }
+#       },
+#       {
+#         model_name = "claude-haiku-4-5"
+#         litellm_params = {
+#           max_parallel_requests = 50
+#           model                 = "vertex_ai/claude-haiku-4-5@20251001"
+#           rpm                   = 3600
+#           tpm                   = 3600000
+#           vertex_location       = "europe-west1"
+#           vertex_project        = "coder-vertex-demos"
+#           vertex_credentials    = "/tmp/gcloud/service_account.json"
+#         }
+#       }
+#     ]
+
+#     router_settings = {
+#       # enable_pre_call_checks = true
+#       # fallbacks = [{"claude-opus-4-6": ["claude-opus-4-5"]}]
+#       num_retries      = 2
+#       routing_strategy = "usage-based-routing-v2"
+      
+#     }
+#   }
+
+#   mount_ssl = {
+#     enable      = true
+#     secret_name = kubernetes_manifest.cert.manifest.metadata.name
+#     path        = "/tmp/ssl"
+#   }
+
+#   mounts = [{
+#     secret_name = kubernetes_secret_v1.gcloud.metadata[0].name
+#     path        = "/tmp/gcloud/"
+#   }]
+# }

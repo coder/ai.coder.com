@@ -82,7 +82,6 @@ variable "coder" {
     image_tag = optional(string, "latest")
     image_pull_policy = optional(string, "IfNotPresent")
     image_pull_secrets = optional(list(string), null)
-    experiments = optional(list(string), null)
     csp_policy = optional(string, null)
     env_vars = optional(map(string), {})
     rep_cnt = optional(number, 1)
@@ -92,6 +91,7 @@ variable "coder" {
     allow_custom_quiet = optional(bool, true)
     tf_debug_mode = optional(bool, true)
     trace_logs = optional(bool, true)
+    enable_tracing = optional(bool, true)
     swagger_enable = optional(bool, true)
     update_check = optional(bool, true)
     cli_upgr_msg = optional(bool, true)
@@ -255,28 +255,11 @@ variable "extern_auth" {
 variable "aibridge" {
   type = object({
     enabled = bool
-    anthropic = optional(object({
-      url = string
-      key = string
-    }), null)
-    openai = optional(object({
-      url = string
-      key = string
-    }), null)
-    bedrock = optional(object({
-      url = optional(string, null)
-      region = optional(string, null)
-      access_id = string
-      secret_id = string
-      model = optional(string, "global.anthropic.claude-sonnet-4-5-20250929-v1:0")
-      fast_model = optional(string, "global.anthropic.claude-haiku-4-5-20251001-v1:0")
-    }), null)
+    enable_structured_logging = optional(bool, true)
   })
   default = {
     enabled = false
-    anthropic = null
-    openai = null
-    bedrock = null
+    enable_structured_logging = true
   }
 }
 
@@ -291,6 +274,7 @@ locals {
 
     CODER_ENABLE_TERRAFORM_DEBUG_MODE = var.coder.tf_debug_mode
     CODER_TRACE_LOGS                  = var.coder.trace_logs
+    CODER_TRACE_ENABLE                = var.coder.enable_tracing
     CODER_LOG_FILTER                  = var.coder.log_filter
     CODER_SWAGGER_ENABLE              = var.coder.swagger_enable
     CODER_UPDATE_CHECK                = var.coder.update_check
@@ -306,10 +290,13 @@ locals {
     CODER_PROMETHEUS_COLLECT_AGENT_STATS = var.prometheus.collect_agent_status
     CODER_PROMETHEUS_COLLECT_DB_METRICS  = var.prometheus.collect_db_metrics
   }
-  db = {
-    CODER_PG_CONNECTION_URL = "postgresql://${var.db.username}:${var.db.password}@${var.db.url}/${var.db.db}"
+  db = merge({
     CODER_PG_AUTH                = var.db.pg_auth
-  }
+  }, var.db.pg_auth == "awsiamrds" ? {
+    CODER_PG_CONNECTION_URL = "postgresql://${var.db.username}@${var.db.url}/${var.db.db}"
+  } : {
+    CODER_PG_CONNECTION_URL = "postgresql://${var.db.username}:${var.db.password}@${var.db.url}/${var.db.db}"
+  })
   oidc = !var.oidc.enable ? {} : {
     CODER_OIDC_ISSUER_URL = var.oidc.issuer_url
     CODER_OIDC_CLIENT_ID = var.oidc.client_id
@@ -341,32 +328,13 @@ locals {
     "CODER_EXTERNAL_AUTH_${index}_VALIDATE_URL" = obj.validate_url
     "CODER_EXTERNAL_AUTH_${index}_REGEX" = obj.regex
   }]...)
-  anthropic = var.aibridge.anthropic == null ? {} : {
-    CODER_AIBRIDGE_ANTHROPIC_BASE_URL = var.aibridge.anthropic.url
-    CODER_AIBRIDGE_ANTHROPIC_KEY = var.aibridge.anthropic.key
-  }
-  openai = var.aibridge.openai == null ? {} : {
-    CODER_AIBRIDGE_OPENAI_BASE_URL = var.aibridge.openai.url
-    CODER_AIBRIDGE_OPENAI_KEY = var.aibridge.openai.key
-  }
-  bedrock = var.aibridge.bedrock == null ? {} : {
-    CODER_AIBRIDGE_BEDROCK_BASE_URL = var.aibridge.bedrock.url
-    CODER_AIBRIDGE_BEDROCK_REGION            = var.aibridge.bedrock.region
-    CODER_AIBRIDGE_BEDROCK_ACCESS_KEY        = var.aibridge.bedrock.access_id
-    CODER_AIBRIDGE_BEDROCK_ACCESS_KEY_SECRET = var.aibridge.bedrock.secret_id
-    CODER_AIBRIDGE_BEDROCK_MODEL = var.aibridge.bedrock.model
-    CODER_AIBRIDGE_BEDROCK_SMALL_FAST_MODEL = var.aibridge.bedrock.fast_model
-  }
   aibridge = merge(
-    local.anthropic, 
-    local.openai, 
-    local.bedrock, 
-    { CODER_AIBRIDGE_ENABLED = var.aibridge.enabled }
+    { 
+      CODER_AIBRIDGE_ENABLED = var.aibridge.enabled 
+      CODER_AIBRIDGE_STRUCTURED_LOGGING = var.aibridge.enable_structured_logging
+    }
   )
   secrets = merge({
-    CODER_AIBRIDGE_ANTHROPIC_KEY = try(local.anthropic["CODER_AIBRIDGE_ANTHROPIC_KEY"], null)
-    CODER_AIBRIDGE_OPENAI_KEY = try(local.openai["CODER_AIBRIDGE_OPENAI_KEY"], null)
-    CODER_AIBRIDGE_BEDROCK_ACCESS_KEY_SECRET = try(local.bedrock["CODER_AIBRIDGE_BEDROCK_ACCESS_KEY_SECRET"], null)
     CODER_OAUTH2_GITHUB_CLIENT_SECRET = try(local.oauth2["CODER_OAUTH2_GITHUB_CLIENT_SECRET"], null)
     CODER_OIDC_CLIENT_SECRET = try(local.oidc["CODER_OIDC_CLIENT_SECRET"], null)
     CODER_PG_CONNECTION_URL = try(local.db["CODER_PG_CONNECTION_URL"], null)
@@ -447,21 +415,28 @@ module "provisioner-policy" {
   name        = var.policy_name
   path         = "/${var.cluster_name}/${local.region}/"
   description = "Coder Terraform External Provisioner Policy"
-  policy_json = data.aws_iam_policy_document.provisioner-policy.json
+  policy_json = data.aws_iam_policy_document.provisioner.json
+}
+
+module "rds-policy" {
+  source      = "../../../security/policy"
+  name        = "${var.policy_name}-${local.rds_db_name}"
+  path         = "/${var.cluster_name}/${local.region}/"
+  description = "Coder DB IAM Access Policy"
+  policy_json = data.aws_iam_policy_document.rds.json
 }
 
 module "provisioner-oidc-role" {
-
-  count        = var.coder.prov_rep_cnt == 0 ? 0 : 1
-
   source       = "../../../security/role/access-entry"
   name         = var.role_name
   path         = "/${var.cluster_name}/${local.region}/"
   cluster_name = var.cluster_name
-  policy_arns = {
+  policy_arns = merge({
     "AmazonEC2ReadOnlyAccess" = "arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess"
+    "CoderRDSDBPolicy" = module.rds-policy.policy_arn
+  }, var.coder.prov_rep_cnt == 0 ? {} : {
     "TFProvisionerPolicy"     = module.provisioner-policy[0].policy_arn
-  }
+  })
   cluster_policy_arns = {}
   oidc_principals = {
     "${var.cluster_oidc_provider_arn}" = ["system:serviceaccount:*:*"]
@@ -573,8 +548,8 @@ resource "helm_release" "coder-server" {
         limits   = var.resource_limit
       }
       serviceAccount = {
-        annotations = var.coder.prov_rep_cnt == 0 ? var.svc_acc_annot : merge({
-          "eks.amazonaws.com/role-arn" : module.provisioner-oidc-role[0].role_arn
+        annotations = merge({
+          "eks.amazonaws.com/role-arn" : module.provisioner-oidc-role.role_arn
         }, var.svc_acc_annot)
       }
       nodeSelector              = var.node_selector

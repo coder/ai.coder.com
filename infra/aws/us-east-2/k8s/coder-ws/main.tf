@@ -29,8 +29,8 @@ data "http" "login" {
   })
 
   retry {
-    attempts = 5
-    min_delay_ms = (5*1000) # 5 seconds 
+    attempts     = 5
+    min_delay_ms = (5 * 1000) # 5 seconds 
   }
 }
 
@@ -54,32 +54,66 @@ provider "coderd" {
 }
 
 locals {
+  release_name = "coder"
+  chart_name   = "coder-provisioner"
+  namespace    = "coder"
+
   node_selector = {}
+  topology_spread = []
+  # topology_spread = [{
+  #   max_skew           = 2
+  #   topology_key       = "kubernetes.io/hostname"
+  #   when_unsatisfiable = "ScheduleAnyway"
+  #   label_selector = {
+  #     match_labels = {
+  #       "app.kubernetes.io/name"    = local.chart_name
+  #       "app.kubernetes.io/part-of" = local.chart_name
+  #     }
+  #   }
+  #   match_label_keys = [
+  #     "app.kubernetes.io/instance"
+  #   ]
+  # }]
   tolerations = [{
-    key = "CriticalAddonsOnly"
+    key      = "coder"
     operator = "Exists"
+    values   = ["provisioner"]
   }]
   affinity = {
     nodeAffinity = {
       requiredDuringSchedulingIgnoredDuringExecution = {
         nodeSelectorTerms = [{
-          matchExpressions = [{
-            key = "eks.amazonaws.com/compute-type"
-            operator = "In"
-            values = ["auto"]
-          }]
+          matchExpressions = [
+            {
+              key      = "node.coder.io/used-for",
+              operator = "In",
+              values   = ["coder-provisioner"]
+            }
+          ]
         }]
       }
     }
+    podAntiAffinity = {}
+    # podAntiAffinity = {
+    #   preferredDuringSchedulingIgnoredDuringExecution = [{
+    #     weight = 100
+    #     podAffinityTerm = {
+    #       labelSelector = {
+    #         match_labels = {
+    #           "app.kubernetes.io/name"    = local.chart_name
+    #           "app.kubernetes.io/part-of" = local.chart_name
+    #         }
+    #       }
+    #       topologyKey = "kubernetes.io/hostname"
+    #     }
+    #   }]
+    # }
   }
-  release_name = "coder"
-  chart_name = "coder-provisioner"
-  namespace = "coder"
 }
 
 module "default-ws" {
 
-  source                    = "../../../../../modules/k8s/bootstrap/coder-provisioner"
+  source = "../../../../../modules/k8s/bootstrap/coder-provisioner"
 
   release_name              = local.release_name
   chart_version             = var.addon_version
@@ -91,25 +125,41 @@ module "default-ws" {
 
   coder = {
     access_url = var.coder_access_url
-    org_name = "coder"
-    image_repo                       = var.image_repo
-    image_tag                        = var.image_tag
-    rep_cnt = 4
+    org_name   = "coder"
+    image_repo = var.image_repo
+    image_tag  = var.image_tag
+    rep_cnt    = 1
+    ws_extra_rules = [{
+      apiGroups = [""]
+      resources = ["configmaps"]
+      verbs = [
+        "create",
+        "delete",
+        "deletecollection",
+        "get",
+        "list",
+        "patch",
+        "update",
+        "watch"
+      ]
+    }]
     env_vars = {
       CODER_PROMETHEUS_ENABLE              = "true"
       CODER_PROMETHEUS_COLLECT_AGENT_STATS = "true"
       CODER_PROMETHEUS_COLLECT_DB_METRICS  = "true"
+      # TF_VAR_namespace = "coder-ws"
     }
   }
 
   svc_acc = {
     create = true
-    name = "coder"
+    name   = "coder"
   }
 
-  node_selector = local.node_selector
-  tolerations   = local.tolerations
-  affinity = local.affinity
+  node_selector   = local.node_selector
+  tolerations     = local.tolerations
+  topology_spread = local.topology_spread
+  affinity        = local.affinity
 }
 
 module "experiment-ws" {
@@ -122,29 +172,90 @@ module "experiment-ws" {
   cluster_name              = var.cluster_name
   cluster_oidc_provider_arn = data.aws_iam_openid_connect_provider.this.arn
 
-  namespace                        = "coder-ws-experiment"
+  namespace = "coder-ws-experiment"
 
   coder = {
     access_url = var.coder_access_url
-    org_name = "experiment"
-    image_repo                       = var.image_repo
-    image_tag                        = var.image_tag
-    rep_cnt = 4
+    org_name   = "experiment"
+    image_repo = var.image_repo
+    image_tag  = var.image_tag
+    rep_cnt    = 1
+    ws_extra_rules = [{
+      apiGroups = [""]
+      resources = ["configmaps"]
+      verbs = [
+        "create",
+        "delete",
+        "deletecollection",
+        "get",
+        "list",
+        "patch",
+        "update",
+        "watch"
+      ]
+    },{
+      apiGroups = [""]
+      resources = ["serviceaccounts"]
+      verbs = [
+        "create",
+        "delete",
+        "deletecollection",
+        "get",
+        "list",
+        "patch",
+        "update",
+        "watch"
+      ]
+    },{
+      apiGroups = ["rbac.authorization.k8s.io"]
+      resources = ["clusterrolebindings"]
+      verbs = [
+        "create",
+        "delete",
+        "deletecollection",
+        "get",
+        "list",
+        "patch",
+        "update",
+        "watch"
+      ]
+    }]
     env_vars = {
       CODER_PROMETHEUS_ENABLE              = "true"
       CODER_PROMETHEUS_COLLECT_AGENT_STATS = "true"
       CODER_PROMETHEUS_COLLECT_DB_METRICS  = "true"
+      # TF_VAR_namespace = "coder-ws-experiment"
     }
   }
 
   svc_acc = {
     create = true
-    name = "coder"
+    name   = "coder"
   }
 
-  node_selector = local.node_selector
-  tolerations   = local.tolerations
-  affinity = local.affinity
+  node_selector   = local.node_selector
+  tolerations     = local.tolerations
+  topology_spread = local.topology_spread
+  affinity        = local.affinity
+}
+
+data "aws_iam_policy_document" "eks" {
+  statement {
+    effect = "Allow"
+    actions = [
+      "eks:*",
+      "iam:*"
+    ]
+    resources = ["*"]
+  }
+}
+
+module "eks-admin-policy" {
+  source      = "../../../../../modules/security/policy"
+  name        = "demo-ws-eks-policy"
+  path        = "/"
+  description = "Coder External Demo-Provisioner Policy (EKS)"
+  policy_json = data.aws_iam_policy_document.eks.json
 }
 
 module "demo-ws" {
@@ -157,145 +268,156 @@ module "demo-ws" {
   cluster_name              = var.cluster_name
   cluster_oidc_provider_arn = data.aws_iam_openid_connect_provider.this.arn
 
-  namespace                        = "coder-ws-demo"
+  namespace = "coder-ws-demo"
 
   coder = {
     access_url = var.coder_access_url
-    org_name = "demo"
-    image_repo                       = var.image_repo
-    image_tag                        = var.image_tag
-    rep_cnt = 4
+    org_name   = "demo"
+    image_repo = var.image_repo
+    image_tag  = var.image_tag
+    rep_cnt    = 1
+    ws_extra_rules = [{
+      apiGroups = [""]
+      resources = ["configmaps"]
+      verbs = [
+        "create",
+        "delete",
+        "deletecollection",
+        "get",
+        "list",
+        "patch",
+        "update",
+        "watch"
+      ]
+    },{
+      apiGroups = [""]
+      resources = ["serviceaccounts"]
+      verbs = [
+        "create",
+        "delete",
+        "deletecollection",
+        "get",
+        "list",
+        "patch",
+        "update",
+        "watch"
+      ]
+    },{
+      apiGroups = ["rbac.authorization.k8s.io"]
+      resources = ["clusterrolebindings"]
+      verbs = [
+        "create",
+        "delete",
+        "deletecollection",
+        "get",
+        "list",
+        "patch",
+        "update",
+        "watch"
+      ]
+    }]
     env_vars = {
       CODER_PROMETHEUS_ENABLE              = "true"
       CODER_PROMETHEUS_COLLECT_AGENT_STATS = "true"
       CODER_PROMETHEUS_COLLECT_DB_METRICS  = "true"
+      # TF_VAR_namespace = "coder-ws-experiment"
     }
   }
 
   svc_acc = {
     create = true
-    name = "coder"
+    name   = "coder"
+    iam_policy_arns = {
+      "EKSAdminPolicy" = module.eks-admin-policy.policy_arn
+    }
   }
 
-  node_selector = local.node_selector
-  tolerations   = local.tolerations
-  affinity = local.affinity
+  node_selector   = local.node_selector
+  tolerations     = local.tolerations
+  topology_spread = local.topology_spread
+  affinity        = local.affinity
 }
 
-
-# module "default-ws-tagged" {
-
-#   source                    = "../../../../../modules/k8s/bootstrap/coder-provisioner"
-
-#   release_name              = local.release_name
-#   chart_version             = var.addon_version
-#   chart_name                = local.chart_name
-#   cluster_name              = data.aws_eks_cluster.this.id
-#   cluster_oidc_provider_arn = data.aws_iam_openid_connect_provider.this.arn
-
-#   namespace = "coder-ws-tagged"
-
-#   coder = {
-#     access_url = var.coder_access_url
-#     org_name = "coder"
-#     image_repo                       = var.image_repo
-#     image_tag                        = var.image_tag
-#     ws_ns = ["coder-ws"]
-#     prov_tags = {
-#       region = "us-east-2"
-#     }
-#     rep_cnt = 2
-#     env_vars = {
-#       CODER_PROMETHEUS_ENABLE              = "true"
-#       CODER_PROMETHEUS_COLLECT_AGENT_STATS = "true"
-#       CODER_PROMETHEUS_COLLECT_DB_METRICS  = "true"
-#     }
+# resource "kubernetes_cluster_role_v1" "coder-ws-demo" {
+#   metadata {
+#     name = "coder-ws-demo"
 #   }
 
-#   svc_acc = {
-#     create = true
-#     name = "coder"
+#   rule {
+#     api_groups = ["rbac.authorization.k8s.io"]
+#     resources = ["clusterrolebindings"]
+#     verbs = [
+#       "create",
+#       "delete",
+#       "deletecollection",
+#       "get",
+#       "list",
+#       "patch",
+#       "update",
+#       "watch"
+#     ]
 #   }
-
-#   node_selector = local.node_selector
-#   tolerations   = local.tolerations
-#   affinity = local.affinity
 # }
 
-# module "experiment-ws-tagged" {
+# resource "kubernetes_cluster_role_binding_v1" "coder-cluster-workspace-perms" {
 
-#   source = "../../../../../modules/k8s/bootstrap/coder-provisioner"
+#   depends_on = [module.demo-ws]
 
-#   release_name              = local.release_name
-#   chart_version             = var.addon_version
-#   chart_name                = local.chart_name
-#   cluster_name              = var.cluster_name
-#   cluster_oidc_provider_arn = data.aws_iam_openid_connect_provider.this.arn
-
-#   namespace                        = "coder-ws-experiment-tagged"
-
-#   coder = {
-#     access_url = var.coder_access_url
-#     org_name = "experiment"
-#     image_repo                       = var.image_repo
-#     image_tag                        = var.image_tag
-#     ws_ns = ["coder-ws-experiment"]
-#     prov_tags = {
-#       region = "us-east-2"
-#     }
-#     rep_cnt = 2
-#     env_vars = {
-#       CODER_PROMETHEUS_ENABLE              = "true"
-#       CODER_PROMETHEUS_COLLECT_AGENT_STATS = "true"
-#       CODER_PROMETHEUS_COLLECT_DB_METRICS  = "true"
-#     }
+#   metadata {
+#     name = "coder-cluster-workspace-perms"
 #   }
 
-#   svc_acc = {
-#     create = true
+#   subject {
+#     kind = "ServiceAccount"
 #     name = "coder"
+#     namespace = "coder-ws-demo"
 #   }
 
-#   node_selector = local.node_selector
-#   tolerations   = local.tolerations
-#   affinity = local.affinity
+#   role_ref {
+#     api_group = "rbac.authorization.k8s.io"
+#     kind = "ClusterRole"
+#     name = kubernetes_cluster_role_v1.coder-ws-demo.metadata[0].name
+#   }
 # }
 
-# module "demo-ws-tagged" {
+module "coder-logstream-kube" {
+  
+  source = "../../../../../modules/k8s/bootstrap/coder-logstream"
 
-#   source = "../../../../../modules/k8s/bootstrap/coder-provisioner"
+  release_name              = "coder-logstream-kube"
+  chart_version             = "0.0.15"
+  chart_name                = "coder-logstream-kube"
 
-#   release_name              = local.release_name
-#   chart_version             = var.addon_version
-#   chart_name                = local.chart_name
-#   cluster_name              = var.cluster_name
-#   cluster_oidc_provider_arn = data.aws_iam_openid_connect_provider.this.arn
+  namespace = "coder-logstream-kube"
+  image_tag = "v0.0.15"
 
-#   namespace                        = "coder-ws-demo-tagged"
+  coder = {
+    access_url = var.coder_access_url
+    ws_ns      = ["coder-ws", "coder-ws-demo", "coder-ws-experiment"]
+  }
 
-#   coder = {
-#     access_url = var.coder_access_url
-#     org_name = "demo"
-#     image_repo                       = var.image_repo
-#     image_tag                        = var.image_tag
-#     ws_ns = ["coder-ws-demo"]
-#     prov_tags = {
-#       region = "us-east-2"
-#     }
-#     rep_cnt = 2
-#     env_vars = {
-#       CODER_PROMETHEUS_ENABLE              = "true"
-#       CODER_PROMETHEUS_COLLECT_AGENT_STATS = "true"
-#       CODER_PROMETHEUS_COLLECT_DB_METRICS  = "true"
-#     }
-#   }
+  tolerations = [{
+    key      = "CriticalAddonsOnly"
+    operator = "Exists"
+    }, {
+    key    = "dedicated"
+    value  = "general"
+    effect = "NoSchedule"
+  }]
+  affinity        = {
+    nodeAffinity = {
+      requiredDuringSchedulingIgnoredDuringExecution = {
+        nodeSelectorTerms = [{
+          matchExpressions = [
+            {
+              key      = "eks.amazonaws.com/compute-type",
+              operator = "In",
+              values   = ["auto"]
+            }
+          ]
+        }]
+      }
+    }
+  }
 
-#   svc_acc = {
-#     create = true
-#     name = "coder"
-#   }
-
-#   node_selector = local.node_selector
-#   tolerations   = local.tolerations
-#   affinity = local.affinity
-# }
+}

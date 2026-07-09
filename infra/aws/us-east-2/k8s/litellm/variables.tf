@@ -22,13 +22,13 @@ variable "db_rds_id" {
 }
 
 variable "db_admin_password" {
-    type = string
-    sensitive = true
+  type      = string
+  sensitive = true
 }
 
 variable "db_user_password" {
-    type = string
-    sensitive = true
+  type      = string
+  sensitive = true
 }
 
 variable "litellm_master_key" {
@@ -51,6 +51,6 @@ variable "vpc_name" {
 }
 
 variable "azs" {
-  type = list(string)
-  default = ["a","b","c"]
+  type    = list(string)
+  default = ["a", "b", "c"]
 }

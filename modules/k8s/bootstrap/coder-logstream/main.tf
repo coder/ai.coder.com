@@ -62,6 +62,21 @@ variable "coder" {
   })
 }
 
+variable "node_selector" {
+  type = map(string)
+  default = {}
+}
+
+variable "affinity" {
+  type = any
+  default = {}
+}
+
+variable "tolerations" {
+  type = list(any)
+  default = []
+}
+
 resource "kubernetes_namespace_v1" "logstream" {
   metadata {
     name = var.namespace
@@ -90,12 +105,10 @@ resource "helm_release" "coder-logstream" {
       tag = var.image_tag
       pullPolicy = var.image_pull_policy
     }
-    # nodeSelector = {}
-    # affinity = {}
-    tolerations = [{
-      key      = "CriticalAddonsOnly"
-      operator = "Exists"
-    }]
+    
+    nodeSelector = var.node_selector
+    affinity = var.affinity
+    tolerations = var.tolerations
   })]
 }
 

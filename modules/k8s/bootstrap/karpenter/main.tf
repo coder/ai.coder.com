@@ -103,18 +103,6 @@ variable "node_iam_role_use_name_prefix" {
   default = true
 }
 
-variable "pod_aaf_pref_sched_ie" {
-  type = list(object({
-    weight = number
-    pod_affinity_term = object({
-      label_selector = object({
-        match_labels = map(string)
-      })
-      topology_key = string
-    })
-  }))
-  default = []
-}
 
 variable "topology_spread" {
   type = list(object({
@@ -147,6 +135,11 @@ variable "node_selector" {
 variable "tolerations" {
   type = list(map(any))
   default = []
+}
+
+variable "affinity" {
+  type = any
+  default = {}
 }
 
 variable "replicas" {
@@ -264,17 +257,6 @@ resource "kubernetes_namespace_v1" "this" {
 }
 
 locals {
-  pod_aaf_pref_sched_ie = [
-    for k, v in var.pod_aaf_pref_sched_ie : {
-      weight = v.weight
-      podAffinityTerm = {
-        labelSelector = {
-          matchLabels = try(v.pod_affinity_term.label_selector.match_labels, {})
-        }
-        topologyKey = try(v.pod_affinity_term.topology_key, {})
-      }
-    }
-  ]
   topology_spread = [
     for k, v in var.topology_spread : {
       maxSkew           = v.max_skew
@@ -319,27 +301,12 @@ resource "helm_release" "karpenter" {
     }
     tolerations = var.tolerations
     topologySpreadConstraints = local.topology_spread
-    affinity = {
-      nodeAffinity = {
-        requiredDuringSchedulingIgnoredDuringExecution = {
-          nodeSelectorTerms = [{
-            matchExpressions = [{
-              # Prevent Karpenter from scheduling Karpenter Ctrl pods onto itself.
-              key = "karpenter.sh/nodepool"
-              operator = "In"
-              values = ["system"]
-            }]
-          }]
-        }
-      }
-      podAntiAffinity = {
-        requiredDuringSchedulingIgnoredDuringExecution = []
-      }
-    }
+    affinity = var.affinity
     settings = {
       clusterName = var.cluster_name
       featureGates = {
         spotToSpotConsolidation = true
+        staticCapacity = true
       }
       interruptionQueue = module.karpenter.queue_name
     }
@@ -355,6 +322,7 @@ resource "kubernetes_service_account_v1" "ctrl-role" {
     namespace = kubernetes_namespace_v1.this.metadata[0].name
     annotations = {
       "eks.amazonaws.com/role-arn" = module.karpenter.iam_role_arn
+      "eks.amazonaws.com/role-name" = module.karpenter.iam_role_name
     }
   }
 }
@@ -368,6 +336,7 @@ resource "kubernetes_service_account_v1" "node-role" {
     namespace = kubernetes_namespace_v1.this.metadata[0].name
     annotations = {
       "eks.amazonaws.com/role-arn" = module.karpenter.node_iam_role_arn
+      "eks.amazonaws.com/role-name" = module.karpenter.node_iam_role_name
     }
   }
 }

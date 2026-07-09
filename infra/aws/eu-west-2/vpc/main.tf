@@ -22,8 +22,8 @@ locals {
   # Use variable to configure AZ just in case 1 AZ isn't accessible
   # https://repost.aws/questions/QUgdQev4KETKG_Bwev9tMtRQ/is-it-possible-to-enable-3rd-availability-zone-in-us-west-1#AN9eAH55FwTC-NSSp-FjIfTQ
   availability_zones   = [for az in var.azs : "${var.region}${az}"]
-  public_subnet_cidrs = [ for index, _ in var.azs : cidrsubnet(var.vpc_cidr, 8, index+1) ]
-  private_subnet_cidrs = [ for index, _ in var.azs : cidrsubnet(var.vpc_cidr, 2, index+1) ]
+  public_subnet_cidrs  = [for index, _ in var.azs : cidrsubnet(var.vpc_cidr, 8, index + 1)]
+  private_subnet_cidrs = [for index, _ in var.azs : cidrsubnet(var.vpc_cidr, 2, index + 1)]
 }
 
 module "vpc" {
@@ -51,17 +51,17 @@ module "vpc" {
 
 module "nat" {
 
-  source = "RaJiska/fck-nat/aws"
+  source  = "RaJiska/fck-nat/aws"
   version = "~> 1.4.0"
 
-  name      = "${var.region}-${var.nat_name}"
-  vpc_id    = module.vpc.vpc_id
-  subnet_id = module.vpc.public_subnets[0]
-  ha_mode   = true # Enables high-availability mode
+  name                 = "${var.region}-${var.nat_name}"
+  vpc_id               = module.vpc.vpc_id
+  subnet_id            = module.vpc.public_subnets[0]
+  ha_mode              = true # Enables high-availability mode
   use_cloudwatch_agent = true # Enables Cloudwatch agent and have metrics reported
 
   update_route_tables = true
-  route_tables_ids = { 
-    for index, _ in var.azs : "rtb-${index}" => module.vpc.private_route_table_ids[index] 
+  route_tables_ids = {
+    for index, _ in var.azs : "rtb-${index}" => module.vpc.private_route_table_ids[index]
   }
 }

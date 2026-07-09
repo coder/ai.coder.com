@@ -17,6 +17,25 @@ data "aws_iam_openid_connect_provider" "this" {
 
 data "aws_region" "this" {}
 
+data "aws_caller_identity" "this" {}
+
+data "aws_vpc" "this" {
+  tags = {
+    Name = var.vpc_name
+  }
+}
+
+data "aws_subnets" "private" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.this.id]
+  }
+
+  tags = {
+    Name = "*${var.private_subnet_suffix}*"
+  }
+}
+
 provider "helm" {
   kubernetes = {
     host                   = data.aws_eks_cluster.this.endpoint
@@ -52,6 +71,7 @@ resource "kubernetes_manifest" "gp3" {
     }
     provisioner       = "ebs.csi.aws.com"
     volumeBindingMode = "WaitForFirstConsumer"
+    allowVolumeExpansion = true
     allowedTopologies = [{
       matchLabelExpressions = [{
         key    = "topology.ebs.csi.aws.com/zone"
@@ -74,6 +94,7 @@ resource "kubernetes_manifest" "automode-gp3" {
     }
     provisioner       = "ebs.csi.eks.amazonaws.com"
     volumeBindingMode = "WaitForFirstConsumer"
+    allowVolumeExpansion = true
     allowedTopologies = [{
       matchLabelExpressions = [{
         key    = "eks.amazonaws.com/compute-type"
@@ -98,12 +119,60 @@ data "kubernetes_service_account_v1" "kptr" {
   }
 }
 
+data "kubernetes_service_account_v1" "auto" {
+  metadata {
+    name      = "auto-mode-node-role"
+    namespace = "default"
+  }
+}
+
+data "aws_iam_roles" "auto-mode" {
+  name_regex = "${var.cluster_name}-eks-auto-*"
+  path_prefix = "/${data.aws_region.this.region}/"
+}
+
 locals {
   nodeclass_configs = {
-    "coder" = {
-      api_version = "karpenter.k8s.aws/v1"
-      kind        = "EC2NodeClass"
-      user_data   = <<-EOT
+    "platform" = {
+      api_version               = "eks.amazonaws.com/v1"
+      kind                      = "NodeClass"
+      subnet_selector           = [for subnet_id in data.aws_subnets.private.ids : { id = subnet_id }]
+      sg_selector               = [{ id = data.aws_eks_cluster.this.vpc_config[0].cluster_security_group_id }]
+      network_policy            = "DefaultAllow"
+      network_policy_event_logs = "Disabled"
+      snat_policy               = "Disabled"
+      ephemeral_storage = {
+        iops       = 3000
+        size       = "80Gi"
+        throughput = 125
+      }
+      role = data.kubernetes_service_account_v1.auto.metadata[0].annotations["eks.amazonaws.com/role-name"]
+      tags = {
+        Name = "platform-node"
+      }
+    }
+    "coder-provisioner" = {
+      api_version               = "eks.amazonaws.com/v1"
+      kind                      = "NodeClass"
+      subnet_selector           = [for subnet_id in data.aws_subnets.private.ids : { id = subnet_id }]
+      sg_selector               = [{ id = data.aws_eks_cluster.this.vpc_config[0].cluster_security_group_id }]
+      network_policy            = "DefaultAllow"
+      network_policy_event_logs = "Disabled"
+      snat_policy               = "Disabled"
+      ephemeral_storage = {
+        iops       = 3000
+        size       = "80Gi"
+        throughput = 125
+      }
+      role = data.kubernetes_service_account_v1.auto.metadata[0].annotations["eks.amazonaws.com/role-name"]
+      tags = {
+        Name = "coder-provisioner-node"
+      }
+    }   
+    "coder-workspace" = {
+      api_version        = "karpenter.k8s.aws/v1"
+      kind               = "EC2NodeClass"
+      user_data          = <<-EOT
         MIME-Version: 1.0
         Content-Type: multipart/mixed; boundary="//"
 
@@ -116,31 +185,24 @@ locals {
           kubelet:
             config:
               registryPullQPS: 30
-        
         --//--
       EOT
-      subnet_selector = [{
-        tags = {
-          "karpenter.sh/discovery" = "${var.cluster_name}"
-        }
-      }]
-      sg_selector = [{
-        # Use for EKS AutoMode. AWS manages this, not TF: https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/eks_cluster#cluster_security_group_id-1
-        id = data.aws_eks_cluster.this.vpc_config[0].cluster_security_group_id
-        # tags = {
-        #   # If AutoMode is enabled, THIS BREAKS. Communication to CoreDNS locked behind system nodes. Kptr SG cant talk to AutoMode's SGs (only trusts itself and another AWS-managed SG)
-        #   "karpenter.sh/discovery" = "${var.cluster_name}"
-        # }
-      }]
+      subnet_selector    = [for subnet_id in data.aws_subnets.private.ids : { id = subnet_id }]
+      ami_selector = [{ alias = "al2023@latest" }]
+      sg_selector        = [{ id = data.aws_eks_cluster.this.vpc_config[0].cluster_security_group_id }]
       block_device_mappings = [{
         deviceName = "/dev/xvda"
         ebs = {
-          volumeSize          = "500Gi"
+          volumeSize          = "200Gi"
           volumeType          = "gp3"
           encrypted           = false
           deleteOnTermination = true
         }
       }]
+      role = data.kubernetes_service_account_v1.kptr.metadata[0].annotations["eks.amazonaws.com/role-name"]
+      tags = {
+        Name = "coder-workspace-node"
+      }
     }
   }
 }
@@ -155,16 +217,21 @@ resource "kubernetes_manifest" "nodeclass" {
     metadata = {
       name = each.key
     }
-    spec = {
-      role = data.kubernetes_service_account_v1.kptr.metadata[0].annotations["eks.amazonaws.com/role-arn"]
-      amiSelectorTerms = [{
-        alias = "al2023@latest"
-      }]
+    spec = merge({
+      role                       = each.value.role
+      tags                       = try(each.value.tags, null)
       subnetSelectorTerms        = each.value.subnet_selector
       securityGroupSelectorTerms = each.value.sg_selector
+    }, each.value.kind == "NodeClass" ? {
+      networkPolicy              = each.value.network_policy
+      networkPolicyEventLogs     = each.value.network_policy_event_logs
+      snatPolicy                 = each.value.snat_policy
+      ephemeralStorage           = each.value.ephemeral_storage
+    } : null, each.value.kind == "EC2NodeClass" ? {
+      amiSelectorTerms           = each.value.ami_selector
       blockDeviceMappings        = each.value.block_device_mappings
       userData                   = each.value.user_data
-    }
+    }: null)
   }
 }
 
@@ -174,32 +241,196 @@ resource "kubernetes_manifest" "nodeclass" {
 
 locals {
   nodepool_configs = {
-    "karpenter" = {
-      node_expires_after              = "24h"
-      disruption_consolidation_policy = "WhenEmptyOrUnderutilized"
-      disruption_consolidate_after    = "1m"
-      instance_types                   = ["t3a.large"]
-      node_class_ref = {
-        group = "karpenter.k8s.aws"
-        kind  = "EC2NodeClass"
-        name  = "coder"
+    "system" = {
+      disruption = {
+        consolidation_policy = "WhenEmptyOrUnderutilized"
+        consolidate_after    = "72h"
       }
-      # Have non Coder workspace apps get allocated to this nodepool 
+      instance_types                  = ["c6g.large", "c6g.xlarge", "c6g.2xlarge"]
+      node_class_ref = {
+        group = "eks.amazonaws.com"
+        kind  = "NodeClass"
+        name  = "platform"
+      }
       taints = [{
-        key = "dedicated"
-        value = "general"
+        key    = "CriticalAddonsOnly"
+        value  = "true"
+        effect = "NoSchedule"
+      }]
+    }
+    "observability-platform" = {
+      disruption = {
+        consolidation_policy = "WhenEmpty"
+        consolidate_after    = "72h"
+      }
+      instance_types                  = ["c6g.large", "c6g.xlarge"]
+      node_class_ref = {
+        group = "eks.amazonaws.com"
+        kind  = "NodeClass"
+        name  = "platform"
+      }
+      taints = [{
+        key    = "platform"
+        value  = "observability-platform"
+        effect = "NoSchedule"
+      }]
+    }
+    # "grafana" = {
+    #   disruption = {
+    #     consolidation_policy = "WhenEmpty"
+    #     consolidate_after    = "72h"
+    #   }
+    #   instance_types                  = ["c6g.medium", "c6g.xlarge"]
+    #   node_class_ref = {
+    #     group = "eks.amazonaws.com"
+    #     kind  = "NodeClass"
+    #     name  = "platform"
+    #   }
+    #   taints = [{
+    #     key    = "platform"
+    #     value  = "grafana"
+    #     effect = "NoSchedule"
+    #   }]
+    # }
+    "alertmanager" = {
+      disruption = {
+        consolidation_policy = "WhenEmpty"
+        consolidate_after    = "72h"
+      }
+      instance_types                  = ["c6g.medium", "c6g.xlarge"]
+      node_class_ref = {
+        group = "eks.amazonaws.com"
+        kind  = "NodeClass"
+        name  = "platform"
+      }
+      taints = [{
+        key    = "platform"
+        value  = "alertmanager"
+        effect = "NoSchedule"
+      }]
+    }
+    "prometheus" = {
+      disruption = {
+        consolidation_policy = "WhenEmpty"
+        consolidate_after    = "72h"
+      }
+      instance_types                  = ["c6g.2xlarge"]
+      node_class_ref = {
+        group = "eks.amazonaws.com"
+        kind  = "NodeClass"
+        name  = "platform"
+      }
+      taints = [{
+        key    = "platform"
+        value  = "prometheus"
+        effect = "NoSchedule"
+      }]
+    }
+    "loki" = {
+      disruption = {
+        consolidation_policy = "WhenEmpty"
+        consolidate_after    = "72h"
+      }
+      instance_types                  = ["c6g.medium", "c6g.xlarge"]
+      node_class_ref = {
+        group = "eks.amazonaws.com"
+        kind  = "NodeClass"
+        name  = "platform"
+      }
+      taints = [{
+        key    = "platform"
+        value  = "loki"
+        effect = "NoSchedule"
+      }]
+    }
+    "litellm" = {
+      disruption = {
+        consolidation_policy = "WhenEmptyOrUnderutilized"
+        consolidate_after    = "8h"
+      }
+      instance_types                  = ["c6g.xlarge","c6g.2xlarge","c6g.4xlarge"]
+      node_class_ref = {
+        group = "eks.amazonaws.com"
+        kind  = "NodeClass"
+        name  = "platform"
+      }
+      taints = [{
+        key    = "platform"
+        value  = "litellm"
+        effect = "NoSchedule"
+      }]
+    }
+    "coder-server" = {
+      disruption = {
+        consolidation_policy = "WhenEmptyOrUnderutilized"
+        consolidate_after    = "8h"
+      }
+      instance_types                  = ["c6g.xlarge","c6g.2xlarge","c6g.4xlarge"]
+      node_class_ref = {
+        group = "eks.amazonaws.com"
+        kind  = "NodeClass"
+        name  = "platform"
+      }
+      taints = [{
+        key    = "platform"
+        value  = "coder-server"
+        effect = "NoSchedule"
+      }]
+    }
+    "coder-provisioner" = {
+      disruption = {
+        consolidation_policy = "WhenEmptyOrUnderutilized"
+        consolidate_after    = "8h"
+        budgets = [{
+          nodes = "100%"
+        }]
+      }
+      node_expires_after = "8h"
+      instance_types                  = ["c6g.large", "c6g.xlarge", "c6g.2xlarge", "c6g.4xlarge"]
+      node_class_ref = {
+        group = "eks.amazonaws.com"
+        kind  = "NodeClass"
+        name  = "coder-provisioner"
+      }
+      taints = [{
+        key    = "coder"
+        value  = "provisioner"
         effect = "NoSchedule"
       }]
     }
     "coder-workspace" = {
-      node_expires_after              = "24h"
-      disruption_consolidation_policy = "WhenEmptyOrUnderutilized"
-      disruption_consolidate_after    = "1m"
-      instance_types                   = ["c8i.xlarge","c8i.2xlarge","c8i.4xlarge"]
+      disruption = {
+        consolidation_policy = "WhenEmptyOrUnderutilized"
+        consolidate_after    = "4h"
+        budgets = [{
+          nodes = "100%"
+        }]
+      }
+      instance_types = ["c6a.4xlarge","c6a.8xlarge"]
       node_class_ref = {
         group = "karpenter.k8s.aws"
         kind  = "EC2NodeClass"
-        name  = "coder"
+        name  = "coder-workspace"
+      }
+      taints = []
+    }
+    "coder-workspace-static" = {
+      disruption = {
+        consolidation_policy = "WhenEmptyOrUnderutilized"
+        consolidate_after    = "0s"
+        budgets = [{
+          nodes = "100%"
+        }]
+      }
+      replicas                        = 2
+      limits = {
+        nodes = 100
+      }
+      instance_types = ["c6a.4xlarge","c6a.8xlarge"]
+      node_class_ref = {
+        group = "karpenter.k8s.aws"
+        kind  = "EC2NodeClass"
+        name  = "coder-workspace"
       }
       taints = []
     }
@@ -208,7 +439,7 @@ locals {
 
 resource "kubernetes_manifest" "nodepool" {
 
-  depends_on = [ kubernetes_manifest.nodeclass ]
+  depends_on = [kubernetes_manifest.nodeclass]
   for_each   = local.nodepool_configs
 
   field_manager {
@@ -234,7 +465,17 @@ resource "kubernetes_manifest" "nodepool" {
     metadata = {
       name = each.key
     }
-    spec = {
+    spec = merge(try(each.value.replicas, null) == null ? {
+      disruption = {
+        consolidationPolicy = try(each.value.disruption.consolidation_policy, "WhenEmptyOrUnderutilized")
+        consolidateAfter    = try(each.value.disruption.consolidate_after, "0s")
+        budgets             = try(each.value.disruption.budgets, [{ nodes = "10%" }])
+      }
+    } : null, try(each.value.replicas, null) != null ? {
+      replicas = each.value.replicas
+    } : null, try(each.value.limits, null) != null ? {
+      limits = each.value.limits
+    } : null, {
       template = {
         metadata = {
           labels = {
@@ -242,10 +483,15 @@ resource "kubernetes_manifest" "nodepool" {
             "node.coder.io/managed-by" = "karpenter"
             "node.coder.io/name"       = "coder"
             "node.coder.io/part-of"    = "coder"
-            "node.coder.io/used-for" = each.key
+            "node.coder.io/used-for"   = each.key
           }
         }
         spec = {
+          # https://docs.aws.amazon.com/eks/latest/userguide/automode.html#_features
+          # 21 days (504 hours i.e. ExpireAfter + TerminationGracePeriod) maximum lifetime for AutoMode
+          # https://karpenter.sh/docs/concepts/nodepools/
+          # "Never" works for Karpenter though.
+          expireAfter  = try(each.value.node_expires_after, each.value.node_class_ref != "karpenter.k8s.aws" ? "480h" : "Never")
           taints = each.value.taints == null ? [{
             key    = "dedicated"
             value  = each.key
@@ -254,13 +500,13 @@ resource "kubernetes_manifest" "nodepool" {
           requirements = [{
             key      = "kubernetes.io/arch"
             operator = "In"
-            values   = ["amd64"]
+            values   = ["amd64", "arm64"]
             }, {
             key      = "kubernetes.io/os"
             operator = "In"
             values   = ["linux"]
             }, {
-            key      = "kubernetes.sh/capacity-type"
+            key      = "karpenter.sh/capacity-type"
             operator = "In"
             values   = ["spot", "on-demand"]
             }, {
@@ -269,14 +515,13 @@ resource "kubernetes_manifest" "nodepool" {
             values   = each.value.instance_types
           }]
           nodeClassRef = each.value.node_class_ref
-          expireAfter  = each.value.node_expires_after
         }
       }
-      disruption = {
-        consolidationPolicy = each.value.disruption_consolidation_policy
-        consolidateAfter    = each.value.disruption_consolidate_after
-      }
-    }
+    })
+  }
+
+  lifecycle {
+    ignore_changes = [ manifest.spec.replicas ]
   }
 }
 
@@ -290,10 +535,10 @@ locals {
 
 resource "kubernetes_secret_v1" "cf" {
   metadata {
-    name = "cloudflare-token"
+    name      = "cloudflare-token"
     namespace = var.cloudflare_secret_namespace
     annotations = {
-      "custom.kubernetes.secret/key" = local.cf_secret_key
+      "custom.kubernetes.secret/key"   = local.cf_secret_key
       "custom.kubernetes.secret/email" = var.cloudflare_email
     }
   }
@@ -356,13 +601,26 @@ resource "kubernetes_manifest" "issuer" {
 # Image Prefetch DaemonSet. Add images to warm new Coder nodes with workspace image.
 ##
 
+locals {
+  prewarm_imgs = [
+    "codercom/enterprise-java:latest",
+    "codercom/enterprise-golang:latest",
+    "codercom/enterprise-node:latest",
+    "codercom/enterprise-base:ubuntu",
+    "public.ecr.aws/f7a1d7a4/coder-aienv:1.1.4"
+  ]
+}
+
 resource "kubernetes_daemon_set_v1" "img-fetch" {
 
-  for_each = local.nodepool_configs
+  for_each = toset([
+    "coder-workspace", 
+    "coder-workspace-static"
+  ])
 
   metadata {
     name      = "imgs-for-${each.key}"
-    namespace = "kube-system"
+    namespace = "default"
     labels = {
       "app.kubernetes.io/name"    = "img-fetch"
       "app.kubernetes.io/part-of" = "coder-workspaces"
@@ -396,10 +654,13 @@ resource "kubernetes_daemon_set_v1" "img-fetch" {
 
         termination_grace_period_seconds = 5
 
-        init_container {
-          name    = "enterprise-base"
-          image   = "docker.io/codercom/enterprise-base:ubuntu"
-          command = []
+        dynamic "init_container" {
+          for_each = toset(local.prewarm_imgs)
+          content {
+            name = replace(init_container.value, "/\\W/", "-")
+            image   = init_container.value
+            command = []
+          }
         }
 
         container {
@@ -418,6 +679,95 @@ resource "kubernetes_daemon_set_v1" "img-fetch" {
           }
         }
       }
+    }
+  }
+}
+
+locals {
+  reg_mirror = "${data.aws_caller_identity.this.account_id}.dkr.ecr.${var.region}.amazonaws.com"
+  reg_suffix = {
+    "ghcr" = "ghcr.io"
+    "k8s" = "registry.k8s.io"
+    "quay" = "quay.io"
+    "docker-hub" = "index.docker.io"
+    "ecr-public" = "public.ecr.aws"
+  }
+}
+
+resource "kubernetes_manifest" "mutate_img_policy" {
+  manifest = {
+    apiVersion = "policies.kyverno.io/v1"
+    kind       = "MutatingPolicy"
+    metadata = {
+      name      = "mutate-ws-image"
+    }
+    spec = {
+      matchConstraints = {
+        matchPolicy = "Equivalent"
+        namespaceSelector = {
+          matchExpressions = [{
+            key = "kubernetes.io/metadata.name"
+            operator = "In"
+            values = [
+              "default", 
+              "litellm", 
+              "observability",
+              "ebs-controller",
+              "coder",
+              "coder-ws-demo",
+              "coder-ws-experiment",
+              "coder-ws"
+            ]
+          }]
+        }
+        objectSelector = {
+          matchExpressions = [
+            {
+              key = "app.kubernetes.io/name"
+              operator = "NotIn"
+              values = [
+                # "coder-provisioner", 
+                # "coder"
+                "test"
+              ]
+            },
+            {
+              key = "app.kubernetes.io/managed-by"
+              operator = "NotIn"
+              values = [
+                # "Helm",
+                "test"
+              ]
+            }
+          ]
+        }
+        resourceRules = [
+          {
+            apiGroups   = [""]
+            apiVersions = ["v1"]
+            operations  = ["CREATE", "UPDATE"]
+            resources   = ["pods"]
+          }
+        ]
+      }
+      mutations = [ for k in ["containers", "initContainers", "ephemeralContainers"] : {
+        patchType = "JSONPatch"
+        jsonPatch = {
+          expression = <<-EOT
+            object.spec.?${k}.orValue([]).map(c, 
+              %{ for suffix,reg in local.reg_suffix ~}
+              image(c.image).registry() == "${reg}" ? 
+              JSONPatch{
+                op: "replace",
+                path: "/spec/${k}/" + string(object.spec.?${k}.orValue([]).indexOf(c)) + "/image",
+                value: "${local.reg_mirror}" + "/" + "${suffix}" + "/" + string(image(c.image).repository()) + ":" + string(image(c.image).tag())
+              } :
+              %{ endfor ~}
+              null
+            ).filter(p, p != null)
+          EOT
+        }
+      } ]
     }
   }
 }

@@ -8,6 +8,7 @@ dependencies {
     "../../eks",
     "../litellm",
     "../coder-server",
+    "../kyverno",
     "../other" # Deploy's auxillary manifests
   ]
 }

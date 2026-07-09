@@ -35,20 +35,66 @@ provider "kubernetes" {
   token                  = data.aws_eks_cluster_auth.this.token
 }
 
+locals {
+  release_name = "aws-load-balancer-controller"
+}
+
 module "lb-controller" {
   source                    = "../../../../../modules/k8s/bootstrap/lb-controller"
   cluster_name              = data.aws_eks_cluster.this.name
   cluster_oidc_provider_arn = data.aws_iam_openid_connect_provider.this.arn
 
+  release_name        = local.release_name
   namespace           = var.addon_namespace
   chart_version       = var.addon_version
   enable_cert_manager = var.use_cert_manager
-  vpc_id = data.aws_vpc.this.id
-  
+  vpc_id              = data.aws_vpc.this.id
+
   tolerations = [{
-    key = "CriticalAddonsOnly"
+    key      = "CriticalAddonsOnly"
     operator = "Exists"
   }]
+  topology_spread = [{
+    topologyKey = "topology.kubernetes.io/zone"
+    maxSkew = 1
+    whenUnsatisfiable = "ScheduleAnyway"
+  }]
+  affinity = {
+    nodeAffinity = {
+      requiredDuringSchedulingIgnoredDuringExecution = {
+        nodeSelectorTerms = [{
+          matchExpressions = [
+            {
+              key      = "eks.amazonaws.com/compute-type",
+              operator = "In",
+              values   = ["auto"]
+            }
+          ]
+        }]
+      }
+    }
+    podAntiAffinity = {
+      preferredDuringSchedulingIgnoredDuringExecution = [{
+        weight = 100
+        podAffinityTerm = {
+          topologyKey = "topology.kubernetes.io/zone"
+          labelSelector = {
+            matchLabels = {
+              "app.kubernetes.io/name" = local.release_name
+            }
+          }
+        }
+      }]
+      requiredDuringSchedulingIgnoredDuringExecution = [{
+        topologyKey = "kubernetes.io/hostname"
+        labelSelector = {
+          matchLabels = {
+            "app.kubernetes.io/name" = local.release_name
+          }
+        }
+      }]
+    }
+  }
   service_target_eni_sg_tags = {
     Name = "aidemo-eks-node"
   }

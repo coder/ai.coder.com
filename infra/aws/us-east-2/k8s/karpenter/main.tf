@@ -15,6 +15,8 @@ data "aws_iam_openid_connect_provider" "this" {
   url = data.aws_eks_cluster.this.identity[0].oidc[0].issuer
 }
 
+data "aws_caller_identity" "me" {}
+
 provider "helm" {
   kubernetes = {
     host                   = data.aws_eks_cluster.this.endpoint
@@ -63,70 +65,43 @@ locals {
   }
 }
 
-locals {
-  nodepool_configs = [{
-    name = "coder-server"
-    node_labels = merge(local.global_node_labels, {
-      "node.coder.io/name"     = "coder"
-      "node.coder.io/part-of"  = "coder"
-      "node.coder.io/used-for" = "coder-server"
-    })
-    node_taints = [{
-      key    = "dedicated"
-      value  = "coder-server"
-      effect = "NoSchedule"
-    }]
-    node_requirements = concat(local.global_node_reqs, [{
-      key      = "node.kubernetes.io/instance-type"
-      operator = "In"
-      values   = ["m5a.xlarge", "m6a.xlarge"]
-    }])
-    node_class_ref_name = "coder-server-class"
-    }, {
-    name = "coder-provisioner"
-    node_labels = merge(local.global_node_labels, {
-      "node.coder.io/name"     = "coder"
-      "node.coder.io/part-of"  = "coder"
-      "node.coder.io/used-for" = "coder-provisioner"
-    })
-    node_taints = [{
-      key    = "dedicated"
-      value  = "coder-provisioner"
-      effect = "NoSchedule"
-    }]
-    node_requirements = concat(local.global_node_reqs, [{
-      key      = "node.kubernetes.io/instance-type"
-      operator = "In"
-      values   = ["m5a.4xlarge", "m6a.4xlarge"]
-    }])
-    node_class_ref_name = "coder-provisioner-class"
-    }, {
-    name = "coder-ws-all"
-    node_labels = merge(local.global_node_labels, {
-      "node.coder.io/name"     = "coder"
-      "node.coder.io/part-of"  = "coder"
-      "node.coder.io/used-for" = "coder-ws-all"
-    })
-    node_taints = [{
-      key    = "dedicated"
-      value  = "coder-ws"
-      effect = "NoSchedule"
-    }]
-    node_requirements = concat(local.global_node_reqs, [{
-      key      = "node.kubernetes.io/instance-type"
-      operator = "In"
-      values   = ["c6a.32xlarge", "c5a.32xlarge"]
-    }])
-    node_class_ref_name          = "coder-ws-class"
-    disruption_consolidate_after = "30m"
-  }]
+data "aws_iam_policy_document" "ecr-mirror" {
+  
+  statement {
+    effect  = "Allow"
+    actions = ["ecr:CreateRepository"]
+    resources = ["*"]
+  }
+
+  statement {
+    effect  = "Allow"
+    actions = ["ecr:GetAuthorizationToken"]
+    resources = ["*"]
+  }
+
+  statement {
+    effect  = "Allow"
+    actions = [
+      "ecr:BatchImportUpstreamImage",
+      "ecr:BatchGetImage",
+      "ecr:GetDownloadUrlForLayer"
+    ]
+    resources = [ "arn:aws:ecr:${var.region}:${data.aws_caller_identity.me.account_id}:repository/cache/*" ]
+  }
+}
+
+resource "aws_iam_policy" "ecr-mirror" {
+  name_prefix        = "ecr-mirror"
+  description = "Allows ECR pull-through cache automation including repository creation"
+  path = "/${var.region}/kptr/"
+  policy      = data.aws_iam_policy_document.ecr-mirror.json
 }
 
 module "karpenter-addon" {
 
   source                    = "../../../../../modules/k8s/bootstrap/karpenter"
   cluster_name              = var.cluster_name
-  cluster_oidc_provider = trimprefix(data.aws_iam_openid_connect_provider.this.url, "https://")
+  cluster_oidc_provider     = trimprefix(data.aws_iam_openid_connect_provider.this.url, "https://")
   cluster_oidc_provider_arn = data.aws_iam_openid_connect_provider.this.arn
 
   namespace     = var.addon_namespace
@@ -134,10 +109,40 @@ module "karpenter-addon" {
 
   node_selector = {}
   tolerations = [{
-    key = "CriticalAddonsOnly"
+    key      = "CriticalAddonsOnly"
     operator = "Exists"
   }]
   topology_spread = []
+  affinity = {
+    nodeAffinity = {
+      requiredDuringSchedulingIgnoredDuringExecution = {
+        nodeSelectorTerms = [{
+          matchExpressions = [
+            {
+              key      = "eks.amazonaws.com/compute-type",
+              operator = "In",
+              values   = ["auto"]
+            }
+          ]
+        }]
+      }
+    }
+    podAntiAffinity = {
+      preferredDuringSchedulingIgnoredDuringExecution = [{
+        weight = 100
+        podAffinityTerm = {
+          labelSelector = {
+            matchExpressions = [{
+              key      = "app.kubernetes.io/name"
+              operator = "In"
+              values   = ["karpenter"]
+            }]
+          }
+          topologyKey = "kubernetes.io/hostname"
+        }
+      }]
+    }
+  }
 
   iam_role_use_name_prefix      = true
   node_iam_role_use_name_prefix = true
@@ -145,63 +150,7 @@ module "karpenter-addon" {
   karpenter_controller_role_policies = {
     "AmazonEFSCSIDriverPolicy" = "arn:aws:iam::aws:policy/service-role/AmazonEFSCSIDriverPolicy"
   }
+  karpenter_node_role_policies = {
+    "ECRMirrorPolicy" = aws_iam_policy.ecr-mirror.arn
+  }
 }
-
-  # namespace     = var.addon_namespace
-  # chart_version = var.addon_version
-  # node_selector = {
-  #   "node.amazonaws.io/managed-by" : "asg"
-  # }
-  # karpenter_controller_role_policies = {
-  #   "AmazonEFSCSIDriverPolicy" = "arn:aws:iam::aws:policy/service-role/AmazonEFSCSIDriverPolicy"
-  # }
-  # ec2nodeclass_configs = [{
-  #   name                 = "coder-server-class"
-  #   subnet_selector_tags = local.provisioner_subnet_tags
-  #   sg_selector_tags     = local.provisioner_sg_tags
-  #   }, {
-  #   name                 = "coder-ws-class"
-  #   subnet_selector_tags = local.ws_all_subnet_tags
-  #   sg_selector_tags     = local.ws_all_sg_tags
-  #   ami_alias            = "al2023@latest" # Use /dev/xvda
-  #   user_data            = <<-EOF
-  #   apiVersion: node.eks.aws/v1alpha1
-  #   kind: NodeConfig
-  #   spec:
-  #     kubelet:
-  #       config:
-  #         registryPullQPS: 30
-  #   EOF
-  #   block_device_mappings = [{
-  #     device_name = "/dev/xvda"
-  #     ebs = {
-  #       volume_size = "500Gi"
-  #       volume_type = "gp3"
-  #     }
-  #   }]
-  #   # # Bottlerocket configs.
-  #   # ami_alias        = "bottlerocket@latest" # Use /dev/xvda + /dev/xvdb
-  #   # user_data        = <<-EOF
-  #   # [settings.kubernetes]
-  #   # 'registry-qps' = 30
-  #   # [settings.kernel.sysctl]
-  #   # 'user.max_user_namespaces' = "16384"
-  #   # EOF
-  #   # block_device_mappings = [{
-  #   #   device_name = "/dev/xvda"
-  #   #   ebs = {
-  #   #     volume_size = "500Gi"
-  #   #     volume_type = "gp3"
-  #   #   }
-  #   #   }, {
-  #   #   device_name = "/dev/xvdb"
-  #   #   ebs = {
-  #   #     volume_size = "500Gi"
-  #   #     volume_type = "gp3"
-  #   #   }
-  #   # }]
-  #   }, {
-  #   name                 = "coder-provisioner-class"
-  #   subnet_selector_tags = local.provisioner_subnet_tags
-  #   sg_selector_tags     = local.provisioner_sg_tags
-  # }]

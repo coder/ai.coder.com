@@ -17,7 +17,6 @@ infra/aws/us-east-2/apps/coder-devel/build-and-push
 infra/aws/us-east-2/apps/cert-manager
 coder-observability/
 observability/
-charts/
 secrets/
 
 # Python

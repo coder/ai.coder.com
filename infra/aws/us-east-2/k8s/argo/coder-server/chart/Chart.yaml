@@ -1,0 +1,10 @@
+apiVersion: v2
+name: coder
+description: Wrapper chart that deploys the upstream Coder Helm chart with opinionated defaults
+type: application
+version: 0.1.0
+appVersion: "2.25.1"
+dependencies:
+  - name: coder
+    version: 2.25.1
+    repository: https://helm.coder.com/v2

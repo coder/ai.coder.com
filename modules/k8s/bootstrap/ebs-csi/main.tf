@@ -54,12 +54,17 @@ variable "node_selector" {
 }
 
 variable "affinity" {
-  type = map(any)
+  type = any
   default = {}
 }
 
 variable "tolerations" {
   type = list(map(any))
+  default = []
+}
+
+variable "topology_spread" {
+  type = list(any)
   default = []
 }
 
@@ -115,6 +120,7 @@ resource "helm_release" "ebs-controller" {
       }
       nodeSelector = var.node_selector
       tolerations = var.tolerations
+      topologySpreadConstraints = var.topology_spread
       affinity = var.affinity
     }
   })]

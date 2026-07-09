@@ -27,6 +27,11 @@ variable "tolerations" {
   default = []
 }
 
+variable "affinity" {
+  type = map(any)
+  default = {}
+}
+
 data "aws_region" "this" {}
 
 data "aws_caller_identity" "this" {}
@@ -47,5 +52,6 @@ resource "helm_release" "metrics-server" {
   values = [yamlencode({
     nodeSelector = var.node_selector
     tolerations = var.tolerations
+    affinity = var.affinity
   })]
 }

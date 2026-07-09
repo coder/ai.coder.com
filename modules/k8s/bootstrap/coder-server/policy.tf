@@ -1,4 +1,12 @@
-data "aws_iam_policy_document" "provisioner-policy" {
+locals {
+  rds_db_name = split(".", var.db.url)[0]
+}
+
+data "aws_db_instance" "coder" {
+  db_instance_identifier = local.rds_db_name
+}
+
+data "aws_iam_policy_document" "provisioner" {
   statement {
     effect = "Allow"
     actions = [
@@ -34,5 +42,15 @@ data "aws_iam_policy_document" "provisioner-policy" {
       "ec2:ModifyInstanceCreditSpecification"
     ]
     resources = ["arn:aws:ec2:*:*:instance/*"]
+  }
+}
+
+data "aws_iam_policy_document" "rds" {
+  statement {
+    effect    = "Allow"
+    actions   = ["rds-db:connect"]
+    resources = [
+      "arn:aws:rds-db:${local.region}:${local.account_id}:dbuser:${data.aws_db_instance.coder.resource_id}/${var.db.username}"
+    ]
   }
 }

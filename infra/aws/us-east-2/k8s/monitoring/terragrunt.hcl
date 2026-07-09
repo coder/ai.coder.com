@@ -28,6 +28,7 @@ inputs = {
   domain_name=include.root.locals.GRAFANA_DOMAIN_NAME
   vpc_name=include.root.locals.CODER_VPC_NAME
   azs=include.root.locals.CODER_VPC_AZS
+  private_subnet_suffix=include.root.locals.CODER_PRIVATE_SUBNET_SUFFIX
 
   loki_s3_bucket_name=include.root.locals.LOKI_S3_BUCKET_NAME
   loki_s3_bucket_region=include.root.locals.LOKI_S3_BUCKET_REGION

@@ -7,6 +7,11 @@ variable "region" {
   type        = string
 }
 
+variable "azs" {
+  description = "The aws availability zones to deploy eks cluster"
+  type        = list(string)
+}
+
 variable "name" {
   description = "The resource name and tag prefix"
   type        = string
@@ -24,15 +29,15 @@ variable "instance_type" {
 }
 
 variable "vpc_name" {
-  type      = string
+  type = string
 }
 
 variable "private_subnet_suffix" {
-  type      = string
+  type    = string
   default = "private"
 }
 
 variable "public_subnet_suffix" {
-  type      = string
+  type    = string
   default = "public"
 }

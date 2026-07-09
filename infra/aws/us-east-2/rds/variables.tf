@@ -28,13 +28,13 @@ variable "coder_db_name" {
 }
 
 variable "litellm_db_rds_id" {
-    type = string
-    default = "litellm"
+  type    = string
+  default = "litellm"
 }
 
 variable "litellm_db_name" {
-    type = string
-    default = "litellm"
+  type    = string
+  default = "litellm"
 }
 
 variable "litellm_username" {
@@ -47,13 +47,13 @@ variable "litellm_password" {
 }
 
 variable "grafana_db_rds_id" {
-    type = string
-    default = "grafana"
+  type    = string
+  default = "grafana"
 }
 
 variable "grafana_db_name" {
-    type = string
-    default = "grafana"
+  type    = string
+  default = "grafana"
 }
 
 variable "grafana_username" {

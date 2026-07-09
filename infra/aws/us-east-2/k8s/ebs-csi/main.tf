@@ -31,28 +31,55 @@ module "ebs-controller" {
   namespace     = var.addon_namespace
   chart_version = var.addon_version
   replace       = var.addon_replace
-  
+
   tolerations = [{
-    key = "CriticalAddonsOnly"
+    key      = "CriticalAddonsOnly"
     operator = "Exists"
-  },{
-    key = "dedicated"
-    value = "general"
+    }, {
+    key    = "dedicated"
+    value  = "general"
     effect = "NoSchedule"
+  }]
+  topology_spread = [{
+    topologyKey = "topology.kubernetes.io/zone"
+    maxSkew = 1
+    whenUnsatisfiable = "ScheduleAnyway"
   }]
   affinity = {
     nodeAffinity = {
+      preferredDuringSchedulingIgnoredDuringExecution = []
       requiredDuringSchedulingIgnoredDuringExecution = {
         nodeSelectorTerms = [{
           matchExpressions = [
             {
-              key = "eks.amazonaws.com/compute-type",
+              key      = "eks.amazonaws.com/compute-type",
               operator = "In",
-              values = ["auto"]
+              values   = ["auto"]
             }
           ]
         }]
       }
+    }
+    podAntiAffinity = {
+      preferredDuringSchedulingIgnoredDuringExecution = [{
+        podAffinityTerm = {
+          topologyKey = "topology.kubernetes.io/zone"
+          labelSelector = {
+            matchLabels = {
+              "app" = "ebs-csi-controller"
+            }
+          }
+        }
+        weight = 100
+      }]
+      requiredDuringSchedulingIgnoredDuringExecution = [{
+        topologyKey = "kubernetes.io/hostname"
+        labelSelector = {
+          matchLabels = {
+            "app" = "ebs-csi-controller"
+          }
+        }
+      }]
     }
   }
 }

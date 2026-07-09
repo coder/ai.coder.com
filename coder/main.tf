@@ -3,8 +3,11 @@ terraform {
     coderd = {
       source = "coder/coderd"
     }
-    random = {
-      source = "hashicorp/random"
+    aws = {
+      source = "hashicorp/aws"
+    }
+    time = {
+      source = "hashicorp/time"
     }
   }
   backend "s3" {}
@@ -24,9 +27,24 @@ variable "coder_username" {
   sensitive = true
 }
 
+variable "region" {
+  type    = string
+  default = "us-east-2"
+}
+
+variable "profile" {
+  type    = string
+  default = "demo-coder"
+}
+
 provider "coderd" {
   url   = var.coder_primary_url
   token = var.coder_token
+}
+
+provider "aws" {
+  region  = var.region
+  profile = var.profile
 }
 
 module "experiment-org" {

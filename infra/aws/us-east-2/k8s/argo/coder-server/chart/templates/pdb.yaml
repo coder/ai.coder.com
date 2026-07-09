@@ -1,0 +1,14 @@
+{{- if .Values.pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ include "coder.namespace" . }}
+  labels:
+    {{- include "coder.labels" . | nindent 4 }}
+spec:
+  maxUnavailable: {{ .Values.pdb.maxUnavailable }}
+  selector:
+    matchLabels:
+      {{- include "coder.upstreamSelectorLabels" . | nindent 6 }}
+{{- end }}
