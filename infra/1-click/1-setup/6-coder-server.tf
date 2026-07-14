@@ -249,17 +249,21 @@ module "coder-server" {
     ]
   }]
 
-  pod_aaf_pref_sched_ie = [{
-    weight = 100
-    pod_affinity_term = {
-      label_selector = {
-        match_labels = {
-          "app.kubernetes.io/instance" = "coder"
-          "app.kubernetes.io/name"     = local.coder_release_name
-          "app.kubernetes.io/part-of"  = "coder"
+  affinity = {
+    podAntiAffinity = {
+      preferredDuringSchedulingIgnoredDuringExecution = [{
+        weight = 100
+        podAffinityTerm = {
+          labelSelector = {
+            matchLabels = {
+              "app.kubernetes.io/instance" = "coder"
+              "app.kubernetes.io/name"     = local.coder_release_name
+              "app.kubernetes.io/part-of"  = "coder"
+            }
+          }
+          topologyKey = "kubernetes.io/hostname"
         }
-      }
-      topology_key = "kubernetes.io/hostname"
+      }]
     }
-  }]
+  }
 }
