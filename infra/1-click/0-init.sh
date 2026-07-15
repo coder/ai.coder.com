@@ -1,7 +1,0 @@
-#!/usr/bin/env bash
-
-set -ae -o pipefail
-
-source coder.env
-
-terragrunt run --all --non-interactive --config root.hcl init -- -migrate-state -upgrade

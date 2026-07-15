@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Release.Name }}-ctrl-role
+  namespace: {{ .Release.Namespace }}
+  labels: {{ .Values.extra.sa.controller.labels }}
+  annotations: {{ .Values.extra.sa.controller.annotations }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Release.Name }}-node-role
+  namespace: {{ .Release.Namespace }}
+  labels: {{ .Values.extra.sa.controller.labels }}
+  annotations: {{ .Values.extra.sa.node.annotations }}

@@ -21,19 +21,7 @@ locals {
 
   CODER_DB_RDS_ID = get_env("CODER_DB_RDS_ID", "coder")
   CODER_DB_USERNAME = get_env("CODER_DB_USERNAME", "coder")
-  CODER_DB_PASSWORD = get_env("CODER_DB_PASSWORD", "th1s1sn0tas3cur3pass0wrd")
   CODER_DB_NAME = get_env("CODER_DB_NAME", "coder")
-  
-  LITELLM_DOMAIN_NAME = get_env("LITELLM_DOMAIN_NAME")
-  LITELLM_ADDON_NAMESPACE = get_env("LITELLM_ADDON_NAMESPACE", "litellm")
-  LITELLM_ADDON_VERSION = get_env("LITELLM_ADDON_VERSION", "0.1.830")
-  LITELLM_DB_RDS_ID = get_env("LITELLM_DB_RDS_ID", "litellm")
-  LITELLM_DB_NAME = get_env("LITELLM_DB_NAME", "litellm")
-  LITELLM_DB_USERNAME = get_env("LITELLM_DB_USERNAME", "litellm")
-  LITELLM_DB_USER_PASSWORD = get_env("LITELLM_DB_USER_PASSWORD", "th1s1sn0tas3cur3pass0wrd")
-  LITELLM_DB_ADMIN_PASSWORD = get_env("LITELLM_DB_ADMIN_PASSWORD", "th1s1sn0tas3cur3pass0wrd")
-  LITELLM_GCLOUD_AUTH = get_env("LITELLM_GCLOUD_AUTH", "th1s1sn0tas3cur3pass0wrd")
-  LITELLM_MASTER_KEY = get_env("LITELLM_MASTER_KEY", "th1s1sn0tas3cur3pass0wrd")
 
   CODER_IMAGE_REPO = get_env("CODER_IMAGE_REPO", "ghcr.io/coder/coder")
   CODER_IMAGE_TAG = get_env("CODER_IMAGE_TAG", "v2.28.6")
@@ -65,17 +53,6 @@ locals {
 
   GRAFANA_DOMAIN_NAME = get_env("GRAFANA_DOMAIN_NAME")
 
-  GRAFANA_DB_RDS_ID = get_env("GRAFANA_DB_RDS_ID", "grafana")
-  GRAFANA_DB_NAME = get_env("GRAFANA_DB_NAME", "grafana")
-  GRAFANA_DB_USERNAME = get_env("GRAFANA_DB_USERNAME",  "grafana")
-  GRAFANA_DB_PASSWORD = get_env("GRAFANA_DB_PASSWORD",  "Th1s1sN0TS3CuR3!!")
-
-  GRAFANA_USERNAME = get_env("GRAFANA_USERNAME", "admin")
-  GRAFANA_PASSWORD = get_env("GRAFANA_PASSWORD",  "Th1s1sN0TS3CuR3!!")
-
-  GRAFANA_ADMIN_USERNAME = get_env("GRAFANA_ADMIN_USERNAME", "admin")
-  GRAFANA_ADMIN_PASSWORD = get_env("GRAFANA_ADMIN_PASSWORD",  "Th1s1sN0TS3CuR3!!")
-
   CODER_DOMAIN_NAME = get_env("CODER_DOMAIN_NAME")
   CODER_WILDCARD_URL = get_env("CODER_WILDCARD_URL")
   CODER_LICENSE = get_env("CODER_LICENSE", "")
@@ -101,11 +78,6 @@ locals {
   CODER_GITHUB_OAUTH_CLIENT_SECRET = get_env("CODER_GITHUB_OAUTH_CLIENT_SECRET")
   CODER_GITHUB_EXTERN_AUTH_CLIENT_ID = get_env("CODER_GITHUB_EXTERN_AUTH_CLIENT_ID")
   CODER_GITHUB_EXTERN_AUTH_CLIENT_SECRET = get_env("CODER_GITHUB_EXTERN_AUTH_CLIENT_SECRET")
-
-  CODER_ANTHROPIC_LLM_ENDPOINT = get_env("CODER_ANTHROPIC_LLM_ENDPOINT")
-  CODER_ANTHROPIC_LLM_KEY = get_env("CODER_ANTHROPIC_LLM_KEY")
-  CODER_OPENAI_LLM_ENDPOINT = get_env("CODER_OPENAI_LLM_ENDPOINT")
-  CODER_OPENAI_LLM_KEY = get_env("CODER_OPENAI_LLM_KEY")
 }
 
 generate "backend" {
@@ -143,7 +115,7 @@ generate "provider" {
         }
         kubernetes = {
           source = "hashicorp/kubernetes"
-          version = "~> 3.0.1"
+          version = "~> 3.2.1"
         }
         grafana = {
           source = "grafana/grafana"
@@ -175,11 +147,7 @@ generate "provider" {
         }
         coderd = {
           source  = "coder/coderd"
-          version = "~> 0.0.12"
-        }
-        argocd = {
-          source  = "argoproj-labs/argocd"
-          version = "~> 7.15.3"
+          version = "~> 0.0.20"
         }
       }
     }
