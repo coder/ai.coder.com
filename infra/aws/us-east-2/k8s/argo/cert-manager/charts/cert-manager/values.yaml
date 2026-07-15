@@ -1,0 +1,29 @@
+extra:
+  r53:
+    sa:
+      enable: true
+      labels: {}
+      annotations: {}
+    role:
+      enable: true
+      labels: {}
+      annotations: {}
+    rolebinding:
+      enable: true
+      labels: {}
+      annotations: {}
+  
+  defaultIssuer:
+    enable: true
+    name: issuer
+    labels: {}
+    annotations: {}
+    acme:
+      server: "https://acme-v02.api.letsencrypt.org/directory"
+      privateKeySecretRef: 
+        name: issuer-account-key
+      cloudflare:
+        apiTokenSecretRef:
+          key: cf-token-key
+          name: cf-token
+        email: example@google.com

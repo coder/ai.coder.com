@@ -1,0 +1,63 @@
+{{- if .Values.extra.r53.sa.enable }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Release.Name }}-r53-sa
+  namespace: {{ .Release.Namespace }}
+  {{- with .Values.extra.r53.sa.labels }}
+  labels:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  annotations: 
+  {{- with .Values.extra.r53.sa.annotations }}
+  labels:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}
+---
+{{- if .Values.extra.r53.role.enable }}
+apiVersion: v1
+kind: Role
+metadata:
+  name: {{ .Release.Name }}-r53-tokenrequest
+  namespace: {{ .Release.Namespace }}
+  {{- with .Values.extra.r53.role.labels }}
+  labels:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  annotations: 
+  {{- with .Values.extra.r53.role.annotations }}
+  labels:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+rules:
+  - apiGroups: [""]
+    resources: ["serviceaccounts/token"]
+    resourceNames: ["{{ .Release.Name }}-r53-sa"]
+    verbs: ["create"]
+{{- end }}
+---
+{{- if .Values.extra.r53.rolebinding.enable }}
+apiVersion: rbac.authorization.k8s.io
+kind: RoleBinding
+metadata:
+  name: {{ .Release.Name }}-r53-tokenrequest
+  namespace: {{ .Release.Namespace }}
+  {{- with .Values.extra.r53.rolebinding.labels }}
+  labels:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  annotations: 
+  {{- with .Values.extra.r53.rolebinding.annotations }}
+  labels:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+subject:
+  kind: ServiceAccount
+  name: {{ .Release.Name }}-r53-sa
+  namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Release.Name }}-r53-tokenrequest
+{{- end }}
