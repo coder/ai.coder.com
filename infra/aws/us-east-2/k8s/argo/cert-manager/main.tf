@@ -116,9 +116,9 @@ resource "kubernetes_manifest" "cert-manager" {
     spec = {
       project = "default"
       source = {
-        repoURL = "oci://quay.io/jetstack/charts"
-        chart = "cert-manager"
-        targetRevision = "v1.18.2"
+        repoURL = "https://github.com/coder/ai.coder.com"
+        path = "infra/aws/us-east-2/k8s/argo/cert-manager/charts/cert-manager"
+        targetRevision = "main"
         helm = {
           values = yamlencode({
             extra = {
