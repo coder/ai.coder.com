@@ -49,10 +49,10 @@ metadata:
   annotations: 
     {{- toYaml . | nindent 4 }}
   {{- end }}
-subject:
-  kind: ServiceAccount
-  name: {{ .Release.Name }}-r53-sa
-  namespace: {{ .Release.Namespace }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}-r53-sa
+    namespace: {{ .Release.Namespace }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
