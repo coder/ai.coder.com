@@ -199,3 +199,8 @@ resource "kubernetes_manifest" "cert-manager" {
     }
   }
 }
+
+import {
+  id = "apiVersion=argoproj.io/v1alpha1,kind=Application,namespace=argocd,name=cert-manager"
+  to = kubernetes_manifest.cert-manager
+}
