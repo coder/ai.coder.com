@@ -42,7 +42,7 @@ locals {
 }
 
 module "policy" {
-  source      = "../../../security/policy"
+  source      = "../../../../../../modules/security/policy"
   name        = "crt-mgr"
   path         = "/${var.cluster_name}/${var.region}/"
   description = "Cert-Manager for R53 Policy"
@@ -50,7 +50,7 @@ module "policy" {
 }
 
 module "oidc-role" {
-  source       = "../../../security/role/access-entry"
+  source       = "../../../../../../modules/security/role/access-entry"
   name         = "crt-mgr"
   path         = "/${var.cluster_name}/${var.region}/"
   cluster_name = var.cluster_name
@@ -72,6 +72,11 @@ resource "kubernetes_namespace_v1" "cert-manager" {
   }
 }
 
+import {
+  id = "cert-manager"
+  to = kubernetes_namespace_v1.cert-manager
+}
+
 resource "kubernetes_secret_v1" "cloudflare" {
   metadata {
     name      = "cloudflare-token"
@@ -86,6 +91,11 @@ resource "kubernetes_secret_v1" "cloudflare" {
   }
 }
 
+import {
+  id = "${kubernetes_namespace_v1.cert-manager.metadata[0].name}/cloudflare-token"
+  to = kubernetes_secret_v1.cloudflare
+}
+
 resource "kubernetes_manifest" "cert-manager" {
 
   wait {
@@ -95,7 +105,7 @@ resource "kubernetes_manifest" "cert-manager" {
     }
   }
 
-  wait {
+  timeouts {
     create = "5m"
     update = "5m"
     delete = "30s"
@@ -140,13 +150,15 @@ resource "kubernetes_manifest" "cert-manager" {
                 enable = true
                 name = "issuer"
                 acme = {
-                  privateKeySecretRef = "issuer-account-key"
+                  privateKeySecretRef = {
+                    name = "issuer-account-key"
+                  }
                   cloudflare = {
                     apiTokenSecretRef = {
-                      name = kubernetes_secret_v1.cf.metadata[0].name
-                      key = kubernetes_secret_v1.cf.metadata[0].annotations["custom.kubernetes.secret/key"]
+                      name = kubernetes_secret_v1.cloudflare.metadata[0].name
+                      key = kubernetes_secret_v1.cloudflare.metadata[0].annotations["custom.kubernetes.secret/key"]
                     }
-                    email = kubernetes_secret_v1.cf.metadata[0].annotations["custom.kubernetes.secret/email"]
+                    email = kubernetes_secret_v1.cloudflare.metadata[0].annotations["custom.kubernetes.secret/email"]
                   }
                 }
               }
