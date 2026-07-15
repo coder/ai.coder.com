@@ -1,0 +1,26 @@
+{{- if .Values.defaultIssuer.enable }}
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ .Values.defaultIssuer.name }}
+  {{- with .Values.defaultIssuer.labels }}
+  labels: 
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.defaultIssuer.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  acme:
+    privateKeySecretRef:
+      name: {{ .Values.defaultIssuer.acme.privateKeySecretRef.name }}
+    server: {{ .Values.defaultIssuer.acme.server }}
+    solvers:
+      - dns01:
+          cloudflare:
+            apiTokenSecretRef:
+              key: {{ .Values.defaultIssuer.acme.cloudflare.apiTokenSecretRef.key }}
+              name: {{ .Values.defaultIssuer.acme.cloudflare.apiTokenSecretRef.name }}
+            email: {{ .Values.defaultIssuer.acme.cloudflare.email }}
+{{- end }}
