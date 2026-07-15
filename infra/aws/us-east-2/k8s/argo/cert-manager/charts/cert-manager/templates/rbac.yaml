@@ -16,7 +16,7 @@ metadata:
 {{- end }}
 ---
 {{- if .Values.extra.r53.role.enable }}
-apiVersion: v1
+apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: {{ .Release.Name }}-r53-tokenrequest
@@ -38,7 +38,7 @@ rules:
 {{- end }}
 ---
 {{- if .Values.extra.r53.rolebinding.enable }}
-apiVersion: rbac.authorization.k8s.io
+apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: {{ .Release.Name }}-r53-tokenrequest
