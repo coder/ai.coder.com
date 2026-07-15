@@ -3,13 +3,25 @@ kind: ServiceAccount
 metadata:
   name: {{ .Release.Name }}-ctrl-role
   namespace: {{ .Release.Namespace }}
-  labels: {{ .Values.extra.sa.controller.labels }}
-  annotations: {{ .Values.extra.sa.controller.annotations }}
+  {{- with .Values.extra.sa.controller.labels }}
+  labels:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.extra.sa.controller.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: {{ .Release.Name }}-node-role
   namespace: {{ .Release.Namespace }}
-  labels: {{ .Values.extra.sa.controller.labels }}
-  annotations: {{ .Values.extra.sa.node.annotations }}
+  {{- with .Values.extra.sa.node.labels }}
+  labels:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.extra.sa.node.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
