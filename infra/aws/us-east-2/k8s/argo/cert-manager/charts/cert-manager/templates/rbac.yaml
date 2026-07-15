@@ -8,9 +8,8 @@ metadata:
   labels:
     {{- toYaml . | nindent 4 }}
   {{- end }}
-  annotations: 
   {{- with .Values.extra.r53.sa.annotations }}
-  labels:
+  annotations: 
     {{- toYaml . | nindent 4 }}
   {{- end }}
 {{- end }}
@@ -25,9 +24,8 @@ metadata:
   labels:
     {{- toYaml . | nindent 4 }}
   {{- end }}
-  annotations: 
   {{- with .Values.extra.r53.role.annotations }}
-  labels:
+  annotations: 
     {{- toYaml . | nindent 4 }}
   {{- end }}
 rules:
@@ -47,9 +45,8 @@ metadata:
   labels:
     {{- toYaml . | nindent 4 }}
   {{- end }}
-  annotations: 
   {{- with .Values.extra.r53.rolebinding.annotations }}
-  labels:
+  annotations: 
     {{- toYaml . | nindent 4 }}
   {{- end }}
 subject:
