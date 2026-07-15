@@ -28,7 +28,7 @@ locals {
 resource "aws_iam_policy" "ecr-mirror" {
   name_prefix = "ecr-mirror-auto"
   description = "Allows ECR pull-through cache automation including repository creation"
-  path = "/${var.region}/auto-mode/"
+  path        = "/${var.region}/auto-mode/"
   policy      = data.aws_iam_policy_document.ecr-mirror.json
 }
 
@@ -99,7 +99,7 @@ module "eks" {
 # https://github.com/aws-controllers-k8s
 # https://docs.aws.amazon.com/eks/latest/userguide/ack.html
 module "eks-ack-capability" {
-  source = "terraform-aws-modules/eks/aws//modules/capability"
+  source  = "terraform-aws-modules/eks/aws//modules/capability"
   version = "~> 21.24.0"
 
   name         = "eks-ack"
@@ -114,9 +114,13 @@ module "eks-ack-capability" {
   tags = local.tags
 }
 
+locals {
+  argocd_ns = "argocd"
+}
+
 # https://docs.aws.amazon.com/eks/latest/userguide/argocd.html
 module "eks-argocd-capability" {
-  source = "terraform-aws-modules/eks/aws//modules/capability"
+  source  = "terraform-aws-modules/eks/aws//modules/capability"
   version = "~> 21.24.0"
 
   type         = "ARGOCD"
@@ -126,9 +130,9 @@ module "eks-argocd-capability" {
     argo_cd = {
       aws_idc = {
         idc_instance_arn = one(data.aws_ssoadmin_instances.this.arns)
-        idc_region = "us-east-1"
+        idc_region       = "us-east-1"
       }
-      namespace = "argocd"
+      namespace = local.argocd_ns
       rbac_role_mapping = [{
         role = "ADMIN"
         identity = [{
@@ -155,8 +159,18 @@ module "eks-argocd-capability" {
   tags = local.tags
 }
 
+resource "aws_eks_access_policy_association" "argocd" {
+  cluster_name  = module.eks.cluster_name
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+  principal_arn = module.eks-argocd-capability.iam_role_arn
+
+  access_scope {
+    type = "cluster"
+  }
+}
+
 resource "aws_eks_access_entry" "auto-mode" {
-  principal_arn =  module.eks.node_iam_role_arn
+  principal_arn = module.eks.node_iam_role_arn
   cluster_name  = module.eks.cluster_name
   type          = "EC2"
 }
@@ -174,7 +188,7 @@ resource "aws_eks_access_policy_association" "attach" {
 
 resource "aws_iam_instance_profile" "auto-mode" {
   name = module.eks.node_iam_role_name
-  role =  module.eks.node_iam_role_name
+  role = module.eks.node_iam_role_name
 }
 
 provider "kubernetes" {
@@ -190,10 +204,10 @@ provider "kubernetes" {
 resource "kubernetes_service_account_v1" "auto-mode-node-role" {
 
   metadata {
-    name = "auto-mode-node-role"
+    name      = "auto-mode-node-role"
     namespace = "default"
     annotations = {
-      "eks.amazonaws.com/role-arn" = module.eks.node_iam_role_arn
+      "eks.amazonaws.com/role-arn"  = module.eks.node_iam_role_arn
       "eks.amazonaws.com/role-name" = module.eks.node_iam_role_name
     }
   }
@@ -201,9 +215,9 @@ resource "kubernetes_service_account_v1" "auto-mode-node-role" {
 
 resource "kubernetes_manifest" "sys-default-cls" {
 
-  depends_on = [ 
-    module.eks, 
-    aws_eks_access_entry.auto-mode, 
+  depends_on = [
+    module.eks,
+    aws_eks_access_entry.auto-mode,
     aws_eks_access_policy_association.attach
   ]
 
@@ -246,9 +260,9 @@ resource "kubernetes_manifest" "sys-default-cls" {
 # Override the System NodePool to restrict number of nodess
 resource "kubernetes_manifest" "system-pool" {
 
-  depends_on = [ 
-    module.eks, 
-    aws_eks_access_entry.auto-mode, 
+  depends_on = [
+    module.eks,
+    aws_eks_access_entry.auto-mode,
     aws_eks_access_policy_association.attach
   ]
 
@@ -331,4 +345,21 @@ resource "kubernetes_manifest" "system-pool" {
       }
     }
   }
+}
+
+resource "kubernetes_secret_v1" "argocd-local-cluster-config" {
+  depends_on = [module.eks-argocd-capability]
+  metadata {
+    name      = "local-cluster"
+    namespace = local.argocd_ns
+    labels = {
+      "argocd.argoproj.io/secret-type" = "cluster"
+    }
+  }
+  data = {
+    name    = "local-cluster"
+    server  = module.eks.cluster_arn
+    project = "default"
+  }
+
 }

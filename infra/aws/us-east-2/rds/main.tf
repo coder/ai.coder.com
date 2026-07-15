@@ -49,7 +49,7 @@ resource "aws_db_instance" "coder" {
   engine_version    = "15.17"
   # backup_retention_period = 7
   username                  = var.coder_username
-  db_name                   = "coder"
+  db_name                   = var.coder_db_name
   db_subnet_group_name      = aws_db_subnet_group.db_subnet_group.name
   vpc_security_group_ids    = [aws_security_group.allow-port-5432.id]
   publicly_accessible       = false
@@ -58,8 +58,8 @@ resource "aws_db_instance" "coder" {
   skip_final_snapshot       = false
 
   iam_database_authentication_enabled = true
-  apply_immediately = true
-  manage_master_user_password = true
+  apply_immediately                   = true
+  manage_master_user_password         = true
 
   tags = {
     Name = var.coder_db_rds_id

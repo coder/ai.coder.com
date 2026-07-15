@@ -17,52 +17,9 @@ variable "coder_username" {
   type        = string
 }
 
-variable "coder_password" {
-  description = "Database root password"
-  type        = string
-}
-
 variable "coder_db_name" {
   description = "Database name"
   type        = string
-}
-
-variable "litellm_db_rds_id" {
-  type    = string
-  default = "litellm"
-}
-
-variable "litellm_db_name" {
-  type    = string
-  default = "litellm"
-}
-
-variable "litellm_username" {
-  type = string
-}
-
-variable "litellm_password" {
-  type      = string
-  sensitive = true
-}
-
-variable "grafana_db_rds_id" {
-  type    = string
-  default = "grafana"
-}
-
-variable "grafana_db_name" {
-  type    = string
-  default = "grafana"
-}
-
-variable "grafana_username" {
-  type = string
-}
-
-variable "grafana_password" {
-  type      = string
-  sensitive = true
 }
 
 variable "db_subnet_group_name" {

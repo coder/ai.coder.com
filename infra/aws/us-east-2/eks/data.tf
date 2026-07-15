@@ -34,7 +34,7 @@ data "aws_ssoadmin_instances" "this" {
 
 data "aws_identitystore_group" "aws_administrator" {
   identity_store_id = one(data.aws_ssoadmin_instances.this.identity_store_ids)
-  region = "us-east-1"
+  region            = "us-east-1"
 
   alternate_identifier {
     unique_attribute {
@@ -45,26 +45,26 @@ data "aws_identitystore_group" "aws_administrator" {
 }
 
 data "aws_iam_policy_document" "ecr-mirror" {
-  
+
   statement {
-    effect  = "Allow"
-    actions = ["ecr:CreateRepository"]
+    effect    = "Allow"
+    actions   = ["ecr:CreateRepository"]
     resources = ["*"]
   }
 
   statement {
-    effect  = "Allow"
-    actions = ["ecr:GetAuthorizationToken"]
+    effect    = "Allow"
+    actions   = ["ecr:GetAuthorizationToken"]
     resources = ["*"]
   }
 
   statement {
-    effect  = "Allow"
+    effect = "Allow"
     actions = [
       "ecr:BatchImportUpstreamImage",
       "ecr:BatchGetImage",
       "ecr:GetDownloadUrlForLayer"
     ]
-    resources = [ "arn:aws:ecr:${var.region}:${data.aws_caller_identity.me.account_id}:repository/cache/*" ]
+    resources = ["arn:aws:ecr:${var.region}:${data.aws_caller_identity.me.account_id}:repository/cache/*"]
   }
 }
