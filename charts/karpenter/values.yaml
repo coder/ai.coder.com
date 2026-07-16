@@ -1,0 +1,8 @@
+extra:
+  sa:
+    controller:
+      labels: {}
+      annotations: {}
+    node:
+      labels: {}
+      annotations: {}
