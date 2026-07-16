@@ -1,0 +1,29 @@
+{{- if .Values.extra.certificate.enable }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name:  {{ .Values.extra.certificate.name }}
+  namespace: {{ .Release.Namespace }}
+  {{- with .Values.extra.certificate.labels }}
+  labels:
+    {{- toYaml . | nindent 4}}
+  {{- end}}
+  {{- with .Values.extra.certificate.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4}}
+  {{- end}}
+spec:
+  commonName: {{ .Values.extra.certificate.commonName }}
+  dnsNames: {{ .Values.extra.certificate.dnsNames }}
+  duration: {{ .Values.extra.certificate.duration }}
+  renewBefore: {{ .Values.extra.certificate.renewBefore }}
+  issuerRef:
+    kind: {{ .Values.extra.certificate.issuerRef.kind }}
+    name: {{ .Values.extra.certificate.issuerRef.name }}
+  secretName: {{ .Values.extra.certificate.name }}
+  privateKey:
+    rotationPolicy: Never
+    algorithm: RSA
+    encoding: PKCS1
+    size: 2048
+{{- end}}
