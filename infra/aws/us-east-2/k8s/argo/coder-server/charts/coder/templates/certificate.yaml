@@ -15,6 +15,7 @@ metadata:
 spec:
   commonName: {{ .Values.extra.certificate.commonName }}
   dnsNames: {{ .Values.extra.certificate.dnsNames }}
+    {{ toYaml .Values.extra.certificate.dnsNames | indent 10 }}
   duration: {{ .Values.extra.certificate.duration }}
   renewBefore: {{ .Values.extra.certificate.renewBefore }}
   issuerRef:
