@@ -5,6 +5,8 @@ provider "aws" {
 
 data "aws_region" "this" {}
 
+data "aws_caller_identity" "this" {}
+
 data "aws_eks_cluster" "this" {
   name = var.cluster_name
 }
@@ -34,22 +36,6 @@ data "http" "login" {
   }
 }
 
-provider "helm" {
-  kubernetes = {
-    host                   = data.aws_eks_cluster.this.endpoint
-    cluster_ca_certificate = base64decode(data.aws_eks_cluster.this.certificate_authority[0].data)
-    token                  = data.aws_eks_cluster_auth.this.token
-  }
-}
-
-provider "argocd" {
-  kubernetes {
-    host                   = data.aws_eks_cluster.this.endpoint
-    cluster_ca_certificate = base64decode(data.aws_eks_cluster.this.certificate_authority[0].data)
-    token                  = data.aws_eks_cluster_auth.this.token
-  }
-}
-
 provider "kubernetes" {
   host                   = data.aws_eks_cluster.this.endpoint
   cluster_ca_certificate = base64decode(data.aws_eks_cluster.this.certificate_authority[0].data)
@@ -65,27 +51,17 @@ locals {
   release_name = "coder"
   chart_name   = "coder-provisioner"
   namespace    = "coder"
-
-  node_selector = {}
+  coder = {
+    CODER_URL                            = var.coder_access_url
+    CODER_PROMETHEUS_ENABLE              = "true"
+    CODER_PROMETHEUS_COLLECT_AGENT_STATS = "true"
+    CODER_PROMETHEUS_COLLECT_DB_METRICS  = "true"
+  }
+  node_selector   = {}
   topology_spread = []
-  # topology_spread = [{
-  #   max_skew           = 2
-  #   topology_key       = "kubernetes.io/hostname"
-  #   when_unsatisfiable = "ScheduleAnyway"
-  #   label_selector = {
-  #     match_labels = {
-  #       "app.kubernetes.io/name"    = local.chart_name
-  #       "app.kubernetes.io/part-of" = local.chart_name
-  #     }
-  #   }
-  #   match_label_keys = [
-  #     "app.kubernetes.io/instance"
-  #   ]
-  # }]
   tolerations = [{
     key      = "coder"
     operator = "Exists"
-    values   = ["provisioner"]
   }]
   affinity = {
     nodeAffinity = {
@@ -102,159 +78,6 @@ locals {
       }
     }
     podAntiAffinity = {}
-    # podAntiAffinity = {
-    #   preferredDuringSchedulingIgnoredDuringExecution = [{
-    #     weight = 100
-    #     podAffinityTerm = {
-    #       labelSelector = {
-    #         match_labels = {
-    #           "app.kubernetes.io/name"    = local.chart_name
-    #           "app.kubernetes.io/part-of" = local.chart_name
-    #         }
-    #       }
-    #       topologyKey = "kubernetes.io/hostname"
-    #     }
-    #   }]
-    # }
-  }
-}
-
-# module "default-ws" {
-
-#   source = "../../../../../modules/k8s/bootstrap/coder-provisioner"
-
-#   release_name              = local.release_name
-#   chart_version             = var.addon_version
-#   chart_name                = local.chart_name
-#   cluster_name              = data.aws_eks_cluster.this.id
-#   cluster_oidc_provider_arn = data.aws_iam_openid_connect_provider.this.arn
-
-#   namespace = "coder-ws"
-
-#   coder = {
-#     access_url = var.coder_access_url
-#     org_name   = "coder"
-#     image_repo = var.image_repo
-#     image_tag  = var.image_tag
-#     rep_cnt    = 1
-#     ws_extra_rules = [{
-#       apiGroups = [""]
-#       resources = ["configmaps"]
-#       verbs = [
-#         "create",
-#         "delete",
-#         "deletecollection",
-#         "get",
-#         "list",
-#         "patch",
-#         "update",
-#         "watch"
-#       ]
-#     }]
-#     env_vars = {
-#       CODER_PROMETHEUS_ENABLE              = "true"
-#       CODER_PROMETHEUS_COLLECT_AGENT_STATS = "true"
-#       CODER_PROMETHEUS_COLLECT_DB_METRICS  = "true"
-#       # TF_VAR_namespace = "coder-ws"
-#     }
-#   }
-
-#   svc_acc = {
-#     create = true
-#     name   = "coder"
-#   }
-
-#   node_selector   = local.node_selector
-#   tolerations     = local.tolerations
-#   topology_spread = local.topology_spread
-#   affinity        = local.affinity
-# }
-
-# module "experiment-ws" {
-
-#   source = "../../../../../modules/k8s/bootstrap/coder-provisioner"
-
-#   release_name              = local.release_name
-#   chart_version             = var.addon_version
-#   chart_name                = local.chart_name
-#   cluster_name              = var.cluster_name
-#   cluster_oidc_provider_arn = data.aws_iam_openid_connect_provider.this.arn
-
-#   namespace = "coder-ws-experiment"
-
-#   coder = {
-#     access_url = var.coder_access_url
-#     org_name   = "experiment"
-#     image_repo = var.image_repo
-#     image_tag  = var.image_tag
-#     rep_cnt    = 1
-#     ws_extra_rules = [{
-#       apiGroups = [""]
-#       resources = ["configmaps"]
-#       verbs = [
-#         "create",
-#         "delete",
-#         "deletecollection",
-#         "get",
-#         "list",
-#         "patch",
-#         "update",
-#         "watch"
-#       ]
-#     },{
-#       apiGroups = [""]
-#       resources = ["serviceaccounts"]
-#       verbs = [
-#         "create",
-#         "delete",
-#         "deletecollection",
-#         "get",
-#         "list",
-#         "patch",
-#         "update",
-#         "watch"
-#       ]
-#     },{
-#       apiGroups = ["rbac.authorization.k8s.io"]
-#       resources = ["clusterrolebindings"]
-#       verbs = [
-#         "create",
-#         "delete",
-#         "deletecollection",
-#         "get",
-#         "list",
-#         "patch",
-#         "update",
-#         "watch"
-#       ]
-#     }]
-#     env_vars = {
-#       CODER_PROMETHEUS_ENABLE              = "true"
-#       CODER_PROMETHEUS_COLLECT_AGENT_STATS = "true"
-#       CODER_PROMETHEUS_COLLECT_DB_METRICS  = "true"
-#       # TF_VAR_namespace = "coder-ws-experiment"
-#     }
-#   }
-
-#   svc_acc = {
-#     create = true
-#     name   = "coder"
-#   }
-
-#   node_selector   = local.node_selector
-#   tolerations     = local.tolerations
-#   topology_spread = local.topology_spread
-#   affinity        = local.affinity
-# }
-
-data "aws_iam_policy_document" "eks" {
-  statement {
-    effect = "Allow"
-    actions = [
-      "eks:*",
-      "iam:*"
-    ]
-    resources = ["*"]
   }
 }
 
@@ -266,275 +89,297 @@ module "eks-admin-policy" {
   policy_json = data.aws_iam_policy_document.eks.json
 }
 
-# module "demo-ws" {
-
-#   source = "../../../../../modules/k8s/bootstrap/coder-provisioner"
-
-#   release_name              = local.release_name
-#   chart_version             = var.addon_version
-#   chart_name                = local.chart_name
-#   cluster_name              = var.cluster_name
-#   cluster_oidc_provider_arn = data.aws_iam_openid_connect_provider.this.arn
-
-#   namespace = "coder-ws-demo"
-
-#   coder = {
-#     access_url = var.coder_access_url
-#     org_name   = "demo"
-#     image_repo = var.image_repo
-#     image_tag  = var.image_tag
-#     rep_cnt    = 1
-#     ws_extra_rules = [{
-#       apiGroups = [""]
-#       resources = ["configmaps"]
-#       verbs = [
-#         "create",
-#         "delete",
-#         "deletecollection",
-#         "get",
-#         "list",
-#         "patch",
-#         "update",
-#         "watch"
-#       ]
-#     },{
-#       apiGroups = [""]
-#       resources = ["serviceaccounts"]
-#       verbs = [
-#         "create",
-#         "delete",
-#         "deletecollection",
-#         "get",
-#         "list",
-#         "patch",
-#         "update",
-#         "watch"
-#       ]
-#     },{
-#       apiGroups = ["rbac.authorization.k8s.io"]
-#       resources = ["clusterrolebindings"]
-#       verbs = [
-#         "create",
-#         "delete",
-#         "deletecollection",
-#         "get",
-#         "list",
-#         "patch",
-#         "update",
-#         "watch"
-#       ]
-#     }]
-#     env_vars = {
-#       CODER_PROMETHEUS_ENABLE              = "true"
-#       CODER_PROMETHEUS_COLLECT_AGENT_STATS = "true"
-#       CODER_PROMETHEUS_COLLECT_DB_METRICS  = "true"
-#       # TF_VAR_namespace = "coder-ws-experiment"
-#     }
-#   }
-
-#   svc_acc = {
-#     create = true
-#     name   = "coder"
-#     iam_policy_arns = {
-#       "EKSAdminPolicy" = module.eks-admin-policy.policy_arn
-#     }
-#   }
-
-#   node_selector   = local.node_selector
-#   tolerations     = local.tolerations
-#   topology_spread = local.topology_spread
-#   affinity        = local.affinity
-# }
-
-locals {
-  # coder-provisioner-values = yamlencode({
-  #   coder = {
-  #     image = {
-  #       repo        = var.coder.image_repo
-  #       tag         = var.coder.image_tag
-  #       pullPolicy  = var.coder.image_pull_policy
-  #       pullSecrets = var.coder.image_pull_secrets
-  #     }
-  #     serviceAccount = {
-  #       workspacePerms    = true
-  #       enableDeployments = true
-  #       name              = var.svc_acc.name
-  #       disableCreate     = !var.svc_acc.create
-  #       workspaceNamespaces = [ for v in var.coder.ws_ns : { name = v  } ]
-  #       extraRules = var.coder.ws_extra_rules
-  #       annotations = merge({
-  #         "eks.amazonaws.com/role-arn" = module.oidc-role.role_arn
-  #       }, var.svc_acc.annots)
-  #     }
-  #     podAnnotations = {
-  #       "prometheus.io/scrape" = "true"
-  #       "prometheus.io/port"   = "2112"
-  #     }
-  #     env = [
-  #       for k, v in merge({
-  #         CODER_URL = var.coder.access_url
-  #       }, var.coder.env_vars) : { name = k, value = v }
-  #     ]
-  #     volumeClaimTemplates = [{
-  #       metadata = {
-  #         name = "cache"
-  #       }
-  #       spec = {
-  #         accessModes = ["ReadWriteOnce"]
-  #         storageClassName = "gp3-automode"
-  #         resources = {
-  #           requests = {
-  #             storage = "10Gi"
-  #           }
-  #         }
-  #       }
-  #     }]
-  #     # volumes = [{
-  #     #   name = "cache"
-  #     #   persistentVolumeClaim = {
-  #     #     claimName = kubernetes_persistent_volume_claim_v1.cache.metadata[0].name
-  #     #     readOnly = false
-  #     #   }
-  #     # }]
-  #     volumeMounts = [{
-  #       mountPath = "/home/coder/.cache/coder"
-  #       name = "cache"
-  #       readOnly = false
-  #     }]
-  #     podSecurityContext = {
-  #       fsGroup = 1000
-  #     }
-  #     securityContext = {
-  #       runAsNonRoot           = true
-  #       runAsUser              = 1000
-  #       runAsGroup             = 1000
-  #       readOnlyRootFilesystem = null
-  #       seccompProfile = {
-  #         type = "RuntimeDefault"
-  #       }
-  #       allowPrivilegeEscalation = false
-  #     }
-  #     resources = {
-  #       requests = var.rsrc_req
-  #       limits   = var.rsrc_lim
-  #     }
-  #     nodeSelector              = {} # var.node_selector
-  #     replicaCount              = # var.coder.rep_cnt
-  #     tolerations               = # var.tolerations
-  #     topologySpreadConstraints = local.topology_spread
-  #     affinity = var.affinity
-  #   }
-  #   provisionerDaemon = {
-  #     keySecretKey                  = kubernetes_secret_v1.ext-prov.metadata[0].annotations["custom.kubernetes.secret/key"]
-  #     keySecretName                 = kubernetes_secret_v1.ext-prov.metadata[0].name
-  #     terminationGracePeriodSeconds = 600
-  #   }
-  # })
+module "iam-policy" {
+  source      = "../../../../../../modules/security/policy"
+  name        = "Provisioner-${data.aws_region.this.region}"
+  path        = "/"
+  description = "Coder External Provisioner Policy"
+  policy_json = data.aws_iam_policy_document.ext-prov.json
 }
 
-resource "argocd_application_set" "coder-workspaces" {
-  metadata {
-    name = "coder-workspaces"
-    namespace = "argocd"
-    labels = {}
-    annotations = {}
+module "oidc-role" {
+  source       = "../../../../../../modules/security/role/access-entry"
+  name         = "provisioner-${data.aws_region.this.region}"
+  cluster_name = var.cluster_name
+  policy_arns = {
+    "AmazonEC2ReadOnlyAccess" = "arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess"
+    "TFProvisionerPolicy"     = module.iam-policy.policy_arn
   }
-  spec {
-    generator {
-      list {
-        elements = [{
-          name = "coder-ws"
-          namespace = "coder-ws-test"
-          repoURL = "https://github.com/coder/ai.coder.com.git"
-          path = "infra/aws/us-east-2/k8s/argo/coder-ws/charts/coder-provisioner"
-          chart = "coder-provisioner"
-          revision = "main"
-          values = yamlencode({})
-          template = yamlencode({
-            spec = {
-              sync_policy = {
-                sync_options = ["CreateNamespace=true"]
-              }
-            }
-          })
-        },{
-          name = "coder-ws-experiment"
-          namespace = "coder-ws-experiment-test"
-          repoURL = "https://github.com/coder/ai.coder.com.git"
-          path = "infra/aws/us-east-2/k8s/argo/coder-ws/charts/coder-provisioner"
-          chart = "coder-provisioner"
-          revision = "main"
-          values = yamlencode({})
-          template = yamlencode({
-            spec = {
-              sync_policy = {
-                sync_options = ["CreateNamespace=true"]
-              }
-            }
-          })
-        },{
-          name = "coder-ws-demo"
-          namespace = "coder-ws-demo-test"
-          repoURL = "https://github.com/coder/ai.coder.com.git"
-          path = "infra/aws/us-east-2/k8s/argo/coder-ws/charts/coder-provisioner"
-          chart = "coder-provisioner"
-          revision = "main"
-          values = yamlencode({})
-          template = yamlencode({
-            spec = {
-              sync_policy = {
-                sync_options = ["CreateNamespace=true"]
-              }
-            }
-          })
-        },{
-          name = "coder-logstream-kube"
-          namespace = "coder-logstream-kube-test"
-          repoURL = "https://github.com/coder/ai.coder.com.git"
-          path = "infra/aws/us-east-2/k8s/argo/coder-ws/charts/coder-provisioner"
-          chart = "coder-logstream-kube"
-          revision = "main"
+  cluster_policy_arns = {}
+  oidc_principals = {
+    "${data.aws_iam_openid_connect_provider.this.arn}" = ["system:serviceaccount:*:*"]
+  }
+  tags = {}
+}
+
+locals {
+  coder-ws = {
+    "coder-ws" = {
+      org_name  = "coder"
+      namespace = "coder-ws"
+    },
+    "coder-ws-experiment" = {
+      org_name  = "experiment"
+      namespace = "coder-ws-experiment"
+    },
+    "coder-ws-demo" = {
+      org_name  = "demo"
+      namespace = "coder-ws-demo"
+    }
+  }
+}
+
+data "coderd_organization" "coder" {
+  for_each = local.coder-ws
+  name     = each.value.org_name
+}
+
+module "coder-provisioner" {
+
+  for_each = local.coder-ws
+
+  source           = "../../../../../../modules/coder/provisioner"
+  organization_id  = data.coderd_organization.coder[each.key].id
+  provisioner_tags = {}
+}
+
+# Avoide ApplicationSets as a K8s Manifest: 
+# - https://github.com/hashicorp/terraform-provider-kubernetes/pull/2800
+# - https://github.com/hashicorp/terraform-provider-kubernetes/issues/2757
+
+resource "kubernetes_manifest" "coder-provisioner" {
+
+  for_each = local.coder-ws
+
+  wait {
+    fields = {
+      "status.health.status" = "Healthy"
+      "status.sync.status"   = "Synced"
+    }
+  }
+
+  manifest = {
+    apiVersion = "argoproj.io/v1alpha1"
+    kind       = "Application"
+    metadata = {
+      name        = "${var.region}.${each.key}"
+      namespace   = "argocd"
+      labels      = {}
+      annotations = {}
+    }
+    spec = {
+      project = "default"
+      source = {
+        repoURL        = "https://github.com/coder/ai.coder.com"
+        path           = "charts/coder-provisioner"
+        targetRevision = "main"
+        helm = {
+          releaseName = each.key
           values = yamlencode({
-            url = var.coder_access_url
-            namespaces = ["coder-ws", "coder-ws-demo", "coder-ws-experiment"]
-            image = {
-              repo = "ghcr.io/coder/coder-logstream-kube"
-              tag = "v0.0.15"
-              pullPolicy = "IfNotPresent"
-            }
-            
-            nodeSelector = {} # var.node_selector
-            affinity = {} # var.affinity
-            tolerations = {} # var.tolerations
-          })
-          template = yamlencode({
-            spec = {
-              sync_policy = {
-                sync_options = ["CreateNamespace=true"]
+            coder = {
+              image = {
+                repo        = "ghcr.io/coder/coder"
+                tag         = var.addon_version
+                pullPolicy  = "IfNotPresent"
+                pullSecrets = []
               }
+              serviceAccount = {
+                workspacePerms    = true
+                enableDeployments = true
+                name              = "coder"
+                disableCreate     = false
+                extraRules = [{
+                  apiGroups = [""]
+                  resources = ["configmaps"]
+                  verbs = [
+                    "create",
+                    "delete",
+                    "deletecollection",
+                    "get",
+                    "list",
+                    "patch",
+                    "update",
+                    "watch"
+                  ] }, {
+                  apiGroups = [""]
+                  resources = ["serviceaccounts"]
+                  verbs = [
+                    "create",
+                    "delete",
+                    "deletecollection",
+                    "get",
+                    "list",
+                    "patch",
+                    "update",
+                    "watch"
+                  ] }, {
+                  apiGroups = ["rbac.authorization.k8s.io"]
+                  resources = ["clusterrolebindings"]
+                  verbs = [
+                    "create",
+                    "delete",
+                    "deletecollection",
+                    "get",
+                    "list",
+                    "patch",
+                    "update",
+                    "watch"
+                ] }]
+                annotations = {
+                  "eks.amazonaws.com/role-arn" = module.oidc-role.role_arn
+                }
+              }
+              podAnnotations = {
+                "prometheus.io/scrape" = "true"
+                "prometheus.io/port"   = "2112"
+                "checksum/config" = sha256(join(",", [
+                  jsonencode(local.coder),
+                  jsonencode(sensitive(module.coder-provisioner[each.key].provisioner_key_secret)),
+                  jsonencode(module.oidc-role.role_arn)
+                ]))
+              }
+              env = [
+                for k, v in local.coder : { name = k, value = v }
+              ]
+              volumeClaimTemplates = [{
+                metadata = {
+                  name = "cache"
+                }
+                spec = {
+                  accessModes      = ["ReadWriteOnce"]
+                  storageClassName = "gp3-automode"
+                  resources = {
+                    requests = {
+                      storage = "10Gi"
+                    }
+                  }
+                }
+              }]
+              volumeMounts = [{
+                mountPath = "/home/coder/.cache/coder"
+                name      = "cache"
+              }]
+              podSecurityContext = {
+                fsGroup = 1000
+              }
+              securityContext = {
+                runAsNonRoot             = true
+                runAsUser                = 1000
+                runAsGroup               = 1000
+                readOnlyRootFilesystem   = false
+                allowPrivilegeEscalation = false
+                seccompProfile = {
+                  type = "RuntimeDefault"
+                }
+              }
+              resources = {
+                requests = {
+                  cpu    = "1"
+                  memory = "1Gi"
+                }
+                limits = {
+                  cpu    = "1"
+                  memory = "1Gi"
+                }
+              }
+              nodeSelector              = local.node_selector
+              replicaCount              = 1
+              affinity                  = local.affinity
+              tolerations               = local.tolerations
+              topologySpreadConstraints = local.topology_spread
             }
+            provisionerDaemon = {
+              keySecretKey                  = "key"
+              keySecretName                 = kubernetes_secret_v1.coder-provisioner-key[each.key].metadata[0].name
+              terminationGracePeriodSeconds = 600
+            }
+            extraTemplates = []
           })
-        }]
+        }
+      }
+      destination = {
+        server    = data.aws_eks_cluster.this.arn
+        namespace = each.value.namespace
+      }
+      syncPolicy = {
+        syncOptions = [
+          "CreateNamespace=true",
+          "Delete=false"
+        ]
       }
     }
+  }
+}
 
-    template {
-      metadata {
-        name = "{{name}}"
+resource "kubernetes_secret_v1" "coder-provisioner-key" {
+  for_each = local.coder-ws
+  metadata {
+    name      = "coder-provisioner-key"
+    namespace = each.value.namespace
+  }
+  data = {
+    key = sensitive(module.coder-provisioner[each.key].provisioner_key_secret)
+  }
+}
+
+resource "kubernetes_manifest" "coder-logstream-kube" {
+
+  depends_on = [kubernetes_manifest.coder-provisioner]
+
+  wait {
+    fields = {
+      "status.health.status" = "Healthy"
+      "status.sync.status"   = "Synced"
+    }
+  }
+
+  timeouts {
+    create = "5m"
+    update = "5m"
+    delete = "30s"
+  }
+
+  manifest = {
+    apiVersion = "argoproj.io/v1alpha1"
+    kind       = "Application"
+    metadata = {
+      name        = "${var.region}.coder-logstream-kube"
+      namespace   = "argocd"
+      labels      = {}
+      annotations = {}
+    }
+    spec = {
+      project = "default"
+      source = {
+        repoURL        = "https://helm.coder.com/logstream-kube"
+        chart          = "coder-logstream-kube"
+        targetRevision = "0.0.15"
+        helm = {
+          releaseName = "coder-logstream-kube"
+          values = yamlencode({
+            url        = var.coder_access_url
+            namespaces = [for i in values(local.coder-ws) : i.namespace]
+            image = {
+              repo       = "ghcr.io/coder/coder-logstream-kube"
+              tag        = "v0.0.15"
+              pullPolicy = "IfNotPresent"
+            }
+            nodeSelector   = local.node_selector
+            affinity       = local.affinity
+            tolerations    = local.tolerations
+            topologySpread = local.topology_spread
+          })
+        }
       }
-      spec {
-        source {
-          repo_url        = "{{repoURL}}"
-          path            = "{{path}}"
-          target_revision = "{{version}}"
-        }
-        # repo_url = "{{repoURL}}"
-        # chart = "{{chart}}"
-        # target_revision = "{{version}}"
-        destination {
-          server = "https://kubernetes.default.svc"
-          namespace = "{{namespace}}"
-        }
+      destination = {
+        server    = data.aws_eks_cluster.this.arn
+        namespace = "coder-logstream-kube"
+      }
+      syncPolicy = {
+        syncOptions = [
+          "CreateNamespace=true",
+          "Delete=false"
+        ]
       }
     }
   }

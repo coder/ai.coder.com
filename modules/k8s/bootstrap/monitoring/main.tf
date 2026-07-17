@@ -61,9 +61,9 @@ variable "coder" {
     type = object({
         db = object({
             host = string
-            password = string
-            username = string
-            database = string
+            password = optional(string, "Coder1234!!")
+            username = optional(string, "coder")
+            database = optional(string, "coder")
             sslmode = optional(string, "require")
         })
         selector = object({
@@ -81,15 +81,15 @@ variable "grafana" {
   type = object({
     instance_name = optional(string, "Coder Environment")
     admin = object({
-        username = string
-        password = string
+      username = optional(string, "Coder1234!!")
+      password = optional(string, "Coder1234!!")
     })
     db = object({
-        host = string
-        password = string
-        username = string
-        database = string
-        sslmode = optional(string, "require")
+      host = string
+      password = string
+      username = string
+      database = string
+      sslmode = optional(string, "require")
     })
     svc = object({
       port = optional(number, 80)
@@ -213,23 +213,6 @@ variable "alertmanager" {
       limits = {}
     })
   })
-}
-
-variable "mount_ssl" {
-  type = object({
-    enable = optional(bool, true)
-    secret_name = optional(string, "ssl-cert")
-    mount_path = optional(string, "")
-    key_name = optional(string, "tls.key")
-    crt_name = optional(string, "tls.crt")
-  })
-  default = {
-    enable = false
-    secret_name = "ssl-cert"
-    mount_path = ""
-    key_name = "tls.key"
-    crt_name = "tls.crt"
-  }
 }
 
 variable "lb_class" {
@@ -379,7 +362,6 @@ locals {
   coder_db_host = split(":", var.coder.db.host)[0]
   coder_db_port = split(":", var.coder.db.host)[1]
   grafana_db_host = split(":", var.grafana.db.host)[0]
-  # grafana_db_port = split(":", var.grafana.db.host)[1]
 }
 
 resource "helm_release" "coder-observe" {
@@ -524,19 +506,13 @@ resource "helm_release" "coder-observe" {
           cookie_samesite = "lax"
           cookie_domain = var.domain_name
         }
-        server = merge(var.mount_ssl.enable ? {
-          cert_key = "${trimsuffix(var.mount_ssl.mount_path, "/")}/${var.mount_ssl.key_name}"
-          cert_file = "${trimsuffix(var.mount_ssl.mount_path, "/")}/${var.mount_ssl.crt_name}"
-          protocol = "https"
-          root_url = "https://${var.domain_name}"
-        } : {
+        server = {
           protocol = "http"
           root_url = "http://${var.domain_name}"
-        }, {
           domain = var.domain_name
           enforce_domain = false
           http_port = 3000
-        })
+        }
         users = {
           allow_sign_up = false
         }
@@ -549,12 +525,12 @@ resource "helm_release" "coder-observe" {
       resources = var.grafana.rsrc
       readinessProbe = {
         httpGet = {
-          scheme = var.mount_ssl.enable ? "HTTPS" : "HTTP"
+          scheme = "HTTP"
         }
       }
       livenessProbe = {
         httpGet = {
-          scheme = var.mount_ssl.enable ? "HTTPS" : "HTTP"
+          scheme = "HTTP"
         }
       }
       persistence = {
@@ -562,7 +538,7 @@ resource "helm_release" "coder-observe" {
       }
       podAnnotations = {
         "prometheus.io/port" = "3000"
-        "prometheus.io/scheme" = var.mount_ssl.enable ? "https" : "http"
+        "prometheus.io/scheme" = "http"
         "prometheus.io/scrape" = "true"
       }
       serviceAccount = {
@@ -587,12 +563,7 @@ resource "helm_release" "coder-observe" {
         readOnly = v.read_only
         optional = v.optional
       } ]
-      extraSecretMounts = var.mount_ssl.enable ? [{
-        name = var.mount_ssl.secret_name
-        mountPath = var.mount_ssl.mount_path
-        secretName = var.mount_ssl.secret_name
-        readOnly = true
-      }] : [] 
+      extraSecretMounts = [] 
       datasources = {
         "datasources.yaml" = {
           datasources = [

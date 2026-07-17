@@ -3,6 +3,16 @@ provider "aws" {
   profile = var.profile
 }
 
+data "aws_eks_cluster" "controller" {
+  region = "us-east-2"
+  name   = var.cluster_name
+}
+
+data "aws_eks_cluster_auth" "controller" {
+  region = "us-east-2"
+  name   = var.cluster_name
+}
+
 data "aws_eks_cluster" "this" {
   name = var.cluster_name
 }
@@ -26,9 +36,9 @@ data "aws_region" "this" {}
 data "aws_caller_identity" "this" {}
 
 provider "kubernetes" {
-  host                   = data.aws_eks_cluster.this.endpoint
-  cluster_ca_certificate = base64decode(data.aws_eks_cluster.this.certificate_authority[0].data)
-  token                  = data.aws_eks_cluster_auth.this.token
+  host                   = data.aws_eks_cluster.controller.endpoint
+  cluster_ca_certificate = base64decode(data.aws_eks_cluster.controller.certificate_authority[0].data)
+  token                  = data.aws_eks_cluster_auth.controller.token
 }
 
 locals {
@@ -108,6 +118,11 @@ resource "kubernetes_manifest" "lb-controller" {
               automountServiceAccountToken = true
               imagePullSecrets             = []
             }
+            podAnnotations = {
+              "checksum/config" = sha256(join(",", [
+                jsonencode(module.oidc-role.role_arn)
+              ]))
+            }
             vpcId             = data.aws_vpc.this.id
             enableCertManager = true
             nodeSelector      = {}
@@ -138,20 +153,14 @@ resource "kubernetes_manifest" "lb-controller" {
                 preferredDuringSchedulingIgnoredDuringExecution = [{
                   weight = 100
                   podAffinityTerm = {
-                    topologyKey = "topology.kubernetes.io/zone"
                     labelSelector = {
-                      matchLabels = {
-                        "app.kubernetes.io/name" = "aws-load-balancer-controller"
-                      }
+                      matchExpressions = [{
+                        key      = "app.kubernetes.io/name"
+                        operator = "In"
+                        values   = ["aws-load-balancer-controller"]
+                      }]
                     }
-                  }
-                }]
-                requiredDuringSchedulingIgnoredDuringExecution = [{
-                  topologyKey = "kubernetes.io/hostname"
-                  labelSelector = {
-                    matchLabels = {
-                      "app.kubernetes.io/name" = "aws-load-balancer-controller"
-                    }
+                    topologyKey = "kubernetes.io/hostname"
                   }
                 }]
               }

@@ -6,8 +6,8 @@ include "root" {
 dependencies {
   paths = [
     "../../../eks",
-    "../../coder-server",
-    "../../kyverno",
+    "../coder-server",
+    "../kyverno",
     "../../other" # Deploy's auxillary manifests
   ]
 }

@@ -31,17 +31,6 @@ provider "kubernetes" {
   token                  = data.aws_eks_cluster_auth.this.token
 }
 
-resource "kubernetes_namespace_v1" "ebs-csi" {
-  metadata {
-    name = "ebs-controller"
-  }
-}
-
-import {
-  id = "ebs-controller"
-  to = kubernetes_namespace_v1.ebs-csi
-}
-
 module "oidc-role" {
   source       = "../../../../../../modules/security/role/access-entry"
   name         = "ebs-ctrl"
@@ -78,13 +67,10 @@ resource "kubernetes_manifest" "ebs-controller" {
     apiVersion = "argoproj.io/v1alpha1"
     kind       = "Application"
     metadata = {
-      name        = "aws-ebs-csi-driver"
+      name        = "${var.region}.aws-ebs-csi-driver"
       namespace   = "argocd"
       labels      = {}
       annotations = {}
-      finalizers = [
-        "resources-finalizer.argocd.argoproj.io"
-      ]
     }
     spec = {
       project = "default"
@@ -93,6 +79,7 @@ resource "kubernetes_manifest" "ebs-controller" {
         chart          = "aws-ebs-csi-driver"
         targetRevision = "2.22.1"
         helm = {
+          releaseName = "aws-ebs-csi-driver"
           values = yamlencode({
             controller = {
               serviceAccount = {
@@ -158,11 +145,11 @@ resource "kubernetes_manifest" "ebs-controller" {
       }
       destination = {
         server    = data.aws_eks_cluster.this.arn
-        namespace = kubernetes_namespace_v1.ebs-csi.metadata[0].name
+        namespace = "ebs-controller"
       }
       syncPolicy = {
         syncOptions = [
-          "CreateNamespace=false",
+          "CreateNamespace=true",
           "Delete=false"
         ]
       }

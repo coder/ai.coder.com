@@ -69,8 +69,8 @@ resource "kubernetes_manifest" "gp3" {
         "storageclass.kubernetes.io/is-default-class" = "true"
       }
     }
-    provisioner       = "ebs.csi.aws.com"
-    volumeBindingMode = "WaitForFirstConsumer"
+    provisioner          = "ebs.csi.aws.com"
+    volumeBindingMode    = "WaitForFirstConsumer"
     allowVolumeExpansion = true
     allowedTopologies = [{
       matchLabelExpressions = [{
@@ -92,8 +92,8 @@ resource "kubernetes_manifest" "automode-gp3" {
     metadata = {
       name = "gp3-automode"
     }
-    provisioner       = "ebs.csi.eks.amazonaws.com"
-    volumeBindingMode = "WaitForFirstConsumer"
+    provisioner          = "ebs.csi.eks.amazonaws.com"
+    volumeBindingMode    = "WaitForFirstConsumer"
     allowVolumeExpansion = true
     allowedTopologies = [{
       matchLabelExpressions = [{
@@ -114,7 +114,7 @@ resource "kubernetes_manifest" "automode-gp3" {
 
 data "kubernetes_service_account_v1" "kptr" {
   metadata {
-    name      = "node-role"
+    name      = "karpenter-node-role"
     namespace = "karpenter"
   }
 }
@@ -127,7 +127,7 @@ data "kubernetes_service_account_v1" "auto" {
 }
 
 data "aws_iam_roles" "auto-mode" {
-  name_regex = "${var.cluster_name}-eks-auto-*"
+  name_regex  = "${var.cluster_name}-eks-auto-*"
   path_prefix = "/${data.aws_region.this.region}/"
 }
 
@@ -168,11 +168,11 @@ locals {
       tags = {
         Name = "coder-provisioner-node"
       }
-    }   
+    }
     "coder-workspace" = {
-      api_version        = "karpenter.k8s.aws/v1"
-      kind               = "EC2NodeClass"
-      user_data          = <<-EOT
+      api_version     = "karpenter.k8s.aws/v1"
+      kind            = "EC2NodeClass"
+      user_data       = <<-EOT
         MIME-Version: 1.0
         Content-Type: multipart/mixed; boundary="//"
 
@@ -187,9 +187,9 @@ locals {
               registryPullQPS: 30
         --//--
       EOT
-      subnet_selector    = [for subnet_id in data.aws_subnets.private.ids : { id = subnet_id }]
-      ami_selector = [{ alias = "al2023@latest" }]
-      sg_selector        = [{ id = data.aws_eks_cluster.this.vpc_config[0].cluster_security_group_id }]
+      subnet_selector = [for subnet_id in data.aws_subnets.private.ids : { id = subnet_id }]
+      ami_selector    = [{ alias = "al2023@latest" }]
+      sg_selector     = [{ id = data.aws_eks_cluster.this.vpc_config[0].cluster_security_group_id }]
       block_device_mappings = [{
         deviceName = "/dev/xvda"
         ebs = {
@@ -222,16 +222,16 @@ resource "kubernetes_manifest" "nodeclass" {
       tags                       = try(each.value.tags, null)
       subnetSelectorTerms        = each.value.subnet_selector
       securityGroupSelectorTerms = each.value.sg_selector
-    }, each.value.kind == "NodeClass" ? {
-      networkPolicy              = each.value.network_policy
-      networkPolicyEventLogs     = each.value.network_policy_event_logs
-      snatPolicy                 = each.value.snat_policy
-      ephemeralStorage           = each.value.ephemeral_storage
-    } : null, each.value.kind == "EC2NodeClass" ? {
-      amiSelectorTerms           = each.value.ami_selector
-      blockDeviceMappings        = each.value.block_device_mappings
-      userData                   = each.value.user_data
-    }: null)
+      }, each.value.kind == "NodeClass" ? {
+      networkPolicy          = each.value.network_policy
+      networkPolicyEventLogs = each.value.network_policy_event_logs
+      snatPolicy             = each.value.snat_policy
+      ephemeralStorage       = each.value.ephemeral_storage
+      } : null, each.value.kind == "EC2NodeClass" ? {
+      amiSelectorTerms    = each.value.ami_selector
+      blockDeviceMappings = each.value.block_device_mappings
+      userData            = each.value.user_data
+    } : null)
   }
 }
 
@@ -246,7 +246,7 @@ locals {
         consolidation_policy = "WhenEmptyOrUnderutilized"
         consolidate_after    = "72h"
       }
-      instance_types                  = ["c6g.large", "c6g.xlarge", "c6g.2xlarge"]
+      instance_types = ["c6g.large", "c6g.xlarge", "c6g.2xlarge"]
       node_class_ref = {
         group = "eks.amazonaws.com"
         kind  = "NodeClass"
@@ -263,7 +263,7 @@ locals {
         consolidation_policy = "WhenEmpty"
         consolidate_after    = "72h"
       }
-      instance_types                  = ["c6g.large", "c6g.xlarge"]
+      instance_types = ["c6g.large", "c6g.xlarge"]
       node_class_ref = {
         group = "eks.amazonaws.com"
         kind  = "NodeClass"
@@ -297,7 +297,7 @@ locals {
         consolidation_policy = "WhenEmpty"
         consolidate_after    = "72h"
       }
-      instance_types                  = ["c6g.medium", "c6g.xlarge"]
+      instance_types = ["c6g.medium", "c6g.xlarge"]
       node_class_ref = {
         group = "eks.amazonaws.com"
         kind  = "NodeClass"
@@ -314,7 +314,7 @@ locals {
         consolidation_policy = "WhenEmpty"
         consolidate_after    = "72h"
       }
-      instance_types                  = ["c6g.2xlarge"]
+      instance_types = ["c6g.2xlarge"]
       node_class_ref = {
         group = "eks.amazonaws.com"
         kind  = "NodeClass"
@@ -331,7 +331,7 @@ locals {
         consolidation_policy = "WhenEmpty"
         consolidate_after    = "72h"
       }
-      instance_types                  = ["c6g.medium", "c6g.xlarge"]
+      instance_types = ["c6g.medium", "c6g.xlarge"]
       node_class_ref = {
         group = "eks.amazonaws.com"
         kind  = "NodeClass"
@@ -343,29 +343,12 @@ locals {
         effect = "NoSchedule"
       }]
     }
-    "litellm" = {
-      disruption = {
-        consolidation_policy = "WhenEmptyOrUnderutilized"
-        consolidate_after    = "8h"
-      }
-      instance_types                  = ["c6g.xlarge","c6g.2xlarge","c6g.4xlarge"]
-      node_class_ref = {
-        group = "eks.amazonaws.com"
-        kind  = "NodeClass"
-        name  = "platform"
-      }
-      taints = [{
-        key    = "platform"
-        value  = "litellm"
-        effect = "NoSchedule"
-      }]
-    }
     "coder-server" = {
       disruption = {
         consolidation_policy = "WhenEmptyOrUnderutilized"
         consolidate_after    = "8h"
       }
-      instance_types                  = ["c6g.xlarge","c6g.2xlarge","c6g.4xlarge"]
+      instance_types = ["c6g.xlarge", "c6g.2xlarge", "c6g.4xlarge"]
       node_class_ref = {
         group = "eks.amazonaws.com"
         kind  = "NodeClass"
@@ -386,7 +369,7 @@ locals {
         }]
       }
       node_expires_after = "8h"
-      instance_types                  = ["c6g.large", "c6g.xlarge", "c6g.2xlarge", "c6g.4xlarge"]
+      instance_types     = ["c6g.large", "c6g.xlarge", "c6g.2xlarge", "c6g.4xlarge"]
       node_class_ref = {
         group = "eks.amazonaws.com"
         kind  = "NodeClass"
@@ -406,7 +389,7 @@ locals {
           nodes = "100%"
         }]
       }
-      instance_types = ["c6a.4xlarge","c6a.8xlarge"]
+      instance_types = ["c6a.4xlarge", "c6a.8xlarge"]
       node_class_ref = {
         group = "karpenter.k8s.aws"
         kind  = "EC2NodeClass"
@@ -422,11 +405,11 @@ locals {
           nodes = "100%"
         }]
       }
-      replicas                        = 2
+      replicas = 2
       limits = {
         nodes = 100
       }
-      instance_types = ["c6a.4xlarge","c6a.8xlarge"]
+      instance_types = ["c6a.4xlarge", "c6a.8xlarge"]
       node_class_ref = {
         group = "karpenter.k8s.aws"
         kind  = "EC2NodeClass"
@@ -471,11 +454,11 @@ resource "kubernetes_manifest" "nodepool" {
         consolidateAfter    = try(each.value.disruption.consolidate_after, "0s")
         budgets             = try(each.value.disruption.budgets, [{ nodes = "10%" }])
       }
-    } : null, try(each.value.replicas, null) != null ? {
+      } : null, try(each.value.replicas, null) != null ? {
       replicas = each.value.replicas
-    } : null, try(each.value.limits, null) != null ? {
+      } : null, try(each.value.limits, null) != null ? {
       limits = each.value.limits
-    } : null, {
+      } : null, {
       template = {
         metadata = {
           labels = {
@@ -491,7 +474,7 @@ resource "kubernetes_manifest" "nodepool" {
           # 21 days (504 hours i.e. ExpireAfter + TerminationGracePeriod) maximum lifetime for AutoMode
           # https://karpenter.sh/docs/concepts/nodepools/
           # "Never" works for Karpenter though.
-          expireAfter  = try(each.value.node_expires_after, each.value.node_class_ref != "karpenter.k8s.aws" ? "480h" : "Never")
+          expireAfter = try(each.value.node_expires_after, each.value.node_class_ref != "karpenter.k8s.aws" ? "480h" : "Never")
           taints = each.value.taints == null ? [{
             key    = "dedicated"
             value  = each.key
@@ -521,79 +504,7 @@ resource "kubernetes_manifest" "nodepool" {
   }
 
   lifecycle {
-    ignore_changes = [ manifest.spec.replicas ]
-  }
-}
-
-##
-# Setup Cert-Manager ClusterIssuer
-##
-
-locals {
-  cf_secret_key = "key"
-}
-
-resource "kubernetes_secret_v1" "cf" {
-  metadata {
-    name      = "cloudflare-token"
-    namespace = var.cloudflare_secret_namespace
-    annotations = {
-      "custom.kubernetes.secret/key"   = local.cf_secret_key
-      "custom.kubernetes.secret/email" = var.cloudflare_email
-    }
-  }
-  data = {
-    (local.cf_secret_key) = var.cloudflare_api_token
-  }
-}
-
-resource "kubernetes_manifest" "issuer" {
-
-  field_manager {
-    force_conflicts = true
-  }
-
-  wait {
-    condition {
-      type   = "Ready"
-      status = "True"
-    }
-  }
-
-  timeouts {
-    create = "10m"
-    update = "10m"
-    delete = "30s"
-  }
-
-  manifest = {
-    apiVersion = "cert-manager.io/v1"
-    kind       = "ClusterIssuer"
-    metadata = {
-      labels = {}
-      name   = var.cluster_issuer_name
-    }
-    spec = {
-      acme = {
-        privateKeySecretRef = {
-          name = var.cluster_issuer_priv_key_ref
-        }
-        server = "https://acme-v02.api.letsencrypt.org/directory"
-        solvers = [
-          {
-            dns01 = {
-              cloudflare = {
-                apiTokenSecretRef = {
-                  key  = kubernetes_secret_v1.cf.metadata[0].annotations["custom.kubernetes.secret/key"]
-                  name = kubernetes_secret_v1.cf.metadata[0].name
-                }
-                email = kubernetes_secret_v1.cf.metadata[0].annotations["custom.kubernetes.secret/email"]
-              }
-            }
-          }
-        ]
-      }
-    }
+    ignore_changes = [manifest.spec.replicas]
   }
 }
 
@@ -614,7 +525,7 @@ locals {
 resource "kubernetes_daemon_set_v1" "img-fetch" {
 
   for_each = toset([
-    "coder-workspace", 
+    "coder-workspace",
     "coder-workspace-static"
   ])
 
@@ -657,7 +568,7 @@ resource "kubernetes_daemon_set_v1" "img-fetch" {
         dynamic "init_container" {
           for_each = toset(local.prewarm_imgs)
           content {
-            name = replace(init_container.value, "/\\W/", "-")
+            name    = replace(init_container.value, "/\\W/", "-")
             image   = init_container.value
             command = []
           }
@@ -686,9 +597,9 @@ resource "kubernetes_daemon_set_v1" "img-fetch" {
 locals {
   reg_mirror = "${data.aws_caller_identity.this.account_id}.dkr.ecr.${var.region}.amazonaws.com"
   reg_suffix = {
-    "ghcr" = "ghcr.io"
-    "k8s" = "registry.k8s.io"
-    "quay" = "quay.io"
+    "ghcr"       = "ghcr.io"
+    "k8s"        = "registry.k8s.io"
+    "quay"       = "quay.io"
     "docker-hub" = "index.docker.io"
     "ecr-public" = "public.ecr.aws"
   }
@@ -699,18 +610,17 @@ resource "kubernetes_manifest" "mutate_img_policy" {
     apiVersion = "policies.kyverno.io/v1"
     kind       = "MutatingPolicy"
     metadata = {
-      name      = "mutate-ws-image"
+      name = "mutate-ws-image"
     }
     spec = {
       matchConstraints = {
         matchPolicy = "Equivalent"
         namespaceSelector = {
           matchExpressions = [{
-            key = "kubernetes.io/metadata.name"
+            key      = "kubernetes.io/metadata.name"
             operator = "In"
             values = [
-              "default", 
-              "litellm", 
+              "default",
               "observability",
               "ebs-controller",
               "coder",
@@ -723,7 +633,7 @@ resource "kubernetes_manifest" "mutate_img_policy" {
         objectSelector = {
           matchExpressions = [
             {
-              key = "app.kubernetes.io/name"
+              key      = "app.kubernetes.io/name"
               operator = "NotIn"
               values = [
                 # "coder-provisioner", 
@@ -732,7 +642,7 @@ resource "kubernetes_manifest" "mutate_img_policy" {
               ]
             },
             {
-              key = "app.kubernetes.io/managed-by"
+              key      = "app.kubernetes.io/managed-by"
               operator = "NotIn"
               values = [
                 # "Helm",
@@ -750,24 +660,24 @@ resource "kubernetes_manifest" "mutate_img_policy" {
           }
         ]
       }
-      mutations = [ for k in ["containers", "initContainers", "ephemeralContainers"] : {
+      mutations = [for k in ["containers", "initContainers", "ephemeralContainers"] : {
         patchType = "JSONPatch"
         jsonPatch = {
           expression = <<-EOT
             object.spec.?${k}.orValue([]).map(c, 
-              %{ for suffix,reg in local.reg_suffix ~}
+              %{for suffix, reg in local.reg_suffix~}
               image(c.image).registry() == "${reg}" ? 
               JSONPatch{
                 op: "replace",
                 path: "/spec/${k}/" + string(object.spec.?${k}.orValue([]).indexOf(c)) + "/image",
                 value: "${local.reg_mirror}" + "/" + "${suffix}" + "/" + string(image(c.image).repository()) + ":" + string(image(c.image).tag())
               } :
-              %{ endfor ~}
+              %{endfor~}
               null
             ).filter(p, p != null)
           EOT
         }
-      } ]
+      }]
     }
   }
 }

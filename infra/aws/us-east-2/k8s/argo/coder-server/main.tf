@@ -40,7 +40,6 @@ locals {
   account_id   = data.aws_caller_identity.this.account_id
   azs          = var.azs
   pub_subs     = [for az in local.azs : "${var.vpc_name}-public-${local.region}${az}"]
-  release_name = "coder"
   rds_db_name  = split(".", data.aws_db_instance.coder.endpoint)[0]
 
   common_name           = trimprefix(trimprefix(var.coder_access_url, "https://"), "http://")
@@ -55,21 +54,6 @@ resource "aws_eip" "coder" {
   tags = {
     Name = "coder-eip-${count.index}"
   }
-}
-
-import {
-  id = "eipalloc-0d77e626a86e01d9b"
-  to = aws_eip.coder[0]
-}
-
-import {
-  id = "eipalloc-00b0abb2240ba8036"
-  to = aws_eip.coder[1]
-}
-
-import {
-  id = "eipalloc-0b14ee1e7717ea68d"
-  to = aws_eip.coder[2]
 }
 
 data "aws_iam_policy_document" "rds" {
@@ -130,7 +114,7 @@ locals {
 
     # TLS Termination handled on the LB
     CODER_REDIRECT_TO_ACCESS_URL = "true"
-    CODER_TLS_ENABLE             = "true"
+    # CODER_TLS_ENABLE             = "true"
 
     CODER_ENABLE_TERRAFORM_DEBUG_MODE = "true"
     CODER_TRACE_LOGS                  = "true"
@@ -175,7 +159,7 @@ locals {
     CODER_OAUTH2_GITHUB_ALLOW_SIGNUPS           = "false"
     CODER_OAUTH2_GITHUB_DEVICE_FLOW             = "false"
     CODER_OAUTH2_GITHUB_ALLOW_EVERYONE          = "false"
-    CODER_OAUTH2_GITHUB_ALLOWED_ORGS            = join(",", var.coder_github_allowed_orgs)
+    CODER_OAUTH2_GITHUB_ALLOWED_ORGS            = join(",", ["coder", "coder-contrib"])
   }
   secrets = merge({
     CODER_OAUTH2_GITHUB_CLIENT_SECRET   = local.coder["CODER_OAUTH2_GITHUB_CLIENT_SECRET"]
@@ -183,18 +167,6 @@ locals {
     CODER_PG_CONNECTION_URL             = local.coder["CODER_PG_CONNECTION_URL"]
     CODER_EXTERNAL_AUTH_0_CLIENT_SECRET = local.coder["CODER_EXTERNAL_AUTH_0_CLIENT_SECRET"]
   })
-}
-
-resource "kubernetes_namespace_v1" "coder" {
-  depends_on = [ aws_eip.coder ]
-  metadata {
-    name = "coder"
-  }
-}
-
-import {
-  id = "coder"
-  to = kubernetes_namespace_v1.coder
 }
 
 resource "kubernetes_manifest" "coder" {
@@ -215,7 +187,7 @@ resource "kubernetes_manifest" "coder" {
     apiVersion = "argoproj.io/v1alpha1"
     kind       = "Application"
     metadata = {
-      name        = local.release_name
+      name        = "${var.region}.coder"
       namespace   = "argocd"
       labels      = {}
       annotations = {}
@@ -224,9 +196,10 @@ resource "kubernetes_manifest" "coder" {
       project = "default"
       source = {
         repoURL        = "https://github.com/coder/ai.coder.com"
-        path          = "infra/aws/us-east-2/k8s/argo/coder-server/charts/coder"
+        path           = "charts/coder"
         targetRevision = "main"
         helm = {
+          releaseName = "coder"
           values = yamlencode({
             coder = {
               coder = {
@@ -236,9 +209,7 @@ resource "kubernetes_manifest" "coder" {
                   pullPolicy  = "IfNotPresent"
                   pullSecrets = []
                 }
-                env = concat([for k, v in merge(
-                  local.coder,
-                  ) : {
+                env = concat([for k, v in local.coder : {
                   name  = k,
                   value = tostring(v)
                   } if lookup(local.secrets, k, null) == null], [
@@ -259,6 +230,11 @@ resource "kubernetes_manifest" "coder" {
                 podAnnotations = {
                   "prometheus.io/scrape" = "true"
                   "prometheus.io/port"   = "2112"
+                  "checksum/config" = sha256(join(",", [
+                    jsonencode(local.coder),
+                    jsonencode(sensitive(local.secrets)),
+                    jsonencode(module.provisioner-oidc-role.role_arn)
+                  ]))
                 }
                 service = {
                   enable = false
@@ -266,7 +242,7 @@ resource "kubernetes_manifest" "coder" {
                 tls = {
                   secretNames = [local.ssl_vol_friendly_name]
                 }
-                replicaCount = 0
+                replicaCount = 3
                 resources = {
                   requests = {
                     cpu    = "500m"
@@ -278,7 +254,7 @@ resource "kubernetes_manifest" "coder" {
                   }
                 }
                 serviceAccount = {
-                  name = local.release_name
+                  name = "coder"
                   annotations = {
                     "eks.amazonaws.com/role-arn" : module.provisioner-oidc-role.role_arn
                   }
@@ -319,22 +295,22 @@ resource "kubernetes_manifest" "coder" {
             }
             extra = {
               service = {
-                enable = true
+                enable            = true
                 loadBalancerClass = "service.k8s.aws/nlb"
                 annotations = {
-                    "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type" = "ip"
-                    "service.beta.kubernetes.io/aws-load-balancer-scheme"          = "internet-facing"
-                    "service.beta.kubernetes.io/aws-load-balancer-attributes"      = "deletion_protection.enabled=false,load_balancing.cross_zone.enabled=true"
-                    "service.beta.kubernetes.io/aws-load-balancer-eip-allocations" = join(",", aws_eip.coder[*].allocation_id)
-                    "service.beta.kubernetes.io/aws-load-balancer-subnets"         = join(",", local.pub_subs)
-                  }
+                  "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type" = "ip"
+                  "service.beta.kubernetes.io/aws-load-balancer-scheme"          = "internet-facing"
+                  "service.beta.kubernetes.io/aws-load-balancer-attributes"      = "deletion_protection.enabled=false,load_balancing.cross_zone.enabled=true"
+                  "service.beta.kubernetes.io/aws-load-balancer-eip-allocations" = join(",", aws_eip.coder[*].allocation_id)
+                  "service.beta.kubernetes.io/aws-load-balancer-subnets"         = join(",", local.pub_subs)
+                }
               }
               prometheus = {
                 enable = true
               }
               certificate = {
-                enable = true
-                name = local.ssl_vol_friendly_name
+                enable     = true
+                name       = local.ssl_vol_friendly_name
                 commonName = local.common_name
                 dnsNames = [
                   local.common_name,
@@ -353,7 +329,7 @@ resource "kubernetes_manifest" "coder" {
       }
       destination = {
         server    = data.aws_eks_cluster.this.arn
-        namespace = kubernetes_namespace_v1.coder.metadata[0].name
+        namespace = "coder"
       }
       syncPolicy = {
         syncOptions = [
@@ -371,15 +347,15 @@ resource "kubernetes_secret_v1" "coder" {
   for_each = toset(keys(local.secrets))
 
   metadata {
-    name = replace(lower(each.key), "_", "-")
-    namespace = kubernetes_namespace_v1.coder.metadata[0].name
+    name      = replace(lower(each.key), "_", "-")
+    namespace = "coder"
     annotations = {
       "custom.kubernetes.secret/key" = "key"
     }
   }
   type = "Opaque"
   data = {
-    "key" = sensitive(base64encode(local.secrets[each.key]))
+    "key" = sensitive(local.secrets[each.key])
   }
 }
 

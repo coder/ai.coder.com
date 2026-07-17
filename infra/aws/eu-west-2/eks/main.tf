@@ -20,6 +20,8 @@ data "aws_subnets" "public" {
   }
 }
 
+data "aws_caller_identity" "me" {}
+
 data "aws_subnets" "private" {
   filter {
     name   = "vpc-id"
@@ -51,6 +53,14 @@ locals {
     key      = "CriticalAddonsOnly"
     operator = "Exists"
   }]
+}
+
+data "aws_iam_policy_document" "sts" {
+  statement {
+    effect    = "Allow"
+    actions   = ["sts:*"]
+    resources = ["*"]
+  }
 }
 
 resource "aws_iam_policy" "sts" {
@@ -139,6 +149,33 @@ module "eks" {
   tags = local.tags
 }
 
+resource "aws_eks_access_entry" "argocd" {
+  principal_arn = "arn:aws:iam::${data.aws_caller_identity.me.account_id}:role/ArgoCDCapabilityRole-${var.name}"
+  cluster_name  = module.eks.cluster_name
+  type          = "STANDARD"
+}
+
+locals {
+  argocd_cluster_policies = [
+    "AmazonEKSClusterAdminPolicy",
+    "AmazonEKSArgoCDClusterPolicy",
+    "AmazonEKSArgoCDPolicy"
+  ]
+}
+
+resource "aws_eks_access_policy_association" "argocd" {
+
+  for_each = toset(local.argocd_cluster_policies)
+
+  cluster_name  = module.eks.cluster_name
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/${each.value}"
+  principal_arn = "arn:aws:iam::${data.aws_caller_identity.me.account_id}:role/ArgoCDCapabilityRole-${var.name}"
+
+  access_scope {
+    type = "cluster"
+  }
+}
+
 provider "kubernetes" {
   host                   = module.eks.cluster_endpoint
   cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
@@ -173,7 +210,7 @@ resource "kubernetes_manifest" "default-class" {
 
       networkPolicy          = "DefaultAllow"
       networkPolicyEventLogs = "Disabled"
-      snatPolicy = "Disabled"
+      snatPolicy             = "Disabled"
 
       role = module.eks.node_iam_role_name
 
@@ -182,7 +219,7 @@ resource "kubernetes_manifest" "default-class" {
           id = module.eks.cluster_primary_security_group_id
         }
       ]
-      
+
       subnetSelectorTerms = [for subnet_id in data.aws_subnets.private.ids : { id = subnet_id }]
     }
   }

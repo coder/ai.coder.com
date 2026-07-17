@@ -126,6 +126,12 @@ module "eks-argocd-capability" {
   type         = "ARGOCD"
   cluster_name = module.eks.cluster_name
 
+  create_iam_role            = true
+  iam_role_name              = "ArgoCDCapabilityRole-${module.eks.cluster_name}"
+  iam_policy_path            = "/${var.region}/"
+  iam_role_use_name_prefix   = false # Keep false to lookup. Differentiate via cluster name.
+  iam_policy_use_name_prefix = true
+
   configuration = {
     argo_cd = {
       aws_idc = {
@@ -361,5 +367,20 @@ resource "kubernetes_secret_v1" "argocd-local-cluster-config" {
     server  = module.eks.cluster_arn
     project = "default"
   }
+}
 
+resource "kubernetes_secret_v1" "argocd-target-cluster-config-eu-west-2" {
+  depends_on = [module.eks-argocd-capability]
+  metadata {
+    name      = "target-cluster-eu-west-2"
+    namespace = local.argocd_ns
+    labels = {
+      "argocd.argoproj.io/secret-type" = "cluster"
+    }
+  }
+  data = {
+    name    = "local-cluster"
+    server  = "arn:aws:eks:eu-west-2:${data.aws_caller_identity.me.account_id}:cluster/${module.eks.cluster_name}"
+    project = "default"
+  }
 }
