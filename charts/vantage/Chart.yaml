@@ -1,0 +1,12 @@
+apiVersion: v2
+name: coder
+description: A Helm chart for Kubernetes with Vantage and auxillary resources.
+type: application
+version: 0.1.0
+appVersion: 0.1.0
+
+dependencies:
+  - name: vantage
+    version: 1.9.1
+    repository: "https://vantage-sh.github.io/helm-charts"
+    alias: vantage
