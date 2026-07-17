@@ -1,0 +1,12 @@
+extra:
+  
+  secrets:
+    refreshInterval: 1h0m0s
+    refreshPolicy: Periodic
+    secretArn: arn:aws:secretsmanager:us-east-1:123456789012:secret:coder-abc123
+
+  secretStore:
+    labels: {}
+    annotations: {}
+    aws:
+      region: us-east-1
