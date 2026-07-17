@@ -9,7 +9,7 @@ variable "region" {
 }
 
 variable "vpc_name" {
-  type    = string
+  type = string
 }
 
 variable "private_subnet_suffix" {

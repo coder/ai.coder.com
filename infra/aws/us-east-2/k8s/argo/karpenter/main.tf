@@ -80,12 +80,6 @@ module "karpenter" {
   enable_spot_termination         = true
 }
 
-resource "kubernetes_namespace_v1" "karpenter" {
-  metadata {
-    name = "karpenter"
-  }
-}
-
 resource "kubernetes_manifest" "karpenter" {
 
   wait {
@@ -105,19 +99,19 @@ resource "kubernetes_manifest" "karpenter" {
     apiVersion = "argoproj.io/v1alpha1"
     kind       = "Application"
     metadata = {
-      name        = "karpenter"
+      name        = "${var.region}.karpenter"
       namespace   = "argocd"
       labels      = {}
       annotations = {}
-      finalizers  = ["resources-finalizers.argocd.argoproj.io"]
     }
     spec = {
       project = "default"
       source = {
         repoURL        = "https://github.com/coder/ai.coder.com"
-        path           = "infra/aws/us-east-2/k8s/argo/karpenter/charts/karpenter"
+        path           = "charts/karpenter"
         targetRevision = "main"
         helm = {
+          releaseName = "karpenter"
           values = yamlencode({
             extra = {
               sa = {
@@ -145,6 +139,12 @@ resource "kubernetes_manifest" "karpenter" {
               dnsPolicy    = "ClusterFirst"
               nodeSelector = {}
               replicas     = 2
+              podAnnotations = {
+                "checksum/config" = sha256(join(",", [
+                  jsonencode(module.karpenter.iam_role_arn),
+                  jsonencode(module.karpenter.node_iam_role_arn)
+                ]))
+              }
               serviceAccount = {
                 annotations = {
                   "eks.amazonaws.com/role-arn" = module.karpenter.iam_role_arn
@@ -199,11 +199,11 @@ resource "kubernetes_manifest" "karpenter" {
       }
       destination = {
         server    = data.aws_eks_cluster.this.arn
-        namespace = kubernetes_namespace_v1.karpenter.metadata[0].name
+        namespace = "karpenter"
       }
       syncPolicy = {
         syncOptions = [
-          "CreateNamespace=false",
+          "CreateNamespace=true",
           "Delete=false"
         ]
       }

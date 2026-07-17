@@ -3,6 +3,18 @@ provider "aws" {
   profile = var.profile
 }
 
+data "aws_caller_identity" "me" {}
+
+data "aws_eks_cluster" "controller" {
+  region = "us-east-2"
+  name   = var.cluster_name
+}
+
+data "aws_eks_cluster_auth" "controller" {
+  region = "us-east-2"
+  name   = var.cluster_name
+}
+
 data "aws_eks_cluster" "this" {
   name = var.cluster_name
 }
@@ -16,9 +28,9 @@ data "aws_iam_openid_connect_provider" "this" {
 }
 
 provider "kubernetes" {
-  host                   = data.aws_eks_cluster.this.endpoint
-  cluster_ca_certificate = base64decode(data.aws_eks_cluster.this.certificate_authority[0].data)
-  token                  = data.aws_eks_cluster_auth.this.token
+  host                   = data.aws_eks_cluster.controller.endpoint
+  cluster_ca_certificate = base64decode(data.aws_eks_cluster.controller.certificate_authority[0].data)
+  token                  = data.aws_eks_cluster_auth.controller.token
 }
 
 locals {
@@ -26,19 +38,7 @@ locals {
     key      = "CriticalAddonsOnly"
     operator = "Exists"
   }]
-  affinity = {
-    nodeAffinity = {
-      requiredDuringSchedulingIgnoredDuringExecution = {
-        nodeSelectorTerms = [{
-          matchExpressions = [{
-            key      = "karpenter.sh/nodepool"
-            operator = "In"
-            values   = ["system"]
-          }]
-        }]
-      }
-    }
-  }
+  affinity = {}
 }
 
 module "policy" {
@@ -55,7 +55,7 @@ module "oidc-role" {
   path         = "/${var.cluster_name}/${var.region}/"
   cluster_name = var.cluster_name
   policy_arns = {
-    "CertManagerR53" = module.policy.policy_arn
+    "CertManagerR53"       = module.policy.policy_arn
   }
   cluster_policy_arns = {
     "AmazonEKSClusterAdminPolicy" = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy",
@@ -66,15 +66,9 @@ module "oidc-role" {
   tags = {}
 }
 
-resource "kubernetes_namespace_v1" "cert-manager" {
-  metadata {
-    name = "cert-manager"
-  }
-}
-
 resource "aws_secretsmanager_secret" "cloudflare" {
   region = var.region
-  name_prefix   = "cloudflare-token"
+  name   = "cloudflare-token"
 }
 
 locals {
@@ -112,6 +106,9 @@ resource "kubernetes_manifest" "cert-manager" {
       namespace   = "argocd"
       labels      = {}
       annotations = {}
+      finalizers = [
+        "resources-finalizer.argocd.argoproj.io"
+      ]
     }
     spec = {
       project = "default"

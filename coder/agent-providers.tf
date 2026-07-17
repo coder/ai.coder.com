@@ -205,7 +205,7 @@ locals {
 
 module "anthropic" {
 
-  source = "./modules/coderd/ai-provider"
+  source = "../modules/coderd/ai-provider"
 
   for_each = local.anthropic
 
@@ -228,7 +228,7 @@ module "anthropic" {
 
 # module "openai-gpt-oss" {
 
-#   source = "./modules/coderd/ai-provider"
+#   source = "../modules/coderd/ai-provider"
 
 #   region                   = var.region
 #   ai_provider_type         = "openai"
@@ -248,7 +248,7 @@ module "anthropic" {
 
 # module "openai-gpt" {
 
-#   source = "./modules/coderd/ai-provider"
+#   source = "../modules/coderd/ai-provider"
 
 #   region                   = var.region
 #   ai_provider_type         = "openai"
@@ -262,7 +262,7 @@ module "anthropic" {
 
 # module "openai-compatible" {
 
-#   source = "./modules/coderd/ai-provider"
+#   source = "../modules/coderd/ai-provider"
 
 #   region                   = var.region
 #   ai_provider_type         = "openai-compat"
@@ -278,7 +278,7 @@ module "anthropic" {
 
 # module "openai-compatible-mantle" {
 
-#   source = "./modules/coderd/ai-provider"
+#   source = "../modules/coderd/ai-provider"
 
 #   region                   = var.region
 #   ai_provider_type         = "openai-compat"
@@ -290,7 +290,7 @@ module "anthropic" {
 
 # module "openai-compatible-runtime" {
 
-#   source = "./modules/coderd/ai-provider"
+#   source = "../modules/coderd/ai-provider"
 
 #   region                   = var.region
 #   ai_provider_type         = "openai-compat"

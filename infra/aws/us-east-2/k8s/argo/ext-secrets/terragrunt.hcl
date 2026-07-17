@@ -5,19 +5,13 @@ include "root" {
 
 dependencies {
   paths = [
-    "../../../eks", 
-    "../../../rds",
-    "../karpenter", 
-    "../lb-controller",
-    "../cert-manager",
-    "../../other" # Deploy's auxillary manifests
+    "../../../eks"
   ]
 }
 
 inputs = {
   profile=include.root.locals.CODER_AWS_PROFILE
   region=include.root.locals.CODER_AWS_REGION
-  
-  vpc_name=include.root.locals.CODER_VPC_NAME
   cluster_name=include.root.locals.CODER_CLUSTER_NAME
+  vpc_name=include.root.locals.CODER_VPC_NAME
 }

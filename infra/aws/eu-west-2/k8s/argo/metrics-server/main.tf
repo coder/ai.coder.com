@@ -3,6 +3,16 @@ provider "aws" {
   profile = var.profile
 }
 
+data "aws_eks_cluster" "controller" {
+  region = "us-east-2"
+  name   = var.cluster_name
+}
+
+data "aws_eks_cluster_auth" "controller" {
+  region = "us-east-2"
+  name   = var.cluster_name
+}
+
 data "aws_eks_cluster" "this" {
   name = var.cluster_name
 }
@@ -12,9 +22,9 @@ data "aws_eks_cluster_auth" "this" {
 }
 
 provider "kubernetes" {
-  host                   = data.aws_eks_cluster.this.endpoint
-  cluster_ca_certificate = base64decode(data.aws_eks_cluster.this.certificate_authority[0].data)
-  token                  = data.aws_eks_cluster_auth.this.token
+  host                   = data.aws_eks_cluster.controller.endpoint
+  cluster_ca_certificate = base64decode(data.aws_eks_cluster.controller.certificate_authority[0].data)
+  token                  = data.aws_eks_cluster_auth.controller.token
 }
 
 resource "kubernetes_manifest" "metrics-server" {
@@ -40,6 +50,9 @@ resource "kubernetes_manifest" "metrics-server" {
       namespace   = "argocd"
       labels      = {}
       annotations = {}
+      finalizers = [
+        "resources-finalizer.argocd.argoproj.io"
+      ]
     }
     spec = {
       project = "default"
@@ -55,30 +68,18 @@ resource "kubernetes_manifest" "metrics-server" {
               key      = "CriticalAddonsOnly"
               operator = "Exists"
             }]
-            affinity = {
-              nodeAffinity = {
-                requiredDuringSchedulingIgnoredDuringExecution = {
-                  nodeSelectorTerms = [{
-                    matchExpressions = [{
-                      key      = "karpenter.sh/nodepool"
-                      operator = "In"
-                      values   = ["system"]
-                    }]
-                  }]
-                }
-              }
-            }
+            affinity = {}
           })
         }
       }
       destination = {
-        server = data.aws_eks_cluster.this.arn
+        server    = data.aws_eks_cluster.this.arn
         namespace = "kube-system"
       }
       syncPolicy = {
         syncOptions = [
           "CreateNamespace=false",
-          "Delete=false"
+          "Delete=confirm"
         ]
       }
     }

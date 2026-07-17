@@ -1,6 +1,0 @@
-dependencies:
-- name: libcoder
-  repository: file://charts/libcoder
-  version: 0.1.0
-digest: sha256:8788012975e83c0a94502ae0cca1159feb805460431b6dcbbdbd57c4a2d29e1b
-generated: "2026-06-02T06:34:10.952532379Z"
