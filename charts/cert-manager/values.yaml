@@ -25,7 +25,7 @@ extra:
       cloudflare:
         apiTokenSecretRef:
           key: cf-token-key
-          name: cf-token
+          secretArn: arn:aws:secretsmanager:us-east-1:123456789012:secret:cf-token-abc123
         email: example@google.com
 
   secretStore:
