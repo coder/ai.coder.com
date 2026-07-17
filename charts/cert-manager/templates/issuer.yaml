@@ -22,6 +22,6 @@ spec:
           cloudflare:
             apiTokenSecretRef:
               key: {{ .Values.extra.defaultIssuer.acme.cloudflare.apiTokenSecretRef.key }}
-              name: {{ .Values.extra.defaultIssuer.acme.cloudflare.apiTokenSecretRef.name }}
+              name: {{ .Values.extra.defaultIssuer.acme.cloudflare.apiTokenSecretRef.name | lower }}
             email: {{ .Values.extra.defaultIssuer.acme.cloudflare.email }}
 {{- end }}
