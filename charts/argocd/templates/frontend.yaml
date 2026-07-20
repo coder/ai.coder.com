@@ -1,0 +1,82 @@
+apiVersion: cloudfront.services.k8s.aws/v1alpha1
+kind: Distribution
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  distributionConfig:
+    comment: $DISTRIBUTION_COMMENT
+    enabled: true
+
+    origins:
+      items:
+      - id: $ORIGIN_ID
+        domainName: $ORIGIN_S3_DOMAIN_NAME
+
+    defaultCacheBehavior:
+      targetOriginID: $ORIGIN_ID
+      viewerProtocolPolicy: allow-all
+      minTTL: 1000
+      forwardedValues:
+        queryString: false
+        cookies:
+          forward: "none"
+
+    viewerCertficiate:
+      sslSupportMethod: sni-only
+      acmCertificateRef:
+        from: {{ .Release.Name }}
+
+  tags:
+  - key: hello
+---
+apiVersion: acmpca.services.k8s.aws/v1alpha1
+kind: Certificate
+metadata:
+  name: {{ .Values.extra.certificate.name }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  certificateOutput:
+    namespace: $CERTIFICATE_SEC_NS
+    name: $CERTIFICATE_SEC_NAME
+    key: $CERTIFICATE_SEC_KEY
+  certificateAuthorityARN: $CA_ARN
+  certificateSigningRequestRef:
+    from:
+      name: $CA_NAME
+  signingAlgorithm: SHA256WITHRSA
+  templateARN: $TEMPLATE_ARN
+  validity:
+    type: DAYS
+    value: 100
+---
+{{- if .Values.extra.certificate.enable }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ .Values.extra.certificate.name }}
+  namespace: {{ .Release.Namespace }}
+{{- with .Values.extra.certificate.labels }}
+  labels:
+{{ toYaml . | nindent 4 }}
+{{- end }}
+{{- with .Values.extra.certificate.annotations }}
+  annotations:
+{{ toYaml . | nindent 4 }}
+{{- end }}
+spec: 
+  commonName: {{ .Values.extra.certificate.commonName | quote }}
+  dnsNames:
+{{ toYaml .Values.extra.certificate.dnsNames | nindent 4 }}
+  duration: {{ .Values.extra.certificate.duration | quote }}
+  renewBefore: {{ .Values.extra.certificate.renewBefore | quote }}
+  issuerRef:
+    kind: {{ .Values.extra.certificate.issuerRef.kind }}
+    name: {{ .Values.extra.certificate.issuerRef.name }}
+  secretName: {{ .Values.extra.certificate.name }}
+  privateKey:
+    rotationPolicy: Never
+    algorithm: RSA
+    encoding: PKCS1
+    size: 2048
+{{- end }}
