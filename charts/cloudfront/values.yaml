@@ -1,6 +1,6 @@
 extra:
   
-  cloudFront:
+  cloudfront:
     labels: {}
     annotations: {}
     domainName: https://www.example.com
