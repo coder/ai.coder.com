@@ -60,7 +60,8 @@ spec:
       restartPolicy: OnFailure
       containers:
       - name: secret-copier
-        image: bitnami/kubectl:sha256-393c457f5c410507a7718d7468d19fe53b4189ab06798df759605fb4aa22e474
+        # https://hub.docker.com/layers/bitnami/kubectl/latest
+        image: docker.io/bitnami/kubectl@sha256:558420daf32bbc382e3e9af4537f4073085b336ddd47399a3b70e70087115978
         command:
         - /bin/bash
         - -c
