@@ -5,8 +5,7 @@ extra:
     annotations: {}
     domainName: https://www.example.com
     lbDomainName: https://www.example.com
-    originId: "ALB-Grafana"
-    comment: 
+    originId: "LoadBalancer"
     httpPort: 80
     httpsPort: 443
     originProtocolPolicy: "https-only"
@@ -27,15 +26,15 @@ extra:
       - "HEAD"
     comment: ""
 
-  secrets:
+  certificate:
+    enable: true
+    name: certificate
     labels: {}
     annotations: {}
-    refreshInterval: 1h0m0s
-    refreshPolicy: Periodic
-    secretArn: arn:aws:secretsmanager:us-east-1:123456789012:secret:coder-abc123
-
-  secretStore:
-    labels: {}
-    annotations: {}
-    aws:
-      region: us-east-1
+    commonName: ""
+    dnsNames: []
+    duration: 2160h
+    renewBefore: 360h
+    issuerRef:
+      kind: ClusterIssuer
+      name: issuer
