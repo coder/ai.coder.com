@@ -13,7 +13,6 @@ metadata:
     "helm.sh/hook": post-install
 {{- end }}
 spec:
-  region: {{ .Values.extra.certificate.region }}
   privateKey:
     name: {{ .Values.extra.certificate.name }}
     namespace: {{ .Release.Namespace }}
