@@ -1,0 +1,59 @@
+apiVersion: cloudfront.services.k8s.aws/v1alpha1
+kind: Distribution
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+{{- with .Values.extra.cloudfront.labels }}
+  labels:
+{{ toYaml . | nindent 4}}
+{{- end }}
+{{- with .Values.extra.cloudfront.annotations }}
+  annotations:
+{{ toYaml . | nindent 4}}
+{{- end }}
+spec:
+  distributionConfig:
+    priceClass: PriceClass_100
+    aliases: [ {{ .Values.extra.cloudfront.domainName }} ]
+
+    comment: {{ .Values.extra.cloudfront.comment }}
+    enabled: true
+
+    origins:
+      items:
+      - id: {{ .Values.extra.cloudfront.originId }}
+        domainName: {{ .Values.extra.cloudfront.lbDomainName }}
+        customOriginConfig:
+          httpPort: {{ .Values.extra.cloudfront.httpPort }}
+          httpsPort: {{ .Values.extra.cloudfront.httpsPort }}
+          originProtocolPolicy: {{ .Values.extra.cloudfront.originProtocolPolicy }}
+          originSSLProtocols: 
+            items: ["TLSv1.2"]
+
+    restrictions:
+      geoRestriction: 
+        restrictionType: none
+
+    defaultCacheBehavior:
+      targetOriginID: {{ .Values.extra.cloudfront.originId }}
+      viewerProtocolPolicy: {{ .Values.extra.cloudfront.viewerProtocolPolicy }}
+      minTTL: {{ .Values.extra.cloudfront.minTTL }}
+{{- with .Values.extra.cloudfront.allowedMethods }}
+      allowedMethods: 
+{{ toYaml . | nindent 8 }}
+{{- end }}
+{{- with .Values.extra.cloudfront.cachedMethods }}
+      cachedMethods:
+{{ toYaml . | nindent 8 }}
+{{- end }}
+      forwardedValues:
+        queryString: true
+        cookies:
+          forward: "all"
+
+    viewerCertificate:
+      sslSupportMethod: sni-only
+      acmCertificateRef:
+        from: 
+          name: {{ .Values.extra.certificate.name }}
+          namespace: {{ .Release.Namespace }}
