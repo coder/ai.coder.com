@@ -20,6 +20,10 @@ spec:
     name: {{ .Values.extra.certificate.name }}-opaque
     namespace: {{ .Release.Namespace }}
     key: tls.crt
+  certificateChain:
+    name: {{ .Values.extra.certificate.name }}-opaque
+    namespace: {{ .Release.Namespace }}
+    key: tls.chain
 ---
 {{- if .Values.extra.certificate.enable }}
 apiVersion: cert-manager.io/v1

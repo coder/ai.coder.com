@@ -92,11 +92,19 @@ spec:
 
           echo "Creating Opaque secret for ACM controller..."
 
-          # Get the certificate and key from the TLS secret
-          TLS_CRT=$(kubectl get secret {{ .Values.extra.certificate.name }} -n {{ .Release.Namespace }} -o jsonpath='{.data.tls\.crt}')
+          # Get the full certificate chain and key from the TLS secret
+          TLS_CRT_FULL=$(kubectl get secret {{ .Values.extra.certificate.name }} -n {{ .Release.Namespace }} -o jsonpath='{.data.tls\.crt}' | base64 -d)
           TLS_KEY=$(kubectl get secret {{ .Values.extra.certificate.name }} -n {{ .Release.Namespace }} -o jsonpath='{.data.tls\.key}')
 
-          # Create or update the Opaque secret
+          # Split the certificate chain: first cert is the leaf, rest is the chain
+          LEAF_CERT=$(echo "$TLS_CRT_FULL" | awk '/BEGIN CERTIFICATE/,/END CERTIFICATE/ {print; if (/END CERTIFICATE/) exit}')
+          CERT_CHAIN=$(echo "$TLS_CRT_FULL" | awk '/BEGIN CERTIFICATE/,/END CERTIFICATE/ {if (p) print; if (/END CERTIFICATE/) p=1}')
+
+          # Base64 encode for the secret
+          LEAF_CERT_B64=$(echo "$LEAF_CERT" | base64 | tr -d '\n')
+          CERT_CHAIN_B64=$(echo "$CERT_CHAIN" | base64 | tr -d '\n')
+
+          # Create or update the Opaque secret with separate leaf cert and chain
           cat <<EOF | kubectl apply -f -
           apiVersion: v1
           kind: Secret
@@ -108,7 +116,8 @@ spec:
               app.kubernetes.io/instance: {{ .Release.Name }}
           type: Opaque
           data:
-            tls.crt: ${TLS_CRT}
+            tls.crt: ${LEAF_CERT_B64}
+            tls.chain: ${CERT_CHAIN_B64}
             tls.key: ${TLS_KEY}
           EOF
 
