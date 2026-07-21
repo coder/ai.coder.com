@@ -13,11 +13,11 @@ metadata:
 {{- end }}
 spec:
   privateKey:
-    name: {{ .Values.extra.certificate.name }}
+    name: {{ .Values.extra.certificate.name }}-opaque
     namespace: {{ .Release.Namespace }}
     key: tls.key
   certificate:
-    name: {{ .Values.extra.certificate.name }}
+    name: {{ .Values.extra.certificate.name }}-opaque
     namespace: {{ .Release.Namespace }}
     key: tls.crt
 ---

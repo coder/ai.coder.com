@@ -1,0 +1,115 @@
+{{- if .Values.extra.certificate.enable }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.extra.certificate.name }}-copier
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Values.extra.certificate.name }}-copier
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Values.extra.certificate.name }}-copier
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+subjects:
+- kind: ServiceAccount
+  name: {{ .Values.extra.certificate.name }}-copier
+  namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: {{ .Values.extra.certificate.name }}-copier
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Values.extra.certificate.name }}-copier-{{ .Release.Revision }}
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 10
+  template:
+    metadata:
+      name: {{ .Values.extra.certificate.name }}-copier
+    spec:
+      serviceAccountName: {{ .Values.extra.certificate.name }}-copier
+      restartPolicy: OnFailure
+      containers:
+      - name: secret-copier
+        image: bitnami/kubectl:sha256-393c457f5c410507a7718d7468d19fe53b4189ab06798df759605fb4aa22e474
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+
+          echo "Waiting for cert-manager to create the TLS secret..."
+
+          # Wait up to 5 minutes for the secret to exist and have data
+          for i in {1..60}; do
+            if kubectl get secret {{ .Values.extra.certificate.name }} -n {{ .Release.Namespace }} &>/dev/null; then
+              # Check if secret has both tls.crt and tls.key
+              if kubectl get secret {{ .Values.extra.certificate.name }} -n {{ .Release.Namespace }} -o jsonpath='{.data.tls\.crt}' | grep -q . && \
+                 kubectl get secret {{ .Values.extra.certificate.name }} -n {{ .Release.Namespace }} -o jsonpath='{.data.tls\.key}' | grep -q .; then
+                echo "Secret {{ .Values.extra.certificate.name }} is ready with certificate data"
+                break
+              fi
+            fi
+            echo "Waiting for secret... attempt $i/60"
+            sleep 5
+          done
+
+          # Verify secret exists
+          if ! kubectl get secret {{ .Values.extra.certificate.name }} -n {{ .Release.Namespace }} &>/dev/null; then
+            echo "Error: Secret {{ .Values.extra.certificate.name }} not found after waiting"
+            exit 1
+          fi
+
+          echo "Creating Opaque secret for ACM controller..."
+
+          # Get the certificate and key from the TLS secret
+          TLS_CRT=$(kubectl get secret {{ .Values.extra.certificate.name }} -n {{ .Release.Namespace }} -o jsonpath='{.data.tls\.crt}')
+          TLS_KEY=$(kubectl get secret {{ .Values.extra.certificate.name }} -n {{ .Release.Namespace }} -o jsonpath='{.data.tls\.key}')
+
+          # Create or update the Opaque secret
+          cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: {{ .Values.extra.certificate.name }}-opaque
+            namespace: {{ .Release.Namespace }}
+            labels:
+              app.kubernetes.io/managed-by: {{ .Release.Service }}
+              app.kubernetes.io/instance: {{ .Release.Name }}
+          type: Opaque
+          data:
+            tls.crt: ${TLS_CRT}
+            tls.key: ${TLS_KEY}
+          EOF
+
+          echo "Opaque secret {{ .Values.extra.certificate.name }}-opaque created successfully"
+{{- end }}
