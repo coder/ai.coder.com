@@ -28,6 +28,7 @@ extra:
 
   certificate:
     enable: true
+    region: us-east-1
     name: certificate
     labels: {}
     annotations: {}
