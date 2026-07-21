@@ -20,17 +20,28 @@ spec:
 
     comment: {{ .Values.extra.cloudfront.comment }}
     enabled: true
+    defaultRootObject: {{ .Values.extra.cloudfront.defaultRootObject | default "index.html" }}
+    webACLID: ""
+    httpVersion: http2
+
+    logging:
+      enabled: false
 
     origins:
       items:
       - id: {{ .Values.extra.cloudfront.originId }}
         domainName: {{ .Values.extra.cloudfront.lbDomainName }}
+        originPath: ""
+        customHeaders:
+          items: []
         customOriginConfig:
           httpPort: {{ .Values.extra.cloudfront.httpPort }}
           httpSPort: {{ .Values.extra.cloudfront.httpsPort }}
           originProtocolPolicy: {{ .Values.extra.cloudfront.originProtocolPolicy }}
-          originSSLProtocols: 
+          originSSLProtocols:
             items: ["TLSv1.2"]
+          originReadTimeout: {{ .Values.extra.cloudfront.originReadTimeout | default 30 }}
+          originKeepaliveTimeout:  {{ .Values.extra.cloudfront.originKeepaliveTimeout | default 5 }}
 
     restrictions:
       geoRestriction: 
