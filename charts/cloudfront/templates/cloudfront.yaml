@@ -44,31 +44,60 @@ spec:
           originKeepaliveTimeout:  {{ .Values.extra.cloudfront.originKeepaliveTimeout | default 5 }}
 
     restrictions:
-      geoRestriction: 
+      geoRestriction:
         restrictionType: none
+
+    cacheBehaviors:
+      items: []
+
+    customErrorResponses:
+      items: []
 
     defaultCacheBehavior:
       targetOriginID: {{ .Values.extra.cloudfront.originId }}
       viewerProtocolPolicy: {{ .Values.extra.cloudfront.viewerProtocolPolicy }}
       minTTL: {{ .Values.extra.cloudfront.minTTL }}
-{{- with .Values.extra.cloudfront.allowedMethods }}
+      defaultTTL: {{ .Values.extra.cloudfront.defaultTTL | default 86400 }}
+      maxTTL: {{ .Values.extra.cloudfront.maxTTL | default 31536000 }}
+      smoothStreaming: false
+      compress: true
+      fieldLevelEncryptionID: ""
+      lambdaFunctionAssociations:
+        items: []
       allowedMethods:
         items:
-{{ toYaml . | nindent 8 }}
+{{- if .Values.extra.cloudfront.allowedMethods }}
+{{ toYaml .Values.extra.cloudfront.allowedMethods | nindent 8 }}
+{{- else }}
+        - GET
+        - HEAD
+        - OPTIONS
+        - PUT
+        - POST
+        - PATCH
+        - DELETE
 {{- end }}
-{{- with .Values.extra.cloudfront.cachedMethods }}
-      cachedMethods:
-        items:
-{{ toYaml . | nindent 8 }}
+        cachedMethods:
+          items:
+{{- if .Values.extra.cloudfront.cachedMethods }}
+{{ toYaml .Values.extra.cloudfront.cachedMethods | nindent 10 }}
+{{- else }}
+          - GET
+          - HEAD
 {{- end }}
       forwardedValues:
         queryString: true
+        queryStringCacheKeys:
+          items: []
+        headers:
+          items: []
         cookies:
           forward: "all"
 
     viewerCertificate:
       sslSupportMethod: sni-only
+      minimumProtocolVersion: TLSv1.2_2021
       acmCertificateRef:
-        from: 
+        from:
           name: {{ .Values.extra.certificate.name }}
           namespace: {{ .Release.Namespace }}
