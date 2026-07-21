@@ -1,0 +1,41 @@
+extra:
+  
+  cloudFront:
+    labels: {}
+    annotations: {}
+    domainName: https://www.example.com
+    lbDomainName: https://www.example.com
+    originId: "ALB-Grafana"
+    comment: 
+    httpPort: 80
+    httpsPort: 443
+    originProtocolPolicy: "https-only"
+    originSSLProtocols: 
+      items: ["TLSv1.2"]
+    viewerProtocolPolicy: "redirect-to-https"
+    minTTL: 1000
+    allowedMethods: 
+      - "GET"
+      - "HEAD"
+      - "OPTIONS"
+      - "PUT"
+      - "POST"
+      - "PATCH"
+      - "DELETE"
+    cachedMethods: 
+      - "GET"
+      - "HEAD"
+    comment: ""
+
+  secrets:
+    labels: {}
+    annotations: {}
+    refreshInterval: 1h0m0s
+    refreshPolicy: Periodic
+    secretArn: arn:aws:secretsmanager:us-east-1:123456789012:secret:coder-abc123
+
+  secretStore:
+    labels: {}
+    annotations: {}
+    aws:
+      region: us-east-1
