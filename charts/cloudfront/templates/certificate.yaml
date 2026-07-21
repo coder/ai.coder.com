@@ -10,7 +10,6 @@ metadata:
 {{- with .Values.extra.certificate.annotations }}
   annotations:
 {{ toYaml . | nindent 4 }}
-    "helm.sh/hook": post-install
 {{- end }}
 spec:
   privateKey:
@@ -35,7 +34,6 @@ metadata:
 {{- with .Values.extra.certificate.annotations }}
   annotations:
 {{ toYaml . | nindent 4 }}
-    "helm.sh/hook": post-install
 {{- end }}
 spec: 
   commonName: {{ .Values.extra.certificate.commonName | quote }}
