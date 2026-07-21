@@ -14,7 +14,9 @@ metadata:
 spec:
   distributionConfig:
     priceClass: PriceClass_100
-    aliases: [ {{ .Values.extra.cloudfront.domainName }} ]
+    aliases:
+      items:
+        - {{ .Values.extra.cloudfront.domainName }}
 
     comment: {{ .Values.extra.cloudfront.comment }}
     enabled: true
@@ -39,11 +41,13 @@ spec:
       viewerProtocolPolicy: {{ .Values.extra.cloudfront.viewerProtocolPolicy }}
       minTTL: {{ .Values.extra.cloudfront.minTTL }}
 {{- with .Values.extra.cloudfront.allowedMethods }}
-      allowedMethods: 
+      allowedMethods:
+        items:
 {{ toYaml . | nindent 8 }}
 {{- end }}
 {{- with .Values.extra.cloudfront.cachedMethods }}
       cachedMethods:
+        items:
 {{ toYaml . | nindent 8 }}
 {{- end }}
       forwardedValues:
