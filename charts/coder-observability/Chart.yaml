@@ -8,13 +8,13 @@ appVersion: 0.1.0
 dependencies:
   - name: kube-state-metrics
     condition: kube-state-metrics.enabled
-    repository: "oci://ghcr.io/prometheus-community/charts/kube-state-metrics"
+    repository: "https://prometheus-community.github.io/helm-charts"
     version: 8.0.0
     alias: kube-state-metrics
   - name: prometheus-node-exporter
     condition: node-exporter.enabled
     version: 4.56.1
-    repository: "oci://ghcr.io/prometheus-community/charts/prometheus-node-exporter"
+    repository: "https://prometheus-community.github.io/helm-charts"
     alias: node-exporter
   - name: prometheus-postgres-exporter
     condition: postgres-exporter.enabled
