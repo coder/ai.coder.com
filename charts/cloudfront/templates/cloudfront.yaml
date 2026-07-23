@@ -90,7 +90,8 @@ spec:
         queryStringCacheKeys:
           items: []
         headers:
-          items: []
+          items:
+{{ toYaml (.Values.extra.cloudfront.forwardedValues.headers | default list) | nindent 10 }}
         cookies:
           forward: "all"
 

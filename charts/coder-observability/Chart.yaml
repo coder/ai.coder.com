@@ -1,0 +1,33 @@
+apiVersion: v2
+name: coder-observability
+description: A Helm chart for Kubernetes with Auxillary Logging Helm Charts and other dependencies.
+type: application
+version: 0.1.0
+appVersion: 0.1.0
+
+dependencies:
+  - name: kube-state-metrics
+    condition: kube-state-metrics.enabled
+    repository: "oci://ghcr.io/prometheus-community/charts/kube-state-metrics"
+    version: 8.0.0
+    alias: kube-state-metrics
+  - name: prometheus-node-exporter
+    condition: node-exporter.enabled
+    version: 4.56.1
+    repository: "oci://ghcr.io/prometheus-community/charts/prometheus-node-exporter"
+    alias: node-exporter
+  - name: prometheus-postgres-exporter
+    condition: postgres-exporter.enabled
+    version: 8.2.0
+    repository: "https://prometheus-community.github.io/helm-charts"
+    alias: postgres-exporter
+  - name: grafana-agent
+    condition: grafana-agent.enabled
+    repository: https://grafana.github.io/helm-charts
+    version: 0.44.2
+    alias: grafana-agent
+  - name: loki
+    condition: loki.enabled
+    repository: https://grafana.github.io/helm-charts
+    version: 7.1.0
+    alias: loki

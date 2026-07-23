@@ -25,6 +25,11 @@ extra:
       - "GET"
       - "HEAD"
     comment: ""
+    forwardedValues:
+      headers:
+        - X-Forwarded-For
+        - X-Forwarded-Proto
+        - X-Forwarded-Port
 
   certificate:
     enable: true
