@@ -1,0 +1,78 @@
+kube-state-metrics:
+  enabled: false
+  affinity: {}
+  tolerations: []
+
+postgres-exporter:
+  enabled: false
+  affinity: {}
+  tolerations: []
+  config:
+    datasource:
+      host: ''
+      user: 'pg_readonly'
+      port: 5432
+      sslmode: disable
+      passwordSecret:
+        name: ''
+        key: key
+      database: ''
+
+node-exporter:
+  enabled: false
+  affinity: {}
+  tolerations: []
+
+grafana-agent:
+  enabled: false
+
+  controller:
+    type: daemonset
+    podAnnotations: {}
+    updateStrategy:
+      type: RollingUpdate
+      rollingUpdate:
+        maxSurge: 0
+        maxUnavailable: "100%"
+    affinity: {}
+    tolerations: []
+    
+  agent: 
+    mode: flow
+    configMap:
+      create: true
+      content: ''
+
+    clustering:
+      enabled: true
+    
+    extraArgs:
+      - "--disable-reporting=true"
+    
+    mounts:
+      varlog: true
+      dockercontainers: true
+
+  serviceAccount:
+    create: true
+    annotations: {}
+
+  crds:
+    create: true
+  
+  withOTLPReceiver: false
+
+  discovery: ""
+
+  extraBlocks: ""
+  podMetricsRelabelRules: ""
+  podLogsRelabelRules: ""
+
+  commonRelabellings: ""
+
+loki:
+  enabled: false
+  minio:
+    enabled: false
+  rollout_operator:
+    enabled: false
