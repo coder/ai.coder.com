@@ -72,6 +72,7 @@ grafana-agent:
 
 loki:
   enabled: false
+  auth_enabled: false
   minio:
     enabled: false
   rollout_operator:
