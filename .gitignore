@@ -11,14 +11,6 @@ tf.plan
 backend.tf
 provider.tf
 
-# Helm + Kubernetes
-infra/aws/us-east-2/apps/coder-ws/experiment/prometheus.yaml
-infra/aws/us-east-2/apps/coder-devel/build-and-push
-infra/aws/us-east-2/apps/cert-manager
-coder-observability/
-observability/
-secrets/
-
 # Python
 .venv
 
