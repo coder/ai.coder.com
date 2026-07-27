@@ -1,3 +1,10 @@
+extra:
+  secretStore:
+    labels: {}
+    annotations: {}
+    aws:
+      region: us-east-1
+
 kube-state-metrics:
   enabled: false
   affinity: {}
@@ -14,8 +21,14 @@ postgres-exporter:
       port: 5432
       sslmode: disable
       passwordSecret:
-        name: ''
-        key: key
+        labels: {}
+        annotations: {}
+        refreshInterval: 1h0m0s
+        refreshPolicy: Periodic
+        secretArn: arn:aws:secretsmanager:us-east-1:123456789012:secret:coder-abc123
+        passwordSecret:
+          name: 'coder-abc123'
+          key: password
       database: ''
 
 node-exporter:
