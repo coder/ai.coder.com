@@ -26,9 +26,8 @@ postgres-exporter:
         refreshInterval: 1h0m0s
         refreshPolicy: Periodic
         secretArn: arn:aws:secretsmanager:us-east-1:123456789012:secret:coder-abc123
-        passwordSecret:
-          name: 'coder-abc123'
-          key: password
+        name: 'coder-abc123'
+        key: password
       database: ''
 
 node-exporter:
