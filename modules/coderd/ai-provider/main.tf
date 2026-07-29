@@ -51,8 +51,8 @@ resource "time_rotating" "bedrock" {
 
 resource "aws_iam_user" "agent" {
   count = var.ai_provider_type != "bedrock" ? 1 : 0
-  name = "coder-gateway-${var.ai_provider_name}"
-  path = "/${var.region}/"
+  name  = "coder-gateway-${var.ai_provider_name}"
+  path  = "/${var.region}/"
 }
 
 resource "aws_iam_role" "agent" {
@@ -67,7 +67,7 @@ resource "aws_iam_policy" "bedrock" {
 }
 
 resource "aws_iam_user_policy_attachment" "bedrock" {
-  count = var.ai_provider_type != "bedrock" ? 1 : 0
+  count      = var.ai_provider_type != "bedrock" ? 1 : 0
   policy_arn = aws_iam_policy.bedrock.arn
   user       = aws_iam_user.agent[0].name
 }
@@ -79,14 +79,14 @@ resource "aws_iam_role_policy_attachment" "bedrock" {
 
 resource "aws_iam_access_key" "agent" {
   count = var.ai_provider_type != "bedrock" ? 1 : 0
-  user = aws_iam_user.agent[0].name
+  user  = aws_iam_user.agent[0].name
   lifecycle {
     replace_triggered_by = [time_rotating.bedrock]
   }
 }
 
 resource "aws_iam_service_specific_credential" "bedrock" {
-  count = var.ai_provider_type != "bedrock" ? 1 : 0
+  count               = var.ai_provider_type != "bedrock" ? 1 : 0
   service_name        = "bedrock.amazonaws.com"
   user_name           = aws_iam_user.agent[0].name
   credential_age_days = var.credential_age

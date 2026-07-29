@@ -6,12 +6,12 @@ provider "aws" {
 data "aws_caller_identity" "me" {}
 
 data "aws_eks_cluster" "controller" {
-  region = "us-east-2"
+  region = var.controller_region
   name   = var.cluster_name
 }
 
 data "aws_eks_cluster_auth" "controller" {
-  region = "us-east-2"
+  region = var.controller_region
   name   = var.cluster_name
 }
 
@@ -55,7 +55,7 @@ module "oidc-role" {
   path         = "/${var.cluster_name}/${var.region}/"
   cluster_name = var.cluster_name
   policy_arns = {
-    "CertManagerR53"       = module.policy.policy_arn
+    "CertManagerR53" = module.policy.policy_arn
   }
   cluster_policy_arns = {
     "AmazonEKSClusterAdminPolicy" = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy",
@@ -73,14 +73,22 @@ resource "aws_secretsmanager_secret" "cloudflare" {
 
 locals {
   api_token_secret_ref_key = "key"
+  secrets_manager_item = sensitive(jsonencode({
+    (local.api_token_secret_ref_key) = var.cloudflare_api_token
+  }))
+}
+
+resource "time_static" "secret_update" {
+  triggers = {
+    checksum = sha256(local.secrets_manager_item)
+  }
 }
 
 resource "aws_secretsmanager_secret_version" "cloudflare" {
-  region    = var.region
-  secret_id = aws_secretsmanager_secret.cloudflare.id
-  secret_string = sensitive(jsonencode({
-    (local.api_token_secret_ref_key) = var.cloudflare_api_token
-  }))
+  region                   = var.region
+  secret_id                = aws_secretsmanager_secret.cloudflare.id
+  secret_string_wo         = local.secrets_manager_item
+  secret_string_wo_version = time_static.secret_update.unix
 }
 
 resource "kubernetes_manifest" "cert-manager" {

@@ -50,7 +50,7 @@ data "aws_iam_policy_document" "bedrock" {
 
 data "aws_iam_policy_document" "assume-role" {
   statement {
-    effect = "Allow"
+    effect  = "Allow"
     actions = ["sts:AssumeRole"]
 
     principals {

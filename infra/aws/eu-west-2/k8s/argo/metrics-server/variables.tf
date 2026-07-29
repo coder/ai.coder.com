@@ -2,6 +2,10 @@ variable "region" {
   type = string
 }
 
+variable "controller_region" {
+  type = string
+}
+
 variable "profile" {
   type    = string
   default = "default"

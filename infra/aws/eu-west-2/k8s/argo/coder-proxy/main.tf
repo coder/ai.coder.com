@@ -12,13 +12,13 @@ data "aws_eks_cluster_auth" "this" {
 }
 
 data "aws_eks_cluster" "controller" {
-  region = "us-east-2"
-  name = var.cluster_name
+  region = var.controller_region
+  name   = var.cluster_name
 }
 
 data "aws_eks_cluster_auth" "controller" {
-  region = "us-east-2"
-  name = var.cluster_name
+  region = var.controller_region
+  name   = var.cluster_name
 }
 
 data "aws_region" "this" {}
@@ -29,26 +29,27 @@ provider "kubernetes" {
   token                  = data.aws_eks_cluster_auth.controller.token
 }
 
-data "http" "login" {
-  url    = "${var.coder_access_url}/api/v2/users/login"
-  method = "POST"
-  request_headers = {
-    Accept = "application/json"
-  }
-  request_body = jsonencode({
-    email    = var.coder_admin_email
-    password = var.coder_admin_password
-  })
+# data "http" "login" {
+#   url    = "${var.coder_access_url}/api/v2/users/login"
+#   method = "POST"
+#   request_headers = {
+#     Accept = "application/json"
+#   }
+#   request_body = jsonencode({
+#     email    = var.coder_admin_email
+#     password = var.coder_admin_password
+#   })
 
-  retry {
-    attempts     = 5
-    min_delay_ms = (5 * 1000) # 5 seconds 
-  }
-}
+#   retry {
+#     attempts     = 5
+#     min_delay_ms = (5 * 1000) # 5 seconds 
+#   }
+# }
 
 provider "coderd" {
-  url   = var.coder_access_url
-  token = jsondecode(data.http.login.response_body).session_token
+  url = var.coder_access_url
+  # token = jsondecode(data.http.login.response_body).session_token
+  token = var.coder_token
 }
 
 locals {
@@ -75,30 +76,13 @@ locals {
     CODER_WILDCARD_ACCESS_URL = var.coder_proxy_wildcard_url
     CODER_PRIMARY_ACCESS_URL  = var.coder_access_url
     CODER_PROXY_SESSION_TOKEN = coderd_workspace_proxy.this.session_token
-    CODER_TRACE_LOGS                  = true
-    CODER_LOG_FILTER                  = ".*"
+    CODER_TRACE_LOGS          = true
+    CODER_LOG_FILTER          = ".*"
   }
   secrets = {
     CODER_PROXY_SESSION_TOKEN = local.coder["CODER_PROXY_SESSION_TOKEN"]
   }
-  secret_key = "key"
-  secret_keys = keys(local.secrets)
-  env = concat([ for k,v in merge(
-    local.coder
-  ) : { 
-    name = k, 
-    value = tostring(v)
-  } if lookup(local.secrets, k, null) == null ], [
-    for k,v in local.secrets : { 
-      name = k, 
-      valueFrom = { 
-        secretKeyRef = { 
-          name = replace(lower(k), "_", "-"), 
-          key = local.secret_key
-        } 
-      } 
-    } if v != null
-  ])
+  secrets_manager_item = sensitive(jsonencode(local.secrets))
 }
 
 resource "aws_eip" "coder" {
@@ -110,20 +94,22 @@ resource "aws_eip" "coder" {
   }
 }
 
-import {
-  id = "eipalloc-011db539bef84afd0"
-  to = aws_eip.coder[0]
-}
-
 resource "aws_secretsmanager_secret" "coder" {
   region = var.region
-  name = "coder"
+  name   = "coder"
+}
+
+resource "time_static" "secret_update" {
+  triggers = {
+    checksum = sha256(local.secrets_manager_item)
+  }
 }
 
 resource "aws_secretsmanager_secret_version" "coder" {
-  region    = var.region
-  secret_id = aws_secretsmanager_secret.coder.id
-  secret_string = sensitive(jsonencode(local.secrets))
+  region                   = var.region
+  secret_id                = aws_secretsmanager_secret.coder.id
+  secret_string_wo         = local.secrets_manager_item
+  secret_string_wo_version = time_static.secret_update.unix
 }
 
 resource "kubernetes_manifest" "coder-proxy" {
@@ -157,7 +143,7 @@ resource "kubernetes_manifest" "coder-proxy" {
       project = "default"
       source = {
         repoURL        = "https://github.com/coder/ai.coder.com"
-        path           = "charts/coder-proxy"
+        path           = "charts/coder"
         targetRevision = "main"
         helm = {
           releaseName = "coder-proxy"
@@ -179,7 +165,7 @@ resource "kubernetes_manifest" "coder-proxy" {
                     name = k,
                     valueFrom = {
                       secretKeyRef = {
-                        name = "coder-proxy.coder",
+                        name = "coder-proxy.secrets",
                         key  = k
                       }
                     }
@@ -215,7 +201,7 @@ resource "kubernetes_manifest" "coder-proxy" {
                   }
                 }
                 serviceAccount = {
-                  name = "coder-proxy"
+                  name        = "coder-proxy"
                   annotations = {}
                 }
                 nodeSelector = {}
@@ -276,9 +262,14 @@ resource "kubernetes_manifest" "coder-proxy" {
                 }
               }
               secrets = {
+                annotations = {
+                  "checksum/config" = sha256(join(",", [
+                    jsonencode(sensitive(local.secrets))
+                  ]))
+                }
                 refreshInterval = "1h0m0s"
-                refreshPolicy = "Periodic"
-                secretArn = aws_secretsmanager_secret.coder.arn
+                refreshPolicy   = "Periodic"
+                secretArn       = aws_secretsmanager_secret.coder.arn
               }
             }
           })

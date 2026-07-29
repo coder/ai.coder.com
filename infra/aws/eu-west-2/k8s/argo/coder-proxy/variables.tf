@@ -2,6 +2,10 @@ variable "region" {
   type = string
 }
 
+variable "controller_region" {
+  type = string
+}
+
 variable "profile" {
   type    = string
   default = "default"
@@ -18,11 +22,6 @@ variable "vpc_name" {
 
 variable "cluster_name" {
   type = string
-}
-
-variable "addon_version" {
-  type    = string
-  default = "2.25.1"
 }
 
 variable "coder_proxy_name" {
@@ -50,8 +49,7 @@ variable "coder_proxy_wildcard_url" {
 }
 
 variable "image_repo" {
-  type      = string
-  sensitive = true
+  type = string
 }
 
 variable "image_tag" {
@@ -59,11 +57,7 @@ variable "image_tag" {
   default = "latest"
 }
 
-variable "coder_admin_email" {
-  type = string
-}
-
-variable "coder_admin_password" {
+variable "coder_token" {
   type      = string
   sensitive = true
 }
