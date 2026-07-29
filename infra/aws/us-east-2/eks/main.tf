@@ -89,7 +89,7 @@ module "eks" {
   attach_encryption_policy                 = false
   create_kms_key                           = false # Enable unless needed
   encryption_config                        = null
-  enable_cluster_creator_admin_permissions = true
+  enable_cluster_creator_admin_permissions = false
   enable_irsa                              = true
 
   tags = local.tags
