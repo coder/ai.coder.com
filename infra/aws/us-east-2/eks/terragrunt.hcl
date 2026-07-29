@@ -1,5 +1,10 @@
 include "root" {
-  path = find_in_parent_folders("root.hcl")
+  path   = find_in_parent_folders("root.hcl")
+  expose = true
+}
+
+include "config" {
+  path   = find_in_parent_folders("config.hcl")
   expose = true
 }
 
@@ -8,14 +13,14 @@ dependencies {
 }
 
 inputs = {
-  profile=include.root.locals.CODER_AWS_PROFILE
-  region=include.root.locals.CODER_AWS_REGION
-  azs=jsondecode(include.root.locals.CODER_AWS_AZS)
+  profile = include.root.locals.CODER_AWS_PROFILE
+  region  = include.config.locals.AWS_REGION
+  azs     = jsondecode(include.root.locals.CODER_AWS_AZS)
 
-  name=include.root.locals.CODER_CLUSTER_NAME
-  vpc_name=include.root.locals.CODER_VPC_NAME
-  eks_version=include.root.locals.CODER_CLUSTER_VERSION
-  instance_type=include.root.locals.CODER_CLUSTER_INSTANCE_TYPE
-  public_subnet_suffix=include.root.locals.CODER_PUBLIC_SUBNET_SUFFIX
-  private_subnet_suffix=include.root.locals.CODER_PRIVATE_SUBNET_SUFFIX
+  name                  = include.root.locals.CODER_CLUSTER_NAME
+  vpc_name              = include.root.locals.CODER_VPC_NAME
+  eks_version           = include.root.locals.CODER_CLUSTER_VERSION
+  instance_type         = include.root.locals.CODER_CLUSTER_INSTANCE_TYPE
+  public_subnet_suffix  = include.root.locals.CODER_PUBLIC_SUBNET_SUFFIX
+  private_subnet_suffix = include.root.locals.CODER_PRIVATE_SUBNET_SUFFIX
 }

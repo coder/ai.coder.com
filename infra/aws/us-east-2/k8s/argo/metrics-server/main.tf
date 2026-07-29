@@ -72,13 +72,13 @@ resource "kubernetes_manifest" "metrics-server" {
         }
       }
       destination = {
-        server = data.aws_eks_cluster.this.arn
+        server    = data.aws_eks_cluster.this.arn
         namespace = "kube-system"
       }
       syncPolicy = {
         syncOptions = [
           "CreateNamespace=false",
-          "Delete=false"
+          "Delete=confirm"
         ]
       }
     }

@@ -39,8 +39,8 @@ resource "random_string" "provisioner_key_name" {
   }
   length           = 8
   special          = true
-  numeric = true
-  lower = true
+  numeric          = true
+  lower            = true
   override_special = "-"
 }
 

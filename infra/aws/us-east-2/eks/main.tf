@@ -89,7 +89,7 @@ module "eks" {
   attach_encryption_policy                 = false
   create_kms_key                           = false # Enable unless needed
   encryption_config                        = null
-  enable_cluster_creator_admin_permissions = true
+  enable_cluster_creator_admin_permissions = false
   enable_irsa                              = true
 
   tags = local.tags
@@ -169,6 +169,26 @@ resource "aws_eks_access_policy_association" "argocd" {
   cluster_name  = module.eks.cluster_name
   policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
   principal_arn = module.eks-argocd-capability.iam_role_arn
+
+  access_scope {
+    type = "cluster"
+  }
+}
+
+##
+# Access Entry for the Github Runner
+##
+resource "aws_eks_access_entry" "runner" {
+  principal_arn = "arn:aws:iam::${data.aws_caller_identity.me.account_id}:role/tf-runner-role"
+  cluster_name  = module.eks.cluster_name
+  type          = "STANDARD"
+}
+
+resource "aws_eks_access_policy_association" "runner" {
+
+  cluster_name  = module.eks.cluster_name
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+  principal_arn = "arn:aws:iam::${data.aws_caller_identity.me.account_id}:role/tf-runner-role"
 
   access_scope {
     type = "cluster"
@@ -383,4 +403,8 @@ resource "kubernetes_secret_v1" "argocd-target-cluster-config-eu-west-2" {
     server  = "arn:aws:eks:eu-west-2:${data.aws_caller_identity.me.account_id}:cluster/${module.eks.cluster_name}"
     project = "default"
   }
+}
+
+output "argocd_server_url" {
+  value = module.eks-argocd-capability.argocd_server_url
 }

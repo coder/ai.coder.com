@@ -6,7 +6,7 @@ terraform {
       version = "0.0.12"
     }
     archive = {
-        source = "hashicorp/archive"
+      source = "hashicorp/archive"
     }
     time = {
       source = "hashicorp/time"
@@ -15,31 +15,31 @@ terraform {
 }
 
 variable "template_config" {
-    type = object({
-        name = string
-        display_name = string
-        dir = string
-        description = string
-        icon = string
-        org_id = string
-        tf_vars = optional(list(object({
-            name = string
-            value = string
-        })), [])
-    })   
+  type = object({
+    name         = string
+    display_name = string
+    dir          = string
+    description  = string
+    icon         = string
+    org_id       = string
+    tf_vars = optional(list(object({
+      name  = string
+      value = string
+    })), [])
+  })
 }
 
 variable "archive_config" {
-    type = object({
-        type = optional(string, "zip")
-        excludes = optional(list(string), [])
-        output_path = string
-    })
+  type = object({
+    type        = optional(string, "zip")
+    excludes    = optional(list(string), [])
+    output_path = string
+  })
 }
 
 variable "time_static_triggers" {
-    type = map(string)
-    default = {}
+  type    = map(string)
+  default = {}
 }
 
 data "archive_file" "this" {
@@ -51,8 +51,8 @@ data "archive_file" "this" {
 
 resource "time_static" "this" {
   triggers = merge({
-    run_on_checksum   = "${data.archive_file.this.id}"
-    run_on_tf_vars = jsonencode(var.template_config.tf_vars)
+    run_on_checksum = "${data.archive_file.this.id}"
+    run_on_tf_vars  = jsonencode(var.template_config.tf_vars)
   }, var.time_static_triggers)
 }
 
@@ -68,7 +68,7 @@ resource "coderd_template" "this" {
       description = "The stable version of the template."
       directory   = var.template_config.dir
       active      = true
-      tf_vars = toset(var.template_config.tf_vars)
+      tf_vars     = toset(var.template_config.tf_vars)
     }
   ]
 }

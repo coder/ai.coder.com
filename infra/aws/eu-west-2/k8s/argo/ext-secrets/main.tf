@@ -6,12 +6,12 @@ provider "aws" {
 data "aws_caller_identity" "me" {}
 
 data "aws_eks_cluster" "controller" {
-  region = "us-east-2"
+  region = var.controller_region
   name   = var.cluster_name
 }
 
 data "aws_eks_cluster_auth" "controller" {
-  region = "us-east-2"
+  region = var.controller_region
   name   = var.cluster_name
 }
 
