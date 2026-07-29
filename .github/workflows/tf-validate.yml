@@ -95,10 +95,11 @@ jobs:
           tg_version: ${{ env.TERRAGRUNT_VERSION }}
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6.2.3
         with:
           role-to-assume: ${{ vars.AWS_RUNNER_ROLE_ARN }}
           aws-region: ${{ vars.AWS_RUNNER_REGION }}
+          aws-profile: ${{ vars.CODER_AWS_PROFILE }}
 
       # - name: Terragrunt hclfmt check
       #   shell: bash
@@ -234,10 +235,11 @@ jobs:
           tg_version: ${{ env.TERRAGRUNT_VERSION }}
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6.2.3
         with:
           role-to-assume: ${{ vars.AWS_RUNNER_ROLE_ARN }}
           aws-region: ${{ vars.AWS_RUNNER_REGION }}
+          aws-profile: ${{ vars.CODER_AWS_PROFILE }}
 
       - name: Terragrunt init
         shell: bash
