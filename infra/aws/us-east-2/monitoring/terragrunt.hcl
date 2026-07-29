@@ -8,9 +8,15 @@ include "config" {
   expose = true
 }
 
+dependencies {
+  paths = ["../vpc"]
+}
+
 inputs = {
   profile = include.root.locals.CODER_AWS_PROFILE
   region  = include.config.locals.AWS_REGION
 
-  loki_s3_bucket_name = include.root.locals.LOKI_S3_BUCKET_NAME
+  vpc_name              = include.root.locals.CODER_VPC_NAME
+  public_subnet_suffix  = include.root.locals.CODER_PUBLIC_SUBNET_SUFFIX
+  private_subnet_suffix = include.root.locals.CODER_PRIVATE_SUBNET_SUFFIX
 }

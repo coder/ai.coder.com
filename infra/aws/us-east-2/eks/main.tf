@@ -384,3 +384,7 @@ resource "kubernetes_secret_v1" "argocd-target-cluster-config-eu-west-2" {
     project = "default"
   }
 }
+
+output "argocd_server_url" {
+  value = module.eks-argocd-capability.argocd_server_url
+}

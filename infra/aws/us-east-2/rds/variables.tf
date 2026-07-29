@@ -17,6 +17,17 @@ variable "coder_username" {
   type        = string
 }
 
+variable "grafana_db_user" {
+  description = "Grafana Readonly User"
+  type        = string
+}
+
+variable "grafana_db_user_password" {
+  description = "Grafana Readonly User's Password"
+  type        = string
+  sensitive   = true
+}
+
 variable "coder_db_name" {
   description = "Database name"
   type        = string

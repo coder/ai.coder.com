@@ -93,3 +93,27 @@ resource "aws_security_group" "allow-port-5432" {
     Name = "rds-traffic"
   }
 }
+
+resource "aws_secretsmanager_secret" "grafana" {
+  region = var.region
+  name   = "rds-${var.grafana_db_user}"
+}
+
+locals {
+  secrets_manager_item = sensitive(jsonencode({
+    password = var.grafana_db_user_password
+  }))
+}
+
+resource "time_static" "secret_update" {
+  triggers = {
+    checksum = sha256(local.secrets_manager_item)
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "grafana" {
+  region                   = var.region
+  secret_id                = aws_secretsmanager_secret.grafana.id
+  secret_string_wo         = local.secrets_manager_item
+  secret_string_wo_version = time_static.secret_update.unix
+}

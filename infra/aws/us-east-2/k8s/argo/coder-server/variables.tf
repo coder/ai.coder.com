@@ -20,9 +20,13 @@ variable "cluster_name" {
   type = string
 }
 
-variable "addon_version" {
+variable "image_repo" {
+  type = string
+}
+
+variable "image_tag" {
   type    = string
-  default = "2.35.2"
+  default = "latest"
 }
 
 variable "coder_access_url" {
@@ -31,11 +35,6 @@ variable "coder_access_url" {
 
 variable "coder_wildcard_access_url" {
   type = string
-}
-
-variable "coder_experiments" {
-  type    = list(string)
-  default = []
 }
 
 variable "coder_github_allowed_orgs" {

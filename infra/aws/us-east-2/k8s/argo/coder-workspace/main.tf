@@ -19,23 +19,6 @@ data "aws_iam_openid_connect_provider" "this" {
   url = data.aws_eks_cluster.this.identity[0].oidc[0].issuer
 }
 
-data "http" "login" {
-  url    = "${var.coder_access_url}/api/v2/users/login"
-  method = "POST"
-  request_headers = {
-    Accept = "application/json"
-  }
-  request_body = jsonencode({
-    email    = var.coder_admin_email
-    password = var.coder_admin_password
-  })
-
-  retry {
-    attempts     = 5
-    min_delay_ms = (5 * 1000) # 5 seconds 
-  }
-}
-
 provider "kubernetes" {
   host                   = data.aws_eks_cluster.this.endpoint
   cluster_ca_certificate = base64decode(data.aws_eks_cluster.this.certificate_authority[0].data)
@@ -44,7 +27,7 @@ provider "kubernetes" {
 
 provider "coderd" {
   url   = var.coder_access_url
-  token = jsondecode(data.http.login.response_body).session_token
+  token = var.coder_token
 }
 
 locals {
@@ -178,8 +161,8 @@ resource "kubernetes_manifest" "coder-provisioner" {
           values = yamlencode({
             coder = {
               image = {
-                repo        = "ghcr.io/coder/coder"
-                tag         = var.addon_version
+                repo        = var.image_repo
+                tag         = var.image_tag
                 pullPolicy  = "IfNotPresent"
                 pullSecrets = []
               }

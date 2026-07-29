@@ -36,24 +36,15 @@ provider "kubernetes" {
 }
 
 locals {
-  region       = data.aws_region.this.region
-  account_id   = data.aws_caller_identity.this.account_id
-  azs          = var.azs
-  pub_subs     = [for az in local.azs : "${var.vpc_name}-public-${local.region}${az}"]
-  rds_db_name  = split(".", data.aws_db_instance.coder.endpoint)[0]
+  region      = data.aws_region.this.region
+  account_id  = data.aws_caller_identity.this.account_id
+  azs         = var.azs
+  pub_subs    = [for az in local.azs : "${var.vpc_name}-public-${local.region}${az}"]
+  rds_db_name = split(".", data.aws_db_instance.coder.endpoint)[0]
 
   common_name           = trimprefix(trimprefix(var.coder_access_url, "https://"), "http://")
   wildcard_name         = trimprefix(trimprefix(var.coder_wildcard_access_url, "https://"), "http://")
   ssl_vol_friendly_name = replace(local.common_name, ".", "-")
-}
-
-resource "aws_eip" "coder" {
-  count            = length(local.pub_subs)
-  domain           = "vpc"
-  public_ipv4_pool = "amazon"
-  tags = {
-    Name = "coder-eip-${count.index}"
-  }
 }
 
 data "aws_iam_policy_document" "rds" {
@@ -114,7 +105,6 @@ locals {
 
     # TLS Termination handled on the LB
     CODER_REDIRECT_TO_ACCESS_URL = "true"
-    # CODER_TLS_ENABLE             = "true"
 
     CODER_ENABLE_TERRAFORM_DEBUG_MODE = "true"
     CODER_TRACE_LOGS                  = "true"
@@ -140,7 +130,7 @@ locals {
     CODER_OIDC_ISSUER_URL    = var.coder_oidc_secret_issuer_url
     CODER_OIDC_CLIENT_ID     = var.coder_oidc_secret_client_id
     CODER_OIDC_CLIENT_SECRET = var.coder_oidc_secret_client_secret
-    CODER_OIDC_SIGN_IN_TEXT  = "Welcome to Coder's AI Environment!"
+    CODER_OIDC_SIGN_IN_TEXT  = "Okta"
     CODER_OIDC_ICON_URL      = var.oidc_icon_url
     CODER_OIDC_SCOPES        = join(",", var.oidc_scopes)
     CODER_OIDC_EMAIL_DOMAIN  = var.oidc_email_domain
@@ -155,18 +145,46 @@ locals {
 
     CODER_OAUTH2_GITHUB_DEFAULT_PROVIDER_ENABLE = "false"
     CODER_OAUTH2_GITHUB_CLIENT_ID               = var.coder_oauth_secret_client_id
-    CODER_OAUTH2_GITHUB_CLIENT_SECRET           = var.coder_oidc_secret_client_secret
+    CODER_OAUTH2_GITHUB_CLIENT_SECRET           = var.coder_oauth_secret_client_secret
     CODER_OAUTH2_GITHUB_ALLOW_SIGNUPS           = "false"
     CODER_OAUTH2_GITHUB_DEVICE_FLOW             = "false"
     CODER_OAUTH2_GITHUB_ALLOW_EVERYONE          = "false"
     CODER_OAUTH2_GITHUB_ALLOWED_ORGS            = join(",", ["coder", "coder-contrib"])
   }
-  secrets = merge({
+  secrets = {
     CODER_OAUTH2_GITHUB_CLIENT_SECRET   = local.coder["CODER_OAUTH2_GITHUB_CLIENT_SECRET"]
     CODER_OIDC_CLIENT_SECRET            = local.coder["CODER_OIDC_CLIENT_SECRET"]
     CODER_PG_CONNECTION_URL             = local.coder["CODER_PG_CONNECTION_URL"]
     CODER_EXTERNAL_AUTH_0_CLIENT_SECRET = local.coder["CODER_EXTERNAL_AUTH_0_CLIENT_SECRET"]
-  })
+  }
+  secrets_manager_item = sensitive(jsonencode(local.secrets))
+}
+
+resource "aws_eip" "coder" {
+  count            = length(local.pub_subs)
+  domain           = "vpc"
+  public_ipv4_pool = "amazon"
+  tags = {
+    Name = "coder-eip-${count.index}"
+  }
+}
+
+resource "aws_secretsmanager_secret" "coder" {
+  region = var.region
+  name   = "coder"
+}
+
+resource "time_static" "secret_update" {
+  triggers = {
+    checksum = sha256(local.secrets_manager_item)
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "coder" {
+  region                   = var.region
+  secret_id                = aws_secretsmanager_secret.coder.id
+  secret_string_wo         = local.secrets_manager_item
+  secret_string_wo_version = time_static.secret_update.unix
 }
 
 resource "kubernetes_manifest" "coder" {
@@ -204,8 +222,8 @@ resource "kubernetes_manifest" "coder" {
             coder = {
               coder = {
                 image = {
-                  repo        = "ghcr.io/coder/coder"
-                  tag         = var.addon_version
+                  repo        = var.image_repo
+                  tag         = var.image_tag
                   pullPolicy  = "IfNotPresent"
                   pullSecrets = []
                 }
@@ -217,8 +235,8 @@ resource "kubernetes_manifest" "coder" {
                     name = k,
                     valueFrom = {
                       secretKeyRef = {
-                        name = replace(lower(k), "_", "-"),
-                        key  = "key"
+                        name = "coder.secrets",
+                        key  = k
                       }
                     }
                   } if v != null
@@ -323,6 +341,21 @@ resource "kubernetes_manifest" "coder" {
                   name = "issuer"
                 }
               }
+              secretStore = {
+                aws = {
+                  region = var.region
+                }
+              }
+              secrets = {
+                annotations = {
+                  "checksum/config" = sha256(join(",", [
+                    jsonencode(sensitive(local.secrets))
+                  ]))
+                }
+                refreshInterval = "1h0m0s"
+                refreshPolicy   = "Periodic"
+                secretArn       = aws_secretsmanager_secret.coder.arn
+              }
             }
           })
         }
@@ -333,48 +366,11 @@ resource "kubernetes_manifest" "coder" {
       }
       syncPolicy = {
         syncOptions = [
-          "CreateNamespace=false",
+          "CreateNamespace=true",
           "Delete=false",
           "ServerSideApply=true"
         ]
       }
     }
   }
-}
-
-resource "kubernetes_secret_v1" "coder" {
-
-  for_each = toset(keys(local.secrets))
-
-  metadata {
-    name      = replace(lower(each.key), "_", "-")
-    namespace = "coder"
-    annotations = {
-      "custom.kubernetes.secret/key" = "key"
-    }
-  }
-  type = "Opaque"
-  data = {
-    "key" = sensitive(local.secrets[each.key])
-  }
-}
-
-import {
-  id = "coder/coder-external-auth-0-client-secret"
-  to = kubernetes_secret_v1.coder["CODER_EXTERNAL_AUTH_0_CLIENT_SECRET"]
-}
-
-import {
-  id = "coder/coder-oauth2-github-client-secret"
-  to = kubernetes_secret_v1.coder["CODER_OAUTH2_GITHUB_CLIENT_SECRET"]
-}
-
-import {
-  id = "coder/coder-oidc-client-secret"
-  to = kubernetes_secret_v1.coder["CODER_OIDC_CLIENT_SECRET"]
-}
-
-import {
-  id = "coder/coder-pg-connection-url"
-  to = kubernetes_secret_v1.coder["CODER_PG_CONNECTION_URL"]
 }
