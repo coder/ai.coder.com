@@ -1,0 +1,389 @@
+name: "Terraform Validation"
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'infra/**'
+      - '.github/workflows/terraform-*.yml'
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write  # Required for AWS OIDC
+
+concurrency:
+  group: terraform-validate-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TERRAFORM_VERSION: "1.15.8"
+  TERRAGRUNT_VERSION: "0.99.1"
+
+jobs:
+  validate:
+    name: Validate Infrastructure
+    runs-on: ubuntu-latest
+    env:
+      # Repository Variables
+      CODER_TF_BACKEND_AWS_BUCKET_NAME: ${{ vars.CODER_TF_BACKEND_AWS_BUCKET_NAME }}
+      CODER_TF_BACKEND_AWS_REGION: ${{ vars.CODER_TF_BACKEND_AWS_REGION }}
+      CODER_TF_BACKEND_AWS_PROFILE: ${{ vars.CODER_TF_BACKEND_AWS_PROFILE }}
+      CODER_TF_BACKEND_ENCRYPT: ${{ vars.CODER_TF_BACKEND_ENCRYPT }}
+      CODER_AWS_PROFILE: ${{ vars.CODER_AWS_PROFILE }}
+      CODER_AWS_REGION: ${{ vars.CODER_AWS_REGION }}
+      CODER_AWS_AZS: ${{ vars.CODER_AWS_AZS }}
+      CODER_CLUSTER_NAME: ${{ vars.CODER_CLUSTER_NAME }}
+      CODER_CLUSTER_VERSION: ${{ vars.CODER_CLUSTER_VERSION }}
+      CODER_CLUSTER_INSTANCE_TYPE: ${{ vars.CODER_CLUSTER_INSTANCE_TYPE }}
+      CODER_VPC_NAME: ${{ vars.CODER_VPC_NAME }}
+      CODER_VPC_CIDR: ${{ vars.CODER_VPC_CIDR }}
+      CODER_VPC_AZS: ${{ vars.CODER_VPC_AZS }}
+      CODER_VPC_NAT_NAME: ${{ vars.CODER_VPC_NAT_NAME }}
+      CODER_DB_SUBNET_GROUP_NAME: ${{ vars.CODER_DB_SUBNET_GROUP_NAME }}
+      CODER_PUBLIC_SUBNET_SUFFIX: ${{ vars.CODER_PUBLIC_SUBNET_SUFFIX }}
+      CODER_PRIVATE_SUBNET_SUFFIX: ${{ vars.CODER_PRIVATE_SUBNET_SUFFIX }}
+      CODER_DB_RDS_ID: ${{ vars.CODER_DB_RDS_ID }}
+      CODER_DB_USERNAME: ${{ vars.CODER_DB_USERNAME }}
+      CODER_DB_NAME: ${{ vars.CODER_DB_NAME }}
+      CODER_IMAGE_REPO: ${{ vars.CODER_IMAGE_REPO }}
+      CODER_IMAGE_TAG: ${{ vars.CODER_IMAGE_TAG }}
+      LOKI_S3_BUCKET_NAME: ${{ vars.LOKI_S3_BUCKET_NAME }}
+      LOKI_S3_BUCKET_REGION: ${{ vars.LOKI_S3_BUCKET_REGION }}
+      GRAFANA_DOMAIN_NAME: ${{ vars.GRAFANA_DOMAIN_NAME }}
+      GRAFANA_DB_USERNAME: ${{ vars.GRAFANA_DB_USERNAME }}
+      CODER_DOMAIN_NAME: ${{ vars.CODER_DOMAIN_NAME }}
+      CODER_WILDCARD_URL: ${{ vars.CODER_WILDCARD_URL }}
+      CODER_LICENSE: ${{ vars.CODER_LICENSE }}
+      CODER_EXPERIMENTS: ${{ vars.CODER_EXPERIMENTS }}
+      CODER_BUILT_IN_PROVISIONER_COUNT: ${{ vars.CODER_BUILT_IN_PROVISIONER_COUNT }}
+      CODER_OIDC_SIGN_IN_TEXT: ${{ vars.CODER_OIDC_SIGN_IN_TEXT }}
+      CODER_OIDC_ICON_URL: ${{ vars.CODER_OIDC_ICON_URL }}
+      CODER_OIDC_SCOPES: ${{ vars.CODER_OIDC_SCOPES }}
+      CODER_OIDC_EMAIL_DOMAIN: ${{ vars.CODER_OIDC_EMAIL_DOMAIN }}
+      CODER_OIDC_ISSUER_URL: ${{ vars.CODER_OIDC_ISSUER_URL }}
+      # Secrets
+      CF_EMAIL: ${{ secrets.CF_EMAIL }}
+      CF_TOKEN: ${{ secrets.CF_TOKEN }}
+      CODER_GITHUB_EXTERN_AUTH_CLIENT_ID: ${{ secrets.CODER_GITHUB_EXTERN_AUTH_CLIENT_ID }}
+      CODER_GITHUB_EXTERN_AUTH_CLIENT_SECRET: ${{ secrets.CODER_GITHUB_EXTERN_AUTH_CLIENT_SECRET }}
+      CODER_GITHUB_OAUTH_CLIENT_ID: ${{ secrets.CODER_GITHUB_OAUTH_CLIENT_ID }}
+      CODER_GITHUB_OAUTH_CLIENT_SECRET: ${{ secrets.CODER_GITHUB_OAUTH_CLIENT_SECRET }}
+      CODER_OIDC_CLIENT_ID: ${{ secrets.CODER_OIDC_CLIENT_ID }}
+      CODER_OIDC_CLIENT_SECRET: ${{ secrets.CODER_OIDC_CLIENT_SECRET }}
+      CODER_RUNNER_TOKEN: ${{ secrets.CODER_RUNNER_TOKEN }}
+      GRAFANA_USER_PASSWORD: ${{ secrets.GRAFANA_USER_PASSWORD }}
+      VANTAGE_API_TOKEN: ${{ secrets.VANTAGE_API_TOKEN }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Setup Terragrunt
+        uses: gruntwork-io/terragrunt-action@v2
+        with:
+          terragrunt_version: ${{ env.TERRAGRUNT_VERSION }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_RUNNER_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_RUNNER_REGION }}
+
+      - name: Terragrunt hclfmt check
+        shell: bash
+        working-directory: infra
+        run: |
+          echo "::group::Checking Terragrunt formatting"
+          if ! terragrunt hcl format --check; then
+            echo ""
+            echo "::error::Terragrunt files are not formatted."
+            echo "::error::Run 'terragrunt hclfmt' in the infra directory before pushing."
+            exit 1
+          fi
+          echo "✓ Terragrunt formatting is correct"
+          echo "::endgroup::"
+
+      - name: Terraform fmt check
+        shell: bash
+        working-directory: infra
+        run: |
+          echo "::group::Checking Terraform formatting"
+          if ! terraform fmt -check -recursive; then
+            echo ""
+            echo "::error::Terraform files are not formatted."
+            echo "::error::Run 'terraform fmt -recursive' in the infra directory before pushing."
+            exit 1
+          fi
+          echo "✓ Terraform formatting is correct"
+          echo "::endgroup::"
+
+      - name: Terragrunt validate-inputs
+        shell: bash
+        working-directory: infra
+        run: |
+          echo "::group::Validating Terragrunt inputs"
+          if ! terragrunt hcl validate --inputs --config root.hcl; then
+            echo ""
+            echo "::error::Terragrunt inputs are not valid."
+            echo "::error::[View Full Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) to see what failed."
+            exit 1
+          fi
+          echo "✓ Terragrunt inputs are valid"
+          echo "::endgroup::"
+
+      - name: Terragrunt init
+        shell: bash
+        working-directory: infra
+        run: |
+          echo "::group::Initializing all modules"
+          terragrunt run --all --queue-exclude-dir="./" --provider-cache --config root.hcl -- init -input=false -reconfigure -upgrade
+          echo "✓ Initialization successful"
+          echo "::endgroup::"
+
+      - name: Terragrunt validate
+        shell: bash
+        working-directory: infra
+        run: |
+          echo "::group::Validating Terraform configuration"
+          terragrunt run --all --queue-exclude-dir="./" --provider-cache --config root.hcl -- validate
+          echo "✓ Terraform configuration is valid"
+          echo "::endgroup::"
+
+  plan:
+    name: Plan Infrastructure
+    needs: validate
+    runs-on: ubuntu-latest
+    env:
+      # Repository Variables
+      CODER_TF_BACKEND_AWS_BUCKET_NAME: ${{ vars.CODER_TF_BACKEND_AWS_BUCKET_NAME }}
+      CODER_TF_BACKEND_AWS_REGION: ${{ vars.CODER_TF_BACKEND_AWS_REGION }}
+      CODER_TF_BACKEND_AWS_PROFILE: ${{ vars.CODER_TF_BACKEND_AWS_PROFILE }}
+      CODER_TF_BACKEND_ENCRYPT: ${{ vars.CODER_TF_BACKEND_ENCRYPT }}
+      CODER_AWS_PROFILE: ${{ vars.CODER_AWS_PROFILE }}
+      CODER_AWS_REGION: ${{ vars.CODER_AWS_REGION }}
+      CODER_AWS_AZS: ${{ vars.CODER_AWS_AZS }}
+      CODER_CLUSTER_NAME: ${{ vars.CODER_CLUSTER_NAME }}
+      CODER_CLUSTER_VERSION: ${{ vars.CODER_CLUSTER_VERSION }}
+      CODER_CLUSTER_INSTANCE_TYPE: ${{ vars.CODER_CLUSTER_INSTANCE_TYPE }}
+      CODER_VPC_NAME: ${{ vars.CODER_VPC_NAME }}
+      CODER_VPC_CIDR: ${{ vars.CODER_VPC_CIDR }}
+      CODER_VPC_AZS: ${{ vars.CODER_VPC_AZS }}
+      CODER_VPC_NAT_NAME: ${{ vars.CODER_VPC_NAT_NAME }}
+      CODER_DB_SUBNET_GROUP_NAME: ${{ vars.CODER_DB_SUBNET_GROUP_NAME }}
+      CODER_PUBLIC_SUBNET_SUFFIX: ${{ vars.CODER_PUBLIC_SUBNET_SUFFIX }}
+      CODER_PRIVATE_SUBNET_SUFFIX: ${{ vars.CODER_PRIVATE_SUBNET_SUFFIX }}
+      CODER_DB_RDS_ID: ${{ vars.CODER_DB_RDS_ID }}
+      CODER_DB_USERNAME: ${{ vars.CODER_DB_USERNAME }}
+      CODER_DB_NAME: ${{ vars.CODER_DB_NAME }}
+      CODER_IMAGE_REPO: ${{ vars.CODER_IMAGE_REPO }}
+      CODER_IMAGE_TAG: ${{ vars.CODER_IMAGE_TAG }}
+      LOKI_S3_BUCKET_NAME: ${{ vars.LOKI_S3_BUCKET_NAME }}
+      LOKI_S3_BUCKET_REGION: ${{ vars.LOKI_S3_BUCKET_REGION }}
+      GRAFANA_DOMAIN_NAME: ${{ vars.GRAFANA_DOMAIN_NAME }}
+      GRAFANA_DB_USERNAME: ${{ vars.GRAFANA_DB_USERNAME }}
+      CODER_DOMAIN_NAME: ${{ vars.CODER_DOMAIN_NAME }}
+      CODER_WILDCARD_URL: ${{ vars.CODER_WILDCARD_URL }}
+      CODER_LICENSE: ${{ vars.CODER_LICENSE }}
+      CODER_EXPERIMENTS: ${{ vars.CODER_EXPERIMENTS }}
+      CODER_BUILT_IN_PROVISIONER_COUNT: ${{ vars.CODER_BUILT_IN_PROVISIONER_COUNT }}
+      CODER_OIDC_SIGN_IN_TEXT: ${{ vars.CODER_OIDC_SIGN_IN_TEXT }}
+      CODER_OIDC_ICON_URL: ${{ vars.CODER_OIDC_ICON_URL }}
+      CODER_OIDC_SCOPES: ${{ vars.CODER_OIDC_SCOPES }}
+      CODER_OIDC_EMAIL_DOMAIN: ${{ vars.CODER_OIDC_EMAIL_DOMAIN }}
+      CODER_OIDC_ISSUER_URL: ${{ vars.CODER_OIDC_ISSUER_URL }}
+      # Secrets
+      CF_EMAIL: ${{ secrets.CF_EMAIL }}
+      CF_TOKEN: ${{ secrets.CF_TOKEN }}
+      CODER_GITHUB_EXTERN_AUTH_CLIENT_ID: ${{ secrets.CODER_GITHUB_EXTERN_AUTH_CLIENT_ID }}
+      CODER_GITHUB_EXTERN_AUTH_CLIENT_SECRET: ${{ secrets.CODER_GITHUB_EXTERN_AUTH_CLIENT_SECRET }}
+      CODER_GITHUB_OAUTH_CLIENT_ID: ${{ secrets.CODER_GITHUB_OAUTH_CLIENT_ID }}
+      CODER_GITHUB_OAUTH_CLIENT_SECRET: ${{ secrets.CODER_GITHUB_OAUTH_CLIENT_SECRET }}
+      CODER_OIDC_CLIENT_ID: ${{ secrets.CODER_OIDC_CLIENT_ID }}
+      CODER_OIDC_CLIENT_SECRET: ${{ secrets.CODER_OIDC_CLIENT_SECRET }}
+      CODER_RUNNER_TOKEN: ${{ secrets.CODER_RUNNER_TOKEN }}
+      GRAFANA_USER_PASSWORD: ${{ secrets.GRAFANA_USER_PASSWORD }}
+      VANTAGE_API_TOKEN: ${{ secrets.VANTAGE_API_TOKEN }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: Setup Terragrunt
+        uses: gruntwork-io/terragrunt-action@v2
+        with:
+          terragrunt_version: ${{ env.TERRAGRUNT_VERSION }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_RUNNER_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_RUNNER_REGION }}
+
+      - name: Terragrunt init
+        shell: bash
+        working-directory: infra
+        run: |
+          
+          echo "::group::Initializing all modules"
+          terragrunt run --all --queue-exclude-dir="./" --provider-cache --config root.hcl -- init -input=false -reconfigure -upgrade
+          echo "✓ Initialization successful"
+          echo "::endgroup::"
+
+      - name: Terragrunt plan
+        id: plan
+        shell: bash
+        working-directory: infra
+        run: |
+          
+
+          echo "::group::Running Terragrunt plan on all modules"
+
+          # Run plan and capture output
+          set +e
+          terragrunt run --all --queue-exclude-dir="./" --provider-cache --config root.hcl -- plan -input=false -no-color -detailed-exitcode 2>&1 | tee plan.log
+          EXIT_CODE=${PIPESTATUS[0]}
+          set -e
+
+          echo "::endgroup::"
+
+          # Exit code meanings:
+          # 0 = succeeded with no changes
+          # 1 = error
+          # 2 = succeeded with changes
+
+          if [[ $EXIT_CODE -eq 0 ]]; then
+            echo "summary=No changes detected" >> "$GITHUB_OUTPUT"
+            echo "status=success" >> "$GITHUB_OUTPUT"
+            echo "✓ Plan succeeded with no changes"
+          elif [[ $EXIT_CODE -eq 2 ]]; then
+            echo "summary=Changes detected" >> "$GITHUB_OUTPUT"
+            echo "status=success" >> "$GITHUB_OUTPUT"
+            echo "✓ Plan succeeded with changes"
+            exit 0
+          else
+            echo "summary=Plan failed" >> "$GITHUB_OUTPUT"
+            echo "status=failure" >> "$GITHUB_OUTPUT"
+            echo "::error::Terraform plan failed"
+            exit 1
+          fi
+
+      - name: Upload plan log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: plan-log
+          path: infra/plan.log
+          retention-days: 30
+
+  summary:
+    name: Validation Summary
+    needs: [validate, plan]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check validation results
+        shell: bash
+        run: |
+          echo "## Terraform Validation Summary"
+          echo ""
+
+          validate_result="${{ needs.validate.result }}"
+          plan_result="${{ needs.plan.result }}"
+
+          echo "Validation result: $validate_result"
+          echo "Plan result: $plan_result"
+          echo ""
+
+          if [[ "$validate_result" == "success" ]] && [[ "$plan_result" == "success" ]]; then
+            echo "✅ All checks passed!"
+            echo "- Formatting is correct"
+            echo "- Configuration is valid"
+            echo "- Plan succeeded"
+            echo ""
+            echo "This PR is ready to merge."
+            exit 0
+          else
+            echo "❌ Validation or planning failed"
+            echo ""
+            if [[ "$validate_result" != "success" ]]; then
+              echo "- Validation failed: Check formatting and configuration"
+            fi
+            if [[ "$plan_result" != "success" ]]; then
+              echo "- Planning failed: Check plan output in job logs"
+            fi
+            echo ""
+            echo "Please fix the issues before merging."
+            exit 1
+          fi
+
+      - name: Post summary comment
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const validateResult = '${{ needs.validate.result }}';
+            const planResult = '${{ needs.plan.result }}';
+
+            let body = '## 🔍 Terraform Validation Summary\n\n';
+
+            const allPassed = validateResult === 'success' && planResult === 'success';
+
+            if (allPassed) {
+              body += '✅ **All validation checks passed!**\n\n';
+              body += '- ✅ Formatting is correct\n';
+              body += '- ✅ Configuration is valid\n';
+              body += '- ✅ Plan succeeded\n\n';
+              body += '🚀 This PR is **ready to merge**. Infrastructure changes will be applied automatically after merge.\n';
+            } else {
+              body += '❌ **Validation checks failed**\n\n';
+
+              if (validateResult !== 'success') {
+                body += '- ❌ **Validation failed**: Check formatting and configuration errors in job logs\n';
+              }
+              if (planResult !== 'success') {
+                body += '- ❌ **Planning failed**: Review the plan output in job logs\n';
+              }
+
+              body += '\n⚠️ Please fix the issues before merging.\n';
+            }
+
+            body += `\n---\n*[View Full Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})*`;
+
+            // Find existing summary comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const summaryComment = comments.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body.includes('🔍 Terraform Validation Summary')
+            );
+
+            if (summaryComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: summaryComment.id,
+                body: body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+              });
+            }

@@ -1,0 +1,153 @@
+name: "Terraform Deploy"
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'infra/**'
+      - '.github/workflows/terraform-*.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write  # Required for AWS OIDC
+
+concurrency:
+  group: terraform-deploy-${{ github.ref }}
+  cancel-in-progress: false  # Don't cancel terraform operations
+
+env:
+  TERRAFORM_VERSION: "1.15.8"
+  TERRAGRUNT_VERSION: "0.99.1"
+
+jobs:
+  apply:
+    name: Apply Infrastructure
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://ai.coder.com
+    env:
+      # Repository Variables
+      CODER_TF_BACKEND_AWS_BUCKET_NAME: ${{ vars.CODER_TF_BACKEND_AWS_BUCKET_NAME }}
+      CODER_TF_BACKEND_AWS_REGION: ${{ vars.CODER_TF_BACKEND_AWS_REGION }}
+      CODER_TF_BACKEND_AWS_PROFILE: ${{ vars.CODER_TF_BACKEND_AWS_PROFILE }}
+      CODER_TF_BACKEND_ENCRYPT: ${{ vars.CODER_TF_BACKEND_ENCRYPT }}
+      CODER_AWS_PROFILE: ${{ vars.CODER_AWS_PROFILE }}
+      CODER_AWS_REGION: ${{ vars.CODER_AWS_REGION }}
+      CODER_AWS_AZS: ${{ vars.CODER_AWS_AZS }}
+      CODER_CLUSTER_NAME: ${{ vars.CODER_CLUSTER_NAME }}
+      CODER_CLUSTER_VERSION: ${{ vars.CODER_CLUSTER_VERSION }}
+      CODER_CLUSTER_INSTANCE_TYPE: ${{ vars.CODER_CLUSTER_INSTANCE_TYPE }}
+      CODER_VPC_NAME: ${{ vars.CODER_VPC_NAME }}
+      CODER_VPC_CIDR: ${{ vars.CODER_VPC_CIDR }}
+      CODER_VPC_AZS: ${{ vars.CODER_VPC_AZS }}
+      CODER_VPC_NAT_NAME: ${{ vars.CODER_VPC_NAT_NAME }}
+      CODER_DB_SUBNET_GROUP_NAME: ${{ vars.CODER_DB_SUBNET_GROUP_NAME }}
+      CODER_PUBLIC_SUBNET_SUFFIX: ${{ vars.CODER_PUBLIC_SUBNET_SUFFIX }}
+      CODER_PRIVATE_SUBNET_SUFFIX: ${{ vars.CODER_PRIVATE_SUBNET_SUFFIX }}
+      CODER_DB_RDS_ID: ${{ vars.CODER_DB_RDS_ID }}
+      CODER_DB_USERNAME: ${{ vars.CODER_DB_USERNAME }}
+      CODER_DB_NAME: ${{ vars.CODER_DB_NAME }}
+      CODER_IMAGE_REPO: ${{ vars.CODER_IMAGE_REPO }}
+      CODER_IMAGE_TAG: ${{ vars.CODER_IMAGE_TAG }}
+      LOKI_S3_BUCKET_NAME: ${{ vars.LOKI_S3_BUCKET_NAME }}
+      LOKI_S3_BUCKET_REGION: ${{ vars.LOKI_S3_BUCKET_REGION }}
+      GRAFANA_DOMAIN_NAME: ${{ vars.GRAFANA_DOMAIN_NAME }}
+      GRAFANA_DB_USERNAME: ${{ vars.GRAFANA_DB_USERNAME }}
+      CODER_DOMAIN_NAME: ${{ vars.CODER_DOMAIN_NAME }}
+      CODER_WILDCARD_URL: ${{ vars.CODER_WILDCARD_URL }}
+      CODER_LICENSE: ${{ vars.CODER_LICENSE }}
+      CODER_EXPERIMENTS: ${{ vars.CODER_EXPERIMENTS }}
+      CODER_BUILT_IN_PROVISIONER_COUNT: ${{ vars.CODER_BUILT_IN_PROVISIONER_COUNT }}
+      CODER_OIDC_SIGN_IN_TEXT: ${{ vars.CODER_OIDC_SIGN_IN_TEXT }}
+      CODER_OIDC_ICON_URL: ${{ vars.CODER_OIDC_ICON_URL }}
+      CODER_OIDC_SCOPES: ${{ vars.CODER_OIDC_SCOPES }}
+      CODER_OIDC_EMAIL_DOMAIN: ${{ vars.CODER_OIDC_EMAIL_DOMAIN }}
+      CODER_OIDC_ISSUER_URL: ${{ vars.CODER_OIDC_ISSUER_URL }}
+      # Secrets
+      CF_EMAIL: ${{ secrets.CF_EMAIL }}
+      CF_TOKEN: ${{ secrets.CF_TOKEN }}
+      CODER_GITHUB_EXTERN_AUTH_CLIENT_ID: ${{ secrets.CODER_GITHUB_EXTERN_AUTH_CLIENT_ID }}
+      CODER_GITHUB_EXTERN_AUTH_CLIENT_SECRET: ${{ secrets.CODER_GITHUB_EXTERN_AUTH_CLIENT_SECRET }}
+      CODER_GITHUB_OAUTH_CLIENT_ID: ${{ secrets.CODER_GITHUB_OAUTH_CLIENT_ID }}
+      CODER_GITHUB_OAUTH_CLIENT_SECRET: ${{ secrets.CODER_GITHUB_OAUTH_CLIENT_SECRET }}
+      CODER_OIDC_CLIENT_ID: ${{ secrets.CODER_OIDC_CLIENT_ID }}
+      CODER_OIDC_CLIENT_SECRET: ${{ secrets.CODER_OIDC_CLIENT_SECRET }}
+      CODER_RUNNER_TOKEN: ${{ secrets.CODER_RUNNER_TOKEN }}
+      GRAFANA_USER_PASSWORD: ${{ secrets.GRAFANA_USER_PASSWORD }}
+      VANTAGE_API_TOKEN: ${{ secrets.VANTAGE_API_TOKEN }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: Setup Terragrunt
+        uses: gruntwork-io/terragrunt-action@v2
+        with:
+          terragrunt_version: ${{ env.TERRAGRUNT_VERSION }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_RUNNER_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_RUNNER_REGION }}
+
+      - name: Terragrunt run-all apply
+        shell: bash
+        working-directory: infra
+        run: |
+          echo "::group::Running Terragrunt run-all apply"
+          terragrunt run --all --queue-exclude-dir="./" --provider-cache --config root.hcl -- apply -input=false -auto-approve 2>&1 | tee apply.log
+          EXIT_CODE=${PIPESTATUS[0]}
+          echo "::endgroup::"
+
+          if [[ $EXIT_CODE -eq 0 ]]; then
+            echo "✅ Apply succeeded"
+          else
+            echo "❌ Apply failed"
+            exit $EXIT_CODE
+          fi
+
+      - name: Upload apply log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apply-log
+          path: infra/apply.log
+          retention-days: 90
+
+  summary:
+    name: Deployment Summary
+    needs: apply
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check deployment results
+        shell: bash
+        run: |
+          echo "## Terraform Deployment Summary"
+          echo ""
+
+          apply_result="${{ needs.apply.result }}"
+
+          echo "Deployment result: $apply_result"
+          echo ""
+
+          if [[ "$apply_result" == "success" ]]; then
+            echo "✅ Deployment succeeded!"
+            echo ""
+            echo "Infrastructure changes have been applied to production."
+            exit 0
+          else
+            echo "❌ Deployment failed"
+            echo ""
+            echo "Please check the logs and resolve any issues."
+            exit 1
+          fi
