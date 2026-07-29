@@ -27,6 +27,10 @@ jobs:
     runs-on: ubuntu-latest
     env:
       # Repository Variables
+      TERRAGRUNT_ARGS: ${{ vars.TERRAGRUNT_ARGS }}
+      TERRAFORM_INIT_ARGS: ${{ vars.TERRAFORM_INIT_ARGS }}
+      TERRAFORM_VALIDATE_ARGS: ${{ vars.TERRAFORM_VALIDATE_ARGS }}
+      TERRAFORM_APPLY_ARGS: ${{ vars.TERRAFORM_APPLY_ARGS }}
       CODER_TF_BACKEND_AWS_BUCKET_NAME: ${{ vars.CODER_TF_BACKEND_AWS_BUCKET_NAME }}
       CODER_TF_BACKEND_AWS_REGION: ${{ vars.CODER_TF_BACKEND_AWS_REGION }}
       CODER_TF_BACKEND_AWS_PROFILE: ${{ vars.CODER_TF_BACKEND_AWS_PROFILE }}
@@ -128,7 +132,7 @@ jobs:
         working-directory: infra
         run: |
           echo "::group::Validating Terragrunt inputs"
-          if ! terragrunt hcl validate --inputs --config root.hcl; then
+          if ! terragrunt hcl validate --inputs ${TERRAGRUNT_ARGS[@]}; then
             echo ""
             echo "::error::Terragrunt inputs are not valid."
             echo "::error::[View Full Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) to see what failed."
@@ -142,7 +146,7 @@ jobs:
         working-directory: infra
         run: |
           echo "::group::Initializing all modules"
-          terragrunt run --all --queue-exclude-dir="./" --provider-cache --config root.hcl -- init -input=false -reconfigure -upgrade
+          terragrunt run --all --queue-exclude-dir="./" --provider-cache ${TERRAGRUNT_ARGS[@]} -- init -input=false -reconfigure -upgrade ${TERRAFORM_INIT_ARGS[@]}
           echo "✓ Initialization successful"
           echo "::endgroup::"
 
@@ -151,7 +155,7 @@ jobs:
         working-directory: infra
         run: |
           echo "::group::Validating Terraform configuration"
-          terragrunt run --all --queue-exclude-dir="./" --provider-cache --config root.hcl -- validate
+          terragrunt run --all --queue-exclude-dir="./" --provider-cache ${TERRAGRUNT_ARGS[@]} -- validate ${TERRAFORM_VALIDATE_ARGS[@]}
           echo "✓ Terraform configuration is valid"
           echo "::endgroup::"
 
@@ -161,6 +165,9 @@ jobs:
     runs-on: ubuntu-latest
     env:
       # Repository Variables
+      TERRAGRUNT_ARGS: ${{ vars.TERRAGRUNT_ARGS }}
+      TERRAFORM_PLAN_ARGS: ${{ vars.TERRAFORM_PLAN_ARGS }}
+      TERRAFORM_INIT_ARGS: ${{ vars.TERRAFORM_INIT_ARGS }}
       CODER_TF_BACKEND_AWS_BUCKET_NAME: ${{ vars.CODER_TF_BACKEND_AWS_BUCKET_NAME }}
       CODER_TF_BACKEND_AWS_REGION: ${{ vars.CODER_TF_BACKEND_AWS_REGION }}
       CODER_TF_BACKEND_AWS_PROFILE: ${{ vars.CODER_TF_BACKEND_AWS_PROFILE }}
@@ -234,9 +241,8 @@ jobs:
         shell: bash
         working-directory: infra
         run: |
-          
           echo "::group::Initializing all modules"
-          terragrunt run --all --queue-exclude-dir="./" --provider-cache --config root.hcl -- init -input=false -reconfigure -upgrade
+          terragrunt run --all --queue-exclude-dir="./" --provider-cache ${TERRAGRUNT_ARGS[@]} -- init -input=false -reconfigure -upgrade ${TERRAFORM_INIT_ARGS[@]}
           echo "✓ Initialization successful"
           echo "::endgroup::"
 
@@ -245,13 +251,11 @@ jobs:
         shell: bash
         working-directory: infra
         run: |
-          
-
           echo "::group::Running Terragrunt plan on all modules"
 
           # Run plan and capture output
           set +e
-          terragrunt run --all --queue-exclude-dir="./" --provider-cache --config root.hcl -- plan -input=false -no-color -detailed-exitcode 2>&1 | tee plan.log
+          terragrunt run --all --queue-exclude-dir="./" --provider-cache ${TERRAGRUNT_ARGS[@]} -- plan -input=false -no-color -detailed-exitcode ${TERRAFORM_PLAN_ARGS[@]} 2>&1 | tee plan.log
           EXIT_CODE=${PIPESTATUS[0]}
           set -e
 

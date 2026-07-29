@@ -30,6 +30,9 @@ jobs:
       url: https://ai.coder.com
     env:
       # Repository Variables
+      TERRAGRUNT_ARGS: ${{ vars.TERRAGRUNT_ARGS }}
+      TERRAFORM_INIT_ARGS: ${{ vars.TERRAFORM_INIT_ARGS }}
+      TERRAFORM_APPLY_ARGS: ${{ vars.TERRAFORM_APPLY_ARGS }}
       CODER_TF_BACKEND_AWS_BUCKET_NAME: ${{ vars.CODER_TF_BACKEND_AWS_BUCKET_NAME }}
       CODER_TF_BACKEND_AWS_REGION: ${{ vars.CODER_TF_BACKEND_AWS_REGION }}
       CODER_TF_BACKEND_AWS_PROFILE: ${{ vars.CODER_TF_BACKEND_AWS_PROFILE }}
@@ -99,12 +102,21 @@ jobs:
           role-to-assume: ${{ vars.AWS_RUNNER_ROLE_ARN }}
           aws-region: ${{ vars.AWS_RUNNER_REGION }}
 
+      - name: Terragrunt init
+        shell: bash
+        working-directory: infra
+        run: |
+          echo "::group::Initializing all modules"
+          terragrunt run --all --queue-exclude-dir="./" --provider-cache ${TERRAGRUNT_ARGS[@]} -- init -input=false -reconfigure -upgrade ${TERRAFORM_INIT_ARGS[@]}
+          echo "✓ Initialization successful"
+          echo "::endgroup::"
+
       - name: Terragrunt run-all apply
         shell: bash
         working-directory: infra
         run: |
           echo "::group::Running Terragrunt run-all apply"
-          terragrunt run --all --queue-exclude-dir="./" --provider-cache --config root.hcl -- apply -input=false -auto-approve 2>&1 | tee apply.log
+          terragrunt run --all --queue-exclude-dir="./" --provider-cache ${TERRAGRUNT_ARGS[@]} -- apply -input=false -auto-approve ${TERRAFORM_APPLY_ARGS[@]} 2>&1 | tee apply.log
           EXIT_CODE=${PIPESTATUS[0]}
           echo "::endgroup::"
 
