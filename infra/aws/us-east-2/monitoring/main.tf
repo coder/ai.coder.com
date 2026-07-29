@@ -100,6 +100,11 @@ resource "aws_vpc_security_group_egress_rule" "grafana" {
   ip_protocol       = -1
 }
 
+locals {
+  # Root, Coder, Customer
+  ous = ["r-4vw4", "ou-4vw4-avnmq38g", "ou-4vw4-2qki2hxj"]
+}
+
 resource "aws_grafana_workspace" "this" {
 
   name = local.name
