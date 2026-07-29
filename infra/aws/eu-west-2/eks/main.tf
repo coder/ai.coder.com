@@ -176,6 +176,26 @@ resource "aws_eks_access_policy_association" "argocd" {
   }
 }
 
+##
+# Access Entry for the Github Runner
+##
+resource "aws_eks_access_entry" "runner" {
+  principal_arn = "arn:aws:iam::${data.aws_caller_identity.me.account_id}:role/tf-runner-role"
+  cluster_name  = module.eks.cluster_name
+  type          = "STANDARD"
+}
+
+resource "aws_eks_access_policy_association" "runner" {
+
+  cluster_name  = module.eks.cluster_name
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+  principal_arn = "arn:aws:iam::${data.aws_caller_identity.me.account_id}:role/tf-runner-role"
+
+  access_scope {
+    type = "cluster"
+  }
+}
+
 provider "kubernetes" {
   host                   = module.eks.cluster_endpoint
   cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
