@@ -101,33 +101,33 @@ jobs:
           aws-region: ${{ vars.AWS_RUNNER_REGION }}
           aws-profile: ${{ vars.CODER_AWS_PROFILE }}
 
-      # - name: Terragrunt hclfmt check
-      #   shell: bash
-      #   working-directory: infra
-      #   run: |
-      #     echo "::group::Checking Terragrunt formatting"
-      #     if ! terragrunt hcl format --check; then
-      #       echo ""
-      #       echo "::error::Terragrunt files are not formatted."
-      #       echo "::error::Run 'terragrunt hclfmt' in the infra directory before pushing."
-      #       exit 1
-      #     fi
-      #     echo "✓ Terragrunt formatting is correct"
-      #     echo "::endgroup::"
+      - name: Terragrunt hclfmt check
+        shell: bash
+        working-directory: infra
+        run: |
+          echo "::group::Checking Terragrunt formatting"
+          if ! terragrunt hcl format --exclude-dir=.terraform --check; then
+            echo ""
+            echo "::error::Terragrunt files are not formatted."
+            echo "::error::Run 'terragrunt hclfmt' in the infra directory before pushing."
+            exit 1
+          fi
+          echo "✓ Terragrunt formatting is correct"
+          echo "::endgroup::"
 
-      # - name: Terraform fmt check
-      #   shell: bash
-      #   working-directory: infra
-      #   run: |
-      #     echo "::group::Checking Terraform formatting"
-      #     if ! terraform fmt -check -recursive; then
-      #       echo ""
-      #       echo "::error::Terraform files are not formatted."
-      #       echo "::error::Run 'terraform fmt -recursive' in the infra directory before pushing."
-      #       exit 1
-      #     fi
-      #     echo "✓ Terraform formatting is correct"
-      #     echo "::endgroup::"
+      - name: Terraform fmt check
+        shell: bash
+        working-directory: infra
+        run: |
+          echo "::group::Checking Terraform formatting"
+          if ! terraform fmt -check -recursive; then
+            echo ""
+            echo "::error::Terraform files are not formatted."
+            echo "::error::Run 'terraform fmt -recursive' in the infra directory before pushing."
+            exit 1
+          fi
+          echo "✓ Terraform formatting is correct"
+          echo "::endgroup::"
 
       - name: Terragrunt validate-inputs
         shell: bash
