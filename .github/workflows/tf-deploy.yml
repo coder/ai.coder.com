@@ -108,7 +108,7 @@ jobs:
         working-directory: infra
         run: |
           echo "::group::Initializing all modules"
-          terragrunt run --all --queue-exclude-dir="./" --provider-cache $TERRAGRUNT_ARGS -- init -input=false -reconfigure -upgrade $TERRAFORM_INIT_ARGS
+          terragrunt run --all --queue-exclude-dir="./" --provider-cache $TERRAGRUNT_ARGS -- init -input=false -reconfigure -upgrade ${TERRAFORM_INIT_ARGS:+$TERRAFORM_INIT_ARGS}
           echo "✓ Initialization successful"
           echo "::endgroup::"
 
@@ -117,7 +117,7 @@ jobs:
         working-directory: infra
         run: |
           echo "::group::Running Terragrunt run-all apply"
-          terragrunt run --all --queue-exclude-dir="./" --provider-cache $TERRAGRUNT_ARGS -- apply -input=false -auto-approve $TERRAFORM_APPLY_ARGS 2>&1 | tee apply.log
+          terragrunt run --all --queue-exclude-dir="./" --provider-cache $TERRAGRUNT_ARGS -- apply -input=false -auto-approve ${TERRAFORM_APPLY_ARGS:+$TERRAFORM_APPLY_ARGS} 2>&1 | tee apply.log
           EXIT_CODE=${PIPESTATUS[0]}
           echo "::endgroup::"
 
