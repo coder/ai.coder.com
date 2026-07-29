@@ -1,0 +1,105 @@
+name: "Generate Coder Token"
+description: "Maps a GitHub user to a Coder user via external GitHub auth and generates a temporary session token"
+
+inputs:
+  coder_url:
+    description: "Coder deployment URL"
+    required: true
+  admin_token:
+    description: "Admin-level Coder session token for user lookup and token generation"
+    required: true
+  github_user_id:
+    description: "GitHub user ID to look up in Coder"
+    required: true
+  github_email:
+    description: "GitHub user email (used to disambiguate when multiple Coder users share the same GitHub ID)"
+    required: false
+    default: ""
+  token_lifetime:
+    description: "Token lifetime in seconds"
+    required: false
+    default: "3600"
+  run_id:
+    description: "Unique identifier for the token name (e.g. github.run_id)"
+    required: true
+
+outputs:
+  coder_token:
+    description: "Generated temporary Coder session token"
+    value: ${{ steps.generate.outputs.coder_token }}
+  coder_user:
+    description: "Resolved Coder username"
+    value: ${{ steps.generate.outputs.coder_user }}
+
+runs:
+  using: "composite"
+  steps:
+    - id: generate
+      shell: bash
+      run: |
+        set -euo pipefail
+        CODER_URL="${{ inputs.coder_url }}"
+        ADMIN_TOKEN="${{ inputs.admin_token }}"
+        GITHUB_USER_ID="${{ inputs.github_user_id }}"
+        GITHUB_EMAIL="${{ inputs.github_email }}"
+        TOKEN_LIFETIME="${{ inputs.token_lifetime }}"
+        RUN_ID="${{ inputs.run_id }}"
+
+        echo "Looking up Coder user linked to GitHub user ID: $GITHUB_USER_ID"
+
+        # Query Coder user by linked GitHub user ID (external auth)
+        USERS_RESPONSE=$(curl -sf \
+          -H "Coder-Session-Token: $ADMIN_TOKEN" \
+          "$CODER_URL/api/v2/users?q=github_com_user_id:${GITHUB_USER_ID}")
+
+        USER_COUNT=$(echo "$USERS_RESPONSE" | jq '.users | length')
+
+        if [[ "$USER_COUNT" -eq 0 ]]; then
+          echo "::error::Could not find a Coder user linked to GitHub user ID $GITHUB_USER_ID"
+          exit 1
+        elif [[ "$USER_COUNT" -eq 1 ]]; then
+          CODER_USER=$(echo "$USERS_RESPONSE" | jq -r '.users[0].username')
+        else
+          # Multiple users linked to the same GitHub ID — disambiguate by email
+          if [[ -z "$GITHUB_EMAIL" ]]; then
+            echo "::error::Multiple Coder users found for GitHub user ID $GITHUB_USER_ID but no email provided to disambiguate"
+            exit 1
+          fi
+
+          echo "Multiple users found ($USER_COUNT), disambiguating by email: $GITHUB_EMAIL"
+          CODER_USER=$(echo "$USERS_RESPONSE" | jq -r --arg email "$GITHUB_EMAIL" \
+            '.users[] | select(.email == $email) | .username // empty')
+
+          if [[ -z "$CODER_USER" ]]; then
+            echo "::error::Multiple Coder users found for GitHub user ID $GITHUB_USER_ID but none match email $GITHUB_EMAIL"
+            exit 1
+          fi
+        fi
+
+        echo "Found Coder user: $CODER_USER"
+
+        # Convert seconds to nanoseconds for the Coder API
+        LIFETIME_NS=$((TOKEN_LIFETIME * 1000000000))
+
+        # Generate a temporary token for this user
+        TOKEN_RESPONSE=$(curl -sf \
+          -X POST \
+          -H "Coder-Session-Token: $ADMIN_TOKEN" \
+          -H "Content-Type: application/json" \
+          "$CODER_URL/api/v2/users/$CODER_USER/keys/tokens" \
+          -d "{
+            \"token_name\": \"agent-validation-${RUN_ID}-$(date -u +'%s')\",
+            \"lifetime\": $LIFETIME_NS
+          }")
+
+        USER_TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.key')
+
+        if [[ -z "$USER_TOKEN" || "$USER_TOKEN" == "null" ]]; then
+          echo "::error::Failed to generate token for Coder user '$CODER_USER'"
+          echo "Response: $TOKEN_RESPONSE"
+          exit 1
+        fi
+
+        echo "::add-mask::$USER_TOKEN"
+        echo "coder_token=$USER_TOKEN" >> "$GITHUB_OUTPUT"
+        echo "coder_user=$CODER_USER" >> "$GITHUB_OUTPUT"
