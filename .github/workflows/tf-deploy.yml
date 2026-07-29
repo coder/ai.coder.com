@@ -94,6 +94,7 @@ jobs:
       - name: Setup Terragrunt
         uses: gruntwork-io/terragrunt-action@v3
         with:
+          tf_path: "terraform"
           tg_version: ${{ env.TERRAGRUNT_VERSION }}
 
       - name: Configure AWS credentials
