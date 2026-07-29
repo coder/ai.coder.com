@@ -100,36 +100,6 @@ resource "aws_vpc_security_group_egress_rule" "grafana" {
   ip_protocol       = -1
 }
 
-locals {
-  # Root, Coder, Customer
-  ous = ["r-4vw4", "ou-4vw4-avnmq38g", "ou-4vw4-2qki2hxj"]
-  admin_iam_identity_ids = [
-    "24c85468-90e1-70c7-3498-bc5695b7c6f0", # Jullian
-  ]
-}
-
-data "aws_ssoadmin_instances" "this" {
-  region = "us-east-1"
-}
-
-data "aws_identitystore_group" "aws_administrator" {
-  identity_store_id = one(data.aws_ssoadmin_instances.this.identity_store_ids)
-  region            = "us-east-1"
-
-  alternate_identifier {
-    unique_attribute {
-      attribute_path  = "DisplayName"
-      attribute_value = "CoderCSAWSAdmin"
-    }
-  }
-}
-
-data "aws_identitystore_group_memberships" "aws_admins" {
-  identity_store_id = one(data.aws_ssoadmin_instances.this.identity_store_ids)
-  region            = "us-east-1"
-  group_id          = data.aws_identitystore_group.aws_administrator.group_id
-}
-
 resource "aws_grafana_workspace" "this" {
 
   name = local.name
@@ -152,43 +122,6 @@ resource "aws_grafana_workspace" "this" {
     ))
   }
 }
-
-data "aws_identitystore_user" "admin" {
-  region            = "us-east-1"
-  identity_store_id = one(data.aws_ssoadmin_instances.this.identity_store_ids)
-  alternate_identifier {
-    unique_attribute {
-      attribute_path  = "UserName"
-      attribute_value = "jullian@coder.com"
-    }
-  }
-}
-
-data "aws_identitystore_users" "viewers" {
-  region            = "us-east-1"
-  identity_store_id = one(data.aws_ssoadmin_instances.this.identity_store_ids)
-}
-
-
-locals {
-  admins = [data.aws_identitystore_user.admin.user_id]
-}
-
-resource "aws_grafana_role_association" "admins" {
-  role = "ADMIN"
-  # user_ids     = [data.aws_identitystore_user.admin.user_id]
-  user_ids     = [for i in data.aws_identitystore_users.viewers.users : i.user_id]
-  group_ids    = [data.aws_identitystore_group.aws_administrator.group_id]
-  workspace_id = aws_grafana_workspace.this.id
-}
-
-
-# resource "aws_grafana_role_association" "viewer" {
-#   role         = "VIEWER"
-#   user_ids     = [for i in data.aws_identitystore_users.viewers.users : i.user_id if contains(local.admins, i.user_id) ]
-#   group_ids    = [] # [data.aws_identitystore_group.aws_administrator.group_id]
-#   workspace_id = aws_grafana_workspace.this.id
-# }
 
 resource "aws_grafana_workspace_service_account" "admin" {
   name         = "admin"
@@ -221,21 +154,9 @@ resource "aws_grafana_workspace_service_account_token" "admin" {
   }
 }
 
-# resource "aws_grafana_workspace_service_account" "viewer" {
-#   name         = "viewer"
-#   grafana_role = "VIEWER"
-#   workspace_id = aws_grafana_workspace.this.id
-# }
-
 resource "aws_prometheus_workspace" "this" {
   alias = local.name
 }
-
-# resource "aws_prometheus_rule_group_namespace" "coder_alerts" {
-#   name         = "coder-alerts"
-#   workspace_id = aws_prometheus_workspace.coder.id
-#   data         = file("${path.module}/alert-rules.yaml")
-# }
 
 output "grafana_endpoint" {
   value = "https://${aws_grafana_workspace.this.endpoint}"
