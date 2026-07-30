@@ -132,7 +132,6 @@ resource "kubernetes_manifest" "kyverno" {
               annotations = {
                 "helm.sh/hook"               = "post-install"
                 "helm.sh/hook-weight"        = "-5"
-                "helm.sh/hook-delete-policy" = "hook-succeeded"
               }
               namespaceSelector = {
                 matchExpressions = [{
@@ -203,7 +202,6 @@ resource "kubernetes_manifest" "kyverno" {
               annotations = {
                 "helm.sh/hook"               = "post-install"
                 "helm.sh/hook-weight"        = "-5"
-                "helm.sh/hook-delete-policy" = "hook-succeeded"
               }
               labels = {
                 "app.kubernetes.io/name" = "img-fetch"
