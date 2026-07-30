@@ -130,8 +130,8 @@ resource "kubernetes_manifest" "kyverno" {
               name        = "mutate-ws-image"
               matchPolicy = "Equivalent"
               annotations = {
-                "helm.sh/hook"               = "post-install"
-                "helm.sh/hook-weight"        = "-5"
+                "helm.sh/hook"        = "post-install"
+                "helm.sh/hook-weight" = "-5"
               }
               namespaceSelector = {
                 matchExpressions = [{
@@ -200,8 +200,8 @@ resource "kubernetes_manifest" "kyverno" {
               enabled   = true
               namespace = "default"
               annotations = {
-                "helm.sh/hook"               = "post-install"
-                "helm.sh/hook-weight"        = "-5"
+                "helm.sh/hook"        = "post-install"
+                "helm.sh/hook-weight" = "-5"
               }
               labels = {
                 "app.kubernetes.io/name" = "img-fetch"
