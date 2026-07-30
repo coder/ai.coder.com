@@ -86,8 +86,14 @@ jobs:
             echo "Changed Terragrunt directories:"
             echo "$changed_dirs"
 
+            # Strip "infra/" prefix since terragrunt commands run from within infra/
+            changed_dirs_relative=$(echo "$changed_dirs" | sed 's|^infra/||')
+
+            echo "Relative paths (for filters):"
+            echo "$changed_dirs_relative"
+
             # Convert to JSON array
-            changed_dirs_json=$(echo "$changed_dirs" | jq -R -s -c 'split("\n") | map(select(length > 0))')
+            changed_dirs_json=$(echo "$changed_dirs_relative" | jq -R -s -c 'split("\n") | map(select(length > 0))')
             echo "has_changes=true" >> $GITHUB_OUTPUT
             echo "changed_dirs=$changed_dirs_json" >> $GITHUB_OUTPUT
           fi
