@@ -8,7 +8,7 @@ This project powers [ai.coder.com](https://ai.coder.com), allowing users to expe
 
 ## Getting Started
 
-> [!IMPORTANT] Before accessing the deployment, make sure you've been invited to the "coder-contrib" GitHub organization. If not, reach out to `jullian@coder.com` with your GitHub handle. Coder employees should already have access.
+> [!IMPORTANT] Before accessing the deployment, make sure you've been invited to the "coder-contrib" GitHub organization. If not, reach out to `jullian@coder.com` with your GitHub handle.
 
 ### Accessing the Deployment
 
@@ -108,6 +108,7 @@ charts/                          # Helm charts for applications
 ### Prerequisites
 
 - AWS Account with appropriate permissions
+- AWS SSO configured for Grafana access
 - Terraform >= 1.15.8
 - Terragrunt >= 0.99.1
 - kubectl configured for EKS access
@@ -153,16 +154,6 @@ charts/                          # Helm charts for applications
    terragrunt apply
    ```
 
-### Environment Variables
-
-Configuration is managed through environment variables. See `infra/coder.env` for an example configuration:
-
-- `CODER_AWS_REGION`: AWS region
-- `CODER_CLUSTER_NAME`: EKS cluster name
-- `CODER_CLUSTER_VERSION`: Kubernetes version
-- `CODER_VPC_CIDR`: VPC CIDR block
-- Database credentials and other secrets
-
 ### Helm Charts
 
 Custom Helm charts are located in the `charts/` directory:
@@ -174,6 +165,175 @@ Custom Helm charts are located in the `charts/` directory:
 - `charts/vantage/`: Cost monitoring
 
 Charts are deployed by ArgoCD using the Terraform-generated Application manifests.
+
+---
+
+## Monitoring and Observability
+
+### Overview
+
+The us-east-2 deployment includes a comprehensive monitoring stack built on AWS Managed Grafana, CloudWatch, and Prometheus. This provides full visibility into the Coder deployment, Kubernetes cluster health, and application performance.
+
+### Architecture
+
+**AWS Managed Grafana**
+- Deployed in VPC with private subnets for security
+- Integrated with AWS SSO for authentication
+- Organizational unit access for Root, Coder, and Customer OUs
+- Service account with rotating tokens (30-day rotation)
+- Grafana version 10.4
+
+**Data Sources**
+- **Amazon Managed Service for Prometheus (AMP)**: Fully managed Prometheus service for metrics storage and querying (no in-cluster Prometheus pods)
+- **CloudWatch**: AWS service metrics and logs
+- **Grafana Agent**: In-cluster metrics and logs collection, sends to AMP
+- **Loki** (optional): Log aggregation
+- **PostgreSQL Exporter**: Database metrics
+
+**Exporters and Collectors**
+- **Kube State Metrics**: Kubernetes object state metrics
+- **Node Exporter**: Host-level metrics (CPU, memory, disk, network)
+- **PostgreSQL Exporter**: RDS database performance metrics
+- **Grafana Agent**: Unified observability agent in DaemonSet mode
+- **AWS for Fluent Bit**: Log forwarding to CloudWatch
+
+### Dashboards
+
+The deployment includes pre-configured Grafana dashboards for comprehensive monitoring:
+
+**Coder-Specific Dashboards:**
+1. **Status Dashboard** (`status.json`)
+   - Overall system health
+   - Component availability (coderd, provisioners, workspaces)
+   - Service status and uptime
+
+2. **Coderd Dashboard** (`coderd.json`)
+   - Coder server performance metrics
+   - API request rates and latency
+   - Active connections and sessions
+   - Resource utilization
+
+3. **Provisioner Dashboard** (`provisionerd.json`)
+   - Provisioner job queue depth
+   - Job execution times
+   - Success/failure rates
+   - Resource allocation
+
+4. **Workspaces Dashboard** (`workspaces.json`)
+   - Aggregate workspace metrics
+   - Build times and success rates
+   - Active workspace count
+   - Resource consumption by workspace
+
+5. **Workspace Detail Dashboard** (`workspace_detail.json`)
+   - Individual workspace performance
+   - Per-workspace resource usage
+   - Container metrics
+   - Network I/O
+
+6. **Prebuilds Dashboard** (`prebuilds.json`)
+   - Template prebuild status
+   - Build duration trends
+   - Cache hit rates
+
+**Additional Dashboards:**
+- **AI Bridge Dashboard** (`aibridge.json`): AI provider integration metrics
+- **Boundary Dashboard** (`boundary.json`): Network boundary metrics
+
+### Metrics Collection
+
+**Amazon Managed Service for Prometheus (AMP):**
+- Fully managed Prometheus-compatible service
+- No in-cluster Prometheus server deployment required
+- Grafana Agent scrapes metrics and remote writes to AMP
+- Long-term metrics storage and querying
+- Automatic scaling and high availability
+
+**Metrics Sources:**
+- Coder application metrics (via `/metrics` endpoint on port 2112)
+- Kubernetes cluster metrics (via kube-state-metrics)
+- Container resource utilization (via node-exporter)
+- PostgreSQL database metrics (via postgres-exporter)
+- Custom application metrics
+
+**CloudWatch Integration:**
+- EKS control plane logs
+- RDS database metrics
+- VPC flow logs
+- AWS Load Balancer metrics
+- Lambda function metrics (if applicable)
+
+**Log Aggregation:**
+- Application logs via Fluent Bit
+- Kubernetes audit logs
+- Container stdout/stderr
+- System logs from EC2 nodes
+
+### Monitoring Infrastructure
+
+**Grafana Workspace Configuration:**
+```hcl
+# IAM Role with permissions for:
+# - Amazon Managed Service for Prometheus (AMP)
+# - CloudWatch access
+# - VPC deployment in private subnets
+
+# Data sources: PROMETHEUS, CLOUDWATCH
+# Authentication: AWS SSO
+# Permission type: CUSTOMER_MANAGED
+```
+
+**Coder Observability Helm Chart:**
+
+The `coder-observability` chart deploys a complete monitoring stack with configurable components:
+
+- **kube-state-metrics**: Kubernetes object metrics
+- **prometheus-node-exporter**: Node-level metrics
+- **prometheus-postgres-exporter**: PostgreSQL metrics with External Secrets integration
+- **grafana-agent**: Unified metrics and logs collection (DaemonSet)
+- **loki**: Log aggregation (optional)
+
+All components support custom affinity rules and tolerations for node placement.
+
+### Selectors and Filtering
+
+Dashboards use PromQL selectors to filter metrics by component:
+
+- **Coderd**: `pod=~'coder.*', namespace=~'coder'`
+- **Provisioners**: `pod=~'coder-provisioner.*', namespace=~'(coder-ws|coder-ws-experiment|coder-ws-demo)'`
+- **Workspaces**: `pod!~'coder.*', namespace=~'(coder-ws|coder-ws-experiment|coder-ws-demo)'`
+
+### Accessing Grafana
+
+1. Navigate to AWS Managed Grafana workspace in AWS Console
+2. Click "Grafana workspace URL"
+3. Authenticate with AWS SSO
+4. Dashboards are pre-configured in the "Coder" folder
+
+### Alerting
+
+CloudWatch alarms can be configured for:
+- High CPU/memory utilization
+- RDS connection exhaustion
+- API error rates
+- Workspace build failures
+- Disk space usage
+
+Configure alerts through AWS CloudWatch or Grafana alerting rules.
+
+### Cost Monitoring
+
+**Vantage Integration:**
+- Deployed via ArgoCD in both regions
+- Tracks AWS resource costs
+- Reports on Coder-specific spending
+- Kubernetes cost allocation
+
+**Key Metrics:**
+- Per-workspace compute costs
+- Storage costs (EBS volumes, RDS)
+- Network transfer costs
+- Regional cost breakdown
 
 ---
 
@@ -225,8 +385,30 @@ GitHub Actions workflows handle automated deployments:
 ### Useful Commands
 
 ```bash
+# Access AWS Managed Grafana
+aws grafana list-workspaces --region us-east-2
+
+# Get Grafana workspace URL
+aws grafana describe-workspace --workspace-id <workspace-id> --region us-east-2 --query 'workspace.endpoint' --output text
+
 # Watch Karpenter logs
 kubectl logs -n karpenter -l app.kubernetes.io/name=karpenter -f
+
+# Check Grafana Agent status
+kubectl get pods -n coder-observability -l app.kubernetes.io/name=grafana-agent
+
+# View Coder metrics endpoint
+kubectl port-forward -n coder <coder-pod> 2112:2112
+curl http://localhost:2112/metrics
+
+# Check monitoring stack health (exporters and agents only)
+kubectl get pods -n coder-observability
+
+# Check Grafana Agent configuration
+kubectl describe cm -n coder-observability grafana-agent
+
+# View metrics being collected by Grafana Agent
+kubectl logs -n coder-observability -l app.kubernetes.io/name=grafana-agent --tail=100
 
 # List all Terragrunt modules
 cd infra && terragrunt run-all init --terragrunt-ignore-external-dependencies
