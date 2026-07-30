@@ -1,0 +1,32 @@
+{{- if .Values.mutatingPolicy.enabled }}
+apiVersion: policies.kyverno.io/v1
+kind: MutatingPolicy
+metadata:
+  name: {{ .Values.mutatingPolicy.name | default "mutate-ws-image" }}
+  {{- if .Values.mutatingPolicy.namespace }}
+  namespace: {{ .Values.mutatingPolicy.namespace }}
+  {{- end }}
+  {{- with .Values.mutatingPolicy.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  matchConstraints:
+    matchPolicy: {{ .Values.mutatingPolicy.matchPolicy | default "Equivalent" }}
+    {{- with .Values.mutatingPolicy.namespaceSelector }}
+    namespaceSelector:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.mutatingPolicy.objectSelector }}
+    objectSelector:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.mutatingPolicy.resourceRules }}
+    resourceRules:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+  {{- with .Values.mutatingPolicy.mutations }}
+  mutations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}
