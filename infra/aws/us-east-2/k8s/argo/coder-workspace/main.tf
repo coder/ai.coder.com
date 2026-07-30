@@ -153,9 +153,9 @@ resource "aws_secretsmanager_secret_version" "coder" {
 
   for_each = local.coder-ws
 
-  region                   = var.region
-  secret_id                = aws_secretsmanager_secret.coder[each.key].id
-  secret_string_wo         = sensitive(jsonencode({
+  region    = var.region
+  secret_id = aws_secretsmanager_secret.coder[each.key].id
+  secret_string_wo = sensitive(jsonencode({
     (local.key_secret_key) = module.coder-provisioner[each.key].provisioner_key_secret
   }))
   secret_string_wo_version = time_static.secret_update[each.key].unix
