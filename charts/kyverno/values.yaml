@@ -58,8 +58,8 @@ warmNodes:
     # "helm.sh/hook-delete-policy": hook-succeeded
 
   labels:
-    app.kubernetes.io/name: "img-fetch"
-    app.kubernetes.io/part-of: "coder-workspaces"
+    # app.kubernetes.io/name: "img-fetch"
+    # app.kubernetes.io/part-of: "coder-workspaces"
 
   selectorLabels:
     app.kubernetes.io/name: "img-fetch"
