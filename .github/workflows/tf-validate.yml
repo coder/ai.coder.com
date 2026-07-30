@@ -22,8 +22,102 @@ env:
   TERRAGRUNT_VERSION: "0.99.1"
 
 jobs:
+  discover-changes:
+    name: Discover Changed Directories
+    runs-on: ubuntu-latest
+    outputs:
+      changed_dirs: ${{ steps.find-changes.outputs.changed_dirs }}
+      filter_args: ${{ steps.build-filters.outputs.filter_args }}
+      has_changes: ${{ steps.find-changes.outputs.has_changes }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find changed directories
+        id: find-changes
+        shell: bash
+        run: |
+          # Get the base branch
+          BASE_REF="${{ github.event.pull_request.base.sha }}"
+          HEAD_REF="${{ github.sha }}"
+
+          # Find all changed files in infra/
+          changed_files=$(git diff --name-only "$BASE_REF" "$HEAD_REF" -- infra/ || echo "")
+
+          if [ -z "$changed_files" ]; then
+            echo "No changes detected in infra/"
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "changed_dirs=[]" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "Changed files:"
+          echo "$changed_files"
+          echo ""
+
+          # Find directories containing terragrunt.hcl files
+          terragrunt_dirs=$(find infra -type f -name "terragrunt.hcl" -not -path "*/.terraform/*" | sed 's|/terragrunt.hcl||' | sort -u)
+
+          # Identify which Terragrunt directories were affected
+          changed_dirs=""
+          while IFS= read -r file; do
+            file_dir=$(dirname "$file")
+            # Find the closest parent directory that contains a terragrunt.hcl
+            while [ "$file_dir" != "." ] && [ "$file_dir" != "infra" ]; do
+              if echo "$terragrunt_dirs" | grep -q "^$file_dir$"; then
+                changed_dirs="${changed_dirs}${file_dir}"$'\n'
+                break
+              fi
+              file_dir=$(dirname "$file_dir")
+            done
+          done <<< "$changed_files"
+
+          # Remove duplicates and sort
+          changed_dirs=$(echo "$changed_dirs" | sort -u | grep -v '^$' || echo "")
+
+          if [ -z "$changed_dirs" ]; then
+            # Changes were in infra but not in any terragrunt module directory
+            echo "Changes detected but not in terragrunt module directories"
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "changed_dirs=[]" >> $GITHUB_OUTPUT
+          else
+            echo "Changed Terragrunt directories:"
+            echo "$changed_dirs"
+
+            # Convert to JSON array
+            changed_dirs_json=$(echo "$changed_dirs" | jq -R -s -c 'split("\n") | map(select(length > 0))')
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "changed_dirs=$changed_dirs_json" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build filter arguments
+        id: build-filters
+        shell: bash
+        run: |
+          changed_dirs='${{ steps.find-changes.outputs.changed_dirs }}'
+
+          if [ "$changed_dirs" = "[]" ] || [ -z "$changed_dirs" ]; then
+            echo "filter_args=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Build --filter arguments for each changed directory
+          filter_args=""
+          for dir in $(echo "$changed_dirs" | jq -r '.[]'); do
+            filter_args="${filter_args} --filter=${dir}"
+          done
+
+          # Trim leading space
+          filter_args=$(echo "$filter_args" | sed 's/^ //')
+
+          echo "Filter arguments: $filter_args"
+          echo "filter_args=$filter_args" >> $GITHUB_OUTPUT
+
   validate:
     name: Validate Infrastructure
+    needs: discover-changes
     runs-on: ubuntu-latest
     env:
       # Repository Variables
@@ -106,6 +200,9 @@ jobs:
         working-directory: infra
         run: |
           echo "::group::Checking Terragrunt formatting"
+          FILTER_ARGS="${{ needs.discover-changes.outputs.filter_args }}"
+          echo "Filter args: $FILTER_ARGS"
+
           if ! terragrunt hcl format --exclude-dir=.terraform --check; then
             echo ""
             echo "::error::Terragrunt files are not formatted."
@@ -134,7 +231,19 @@ jobs:
         working-directory: infra
         run: |
           echo "::group::Validating Terragrunt inputs"
-          if ! terragrunt hcl validate --inputs $TERRAGRUNT_ARGS; then
+          FILTER_ARGS="${{ needs.discover-changes.outputs.filter_args }}"
+
+          # Build the full command with filters
+          CMD="terragrunt hcl validate --inputs"
+          if [ -n "$FILTER_ARGS" ]; then
+            CMD="$CMD $FILTER_ARGS"
+          fi
+          if [ -n "${TERRAGRUNT_ARGS}" ]; then
+            CMD="$CMD ${TERRAGRUNT_ARGS}"
+          fi
+
+          echo "Running: $CMD"
+          if ! eval "$CMD"; then
             echo ""
             echo "::error::Terragrunt inputs are not valid."
             echo "::error::[View Full Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) to see what failed."
@@ -148,7 +257,23 @@ jobs:
         working-directory: infra
         run: |
           echo "::group::Initializing all modules"
-          terragrunt run --all --queue-exclude-dir="./" --provider-cache ${TERRAGRUNT_ARGS:+$TERRAGRUNT_ARGS} -- init -input=false -reconfigure -upgrade ${TERRAFORM_INIT_ARGS:+$TERRAFORM_INIT_ARGS}
+          FILTER_ARGS="${{ needs.discover-changes.outputs.filter_args }}"
+
+          # Build the full command with filters
+          CMD="terragrunt run --all --queue-exclude-dir='./' --provider-cache"
+          if [ -n "$FILTER_ARGS" ]; then
+            CMD="$CMD $FILTER_ARGS"
+          fi
+          if [ -n "${TERRAGRUNT_ARGS}" ]; then
+            CMD="$CMD ${TERRAGRUNT_ARGS}"
+          fi
+          CMD="$CMD -- init -input=false -reconfigure -upgrade"
+          if [ -n "${TERRAFORM_INIT_ARGS}" ]; then
+            CMD="$CMD ${TERRAFORM_INIT_ARGS}"
+          fi
+
+          echo "Running: $CMD"
+          eval "$CMD"
           echo "✓ Initialization successful"
           echo "::endgroup::"
 
@@ -157,13 +282,29 @@ jobs:
         working-directory: infra
         run: |
           echo "::group::Validating Terraform configuration"
-          terragrunt run --all --queue-exclude-dir="./" --provider-cache ${TERRAGRUNT_ARGS:+$TERRAGRUNT_ARGS} -- validate ${TERRAFORM_VALIDATE_ARGS:+$TERRAFORM_VALIDATE_ARGS}
+          FILTER_ARGS="${{ needs.discover-changes.outputs.filter_args }}"
+
+          # Build the full command with filters
+          CMD="terragrunt run --all --queue-exclude-dir='./' --provider-cache"
+          if [ -n "$FILTER_ARGS" ]; then
+            CMD="$CMD $FILTER_ARGS"
+          fi
+          if [ -n "${TERRAGRUNT_ARGS}" ]; then
+            CMD="$CMD ${TERRAGRUNT_ARGS}"
+          fi
+          CMD="$CMD -- validate"
+          if [ -n "${TERRAFORM_VALIDATE_ARGS}" ]; then
+            CMD="$CMD ${TERRAFORM_VALIDATE_ARGS}"
+          fi
+
+          echo "Running: $CMD"
+          eval "$CMD"
           echo "✓ Terraform configuration is valid"
           echo "::endgroup::"
 
   plan:
     name: Plan Infrastructure
-    needs: validate
+    needs: [validate, discover-changes]
     runs-on: ubuntu-latest
     env:
       # Repository Variables
@@ -246,7 +387,23 @@ jobs:
         working-directory: infra
         run: |
           echo "::group::Initializing all modules"
-          terragrunt run --all --queue-exclude-dir="./" --provider-cache ${TERRAGRUNT_ARGS:+$TERRAGRUNT_ARGS} -- init -input=false -reconfigure -upgrade ${TERRAFORM_INIT_ARGS:+$TERRAFORM_INIT_ARGS}
+          FILTER_ARGS="${{ needs.discover-changes.outputs.filter_args }}"
+
+          # Build the full command with filters
+          CMD="terragrunt run --all --queue-exclude-dir='./' --provider-cache"
+          if [ -n "$FILTER_ARGS" ]; then
+            CMD="$CMD $FILTER_ARGS"
+          fi
+          if [ -n "${TERRAGRUNT_ARGS}" ]; then
+            CMD="$CMD ${TERRAGRUNT_ARGS}"
+          fi
+          CMD="$CMD -- init -input=false -reconfigure -upgrade"
+          if [ -n "${TERRAFORM_INIT_ARGS}" ]; then
+            CMD="$CMD ${TERRAFORM_INIT_ARGS}"
+          fi
+
+          echo "Running: $CMD"
+          eval "$CMD"
           echo "✓ Initialization successful"
           echo "::endgroup::"
 
@@ -256,10 +413,25 @@ jobs:
         working-directory: infra
         run: |
           echo "::group::Running Terragrunt plan on all modules"
+          FILTER_ARGS="${{ needs.discover-changes.outputs.filter_args }}"
+
+          # Build the full command with filters
+          CMD="terragrunt run --all --queue-exclude-dir='./' --provider-cache"
+          if [ -n "$FILTER_ARGS" ]; then
+            CMD="$CMD $FILTER_ARGS"
+          fi
+          if [ -n "${TERRAGRUNT_ARGS}" ]; then
+            CMD="$CMD ${TERRAGRUNT_ARGS}"
+          fi
+          CMD="$CMD -- plan -input=false -no-color -detailed-exitcode"
+          if [ -n "${TERRAFORM_PLAN_ARGS}" ]; then
+            CMD="$CMD ${TERRAFORM_PLAN_ARGS}"
+          fi
 
           # Run plan and capture output
           set +e
-          terragrunt run --all --queue-exclude-dir="./" --provider-cache ${TERRAGRUNT_ARGS:+$TERRAGRUNT_ARGS} -- plan -input=false -no-color -detailed-exitcode ${TERRAFORM_PLAN_ARGS:+$TERRAFORM_PLAN_ARGS} 2>&1 | tee plan.log
+          echo "Running: $CMD"
+          eval "$CMD" 2>&1 | tee plan.log
           EXIT_CODE=${PIPESTATUS[0]}
           set -e
 
@@ -296,7 +468,7 @@ jobs:
 
   summary:
     name: Validation Summary
-    needs: [validate, plan]
+    needs: [discover-changes, validate, plan]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -306,8 +478,23 @@ jobs:
           echo "## Terraform Validation Summary"
           echo ""
 
+          changed_dirs='${{ needs.discover-changes.outputs.changed_dirs }}'
+          has_changes="${{ needs.discover-changes.outputs.has_changes }}"
           validate_result="${{ needs.validate.result }}"
           plan_result="${{ needs.plan.result }}"
+
+          # Display changed directories
+          if [ "$has_changes" = "true" ] && [ "$changed_dirs" != "[]" ]; then
+            echo "Changed Terragrunt directories:"
+            echo "$changed_dirs" | jq -r '.[]' | sed 's/^/  - /'
+            echo ""
+          elif [ "$has_changes" = "true" ]; then
+            echo "Changes detected in infra/ but not in terragrunt module directories"
+            echo ""
+          else
+            echo "No changes detected in infra/"
+            echo ""
+          fi
 
           echo "Validation result: $validate_result"
           echo "Plan result: $plan_result"
@@ -340,21 +527,37 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
+            const changedDirs = JSON.parse('${{ needs.discover-changes.outputs.changed_dirs }}' || '[]');
+            const hasChanges = '${{ needs.discover-changes.outputs.has_changes }}' === 'true';
             const validateResult = '${{ needs.validate.result }}';
             const planResult = '${{ needs.plan.result }}';
 
             let body = '## 🔍 Terraform Validation Summary\n\n';
 
+            // Show changed directories
+            if (hasChanges && changedDirs.length > 0) {
+              body += '### 📁 Changed Directories\n\n';
+              body += 'The following Terragrunt modules were affected:\n\n';
+              changedDirs.forEach(dir => {
+                body += `- \`${dir}\`\n`;
+              });
+              body += '\n';
+            } else if (hasChanges) {
+              body += '### ℹ️ Changes detected in `infra/` but not in terragrunt module directories\n\n';
+            } else {
+              body += '### ℹ️ No changes detected in `infra/`\n\n';
+            }
+
             const allPassed = validateResult === 'success' && planResult === 'success';
 
             if (allPassed) {
-              body += '✅ **All validation checks passed!**\n\n';
+              body += '### ✅ All validation checks passed!\n\n';
               body += '- ✅ Formatting is correct\n';
               body += '- ✅ Configuration is valid\n';
               body += '- ✅ Plan succeeded\n\n';
               body += '🚀 This PR is **ready to merge**. Infrastructure changes will be applied automatically after merge.\n';
             } else {
-              body += '❌ **Validation checks failed**\n\n';
+              body += '### ❌ Validation checks failed\n\n';
 
               if (validateResult !== 'success') {
                 body += '- ❌ **Validation failed**: Check formatting and configuration errors in job logs\n';

@@ -1,0 +1,222 @@
+name: "Helm Chart Validation"
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'charts/**'
+      - '.github/workflows/helm-validate.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'charts/**'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: helm-validate-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HELM_VERSION: "3.15.3"
+  KUBERNETES_VERSION: "1.30.0"
+
+jobs:
+  discover:
+    name: Discover Charts
+    runs-on: ubuntu-latest
+    outputs:
+      charts: ${{ steps.find-charts.outputs.charts }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Find all charts
+        id: find-charts
+        run: |
+          # Find all Chart.yaml files, excluding subchart dependencies
+          charts=$(find charts -name "Chart.yaml" -not -path "*/charts/*" -exec dirname {} \; | jq -R -s -c 'split("\n")[:-1]')
+          echo "charts=$charts" >> $GITHUB_OUTPUT
+          echo "Found charts:"
+          echo "$charts" | jq -r '.[]'
+
+  lint:
+    name: Lint Chart
+    needs: discover
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        chart: ${{ fromJson(needs.discover.outputs.charts) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Update dependencies
+        run: |
+          if [ -f "${{ matrix.chart }}/Chart.yaml" ]; then
+            if grep -q "dependencies:" "${{ matrix.chart }}/Chart.yaml"; then
+              echo "Updating dependencies for ${{ matrix.chart }}"
+              helm dependency update "${{ matrix.chart }}"
+            fi
+          fi
+
+      - name: Lint chart
+        run: |
+          echo "Linting ${{ matrix.chart }}"
+          helm lint "${{ matrix.chart }}" --strict
+
+  template:
+    name: Template Chart
+    needs: discover
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        chart: ${{ fromJson(needs.discover.outputs.charts) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Update dependencies
+        run: |
+          if [ -f "${{ matrix.chart }}/Chart.yaml" ]; then
+            if grep -q "dependencies:" "${{ matrix.chart }}/Chart.yaml"; then
+              echo "Updating dependencies for ${{ matrix.chart }}"
+              helm dependency update "${{ matrix.chart }}"
+            fi
+          fi
+
+      - name: Template chart with default values
+        run: |
+          echo "Templating ${{ matrix.chart }} with default values"
+          helm template test-release "${{ matrix.chart }}" > /dev/null
+
+      - name: Template chart with example values (if exists)
+        run: |
+          if [ -f "${{ matrix.chart }}/values-example.yaml" ]; then
+            echo "Templating ${{ matrix.chart }} with example values"
+            helm template test-release "${{ matrix.chart }}" -f "${{ matrix.chart }}/values-example.yaml" > /dev/null
+          else
+            echo "No example values file found, skipping"
+          fi
+
+  kubeconform:
+    name: Validate Kubernetes Manifests
+    needs: discover
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        chart: ${{ fromJson(needs.discover.outputs.charts) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Install kubeconform
+        run: |
+          curl -L https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz | tar xz
+          sudo mv kubeconform /usr/local/bin/
+
+      - name: Update dependencies
+        run: |
+          if [ -f "${{ matrix.chart }}/Chart.yaml" ]; then
+            if grep -q "dependencies:" "${{ matrix.chart }}/Chart.yaml"; then
+              echo "Updating dependencies for ${{ matrix.chart }}"
+              helm dependency update "${{ matrix.chart }}"
+            fi
+          fi
+
+      - name: Validate manifests with kubeconform
+        run: |
+          echo "Validating ${{ matrix.chart }} manifests against Kubernetes ${{ env.KUBERNETES_VERSION }}"
+          helm template test-release "${{ matrix.chart }}" | \
+            kubeconform \
+              -strict \
+              -ignore-missing-schemas \
+              -kubernetes-version "${{ env.KUBERNETES_VERSION }}" \
+              -summary \
+              -output json
+
+  verify-metadata:
+    name: Verify Chart Metadata
+    needs: discover
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        chart: ${{ fromJson(needs.discover.outputs.charts) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify Chart.yaml
+        run: |
+          chart_yaml="${{ matrix.chart }}/Chart.yaml"
+          echo "Verifying $chart_yaml"
+
+          # Check required fields
+          for field in name version description; do
+            if ! grep -q "^$field:" "$chart_yaml"; then
+              echo "ERROR: Missing required field '$field' in $chart_yaml"
+              exit 1
+            fi
+          done
+
+          # Check version format (semantic versioning)
+          version=$(grep "^version:" "$chart_yaml" | awk '{print $2}')
+          if ! echo "$version" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+'; then
+            echo "ERROR: Version '$version' does not follow semantic versioning"
+            exit 1
+          fi
+
+          echo "Chart metadata validation passed"
+
+      - name: Verify values.yaml exists
+        run: |
+          if [ ! -f "${{ matrix.chart }}/values.yaml" ]; then
+            echo "ERROR: Missing values.yaml in ${{ matrix.chart }}"
+            exit 1
+          fi
+          echo "values.yaml exists"
+
+      - name: Verify values.yaml is valid YAML
+        run: |
+          python3 -c "import yaml; yaml.safe_load(open('${{ matrix.chart }}/values.yaml'))"
+          echo "values.yaml is valid YAML"
+
+  summary:
+    name: Validation Summary
+    needs: [lint, template, kubeconform, verify-metadata]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check validation results
+        run: |
+          if [ "${{ needs.lint.result }}" != "success" ] || \
+             [ "${{ needs.template.result }}" != "success" ] || \
+             [ "${{ needs.kubeconform.result }}" != "success" ] || \
+             [ "${{ needs.verify-metadata.result }}" != "success" ]; then
+            echo "One or more validation steps failed"
+            exit 1
+          fi
+          echo "All validation steps passed successfully"
