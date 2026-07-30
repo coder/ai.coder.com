@@ -7,11 +7,6 @@ on:
     paths:
       - 'charts/**'
       - '.github/workflows/helm-validate.yml'
-  push:
-    branches:
-      - main
-    paths:
-      - 'charts/**'
 
 permissions:
   contents: read
