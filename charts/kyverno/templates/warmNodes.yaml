@@ -1,0 +1,55 @@
+{{- if .Values.warmNodes.enabled }}
+{{- range .Values.warmNodes.daemonSets }}
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ .name }}
+  namespace: {{ $.Values.warmNodes.namespace | default "default" }}
+  {{- with $.Values.warmNodes.labels }}
+  labels:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with $.Values.warmNodes.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- toYaml $.Values.warmNodes.selectorLabels | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- toYaml $.Values.warmNodes.selectorLabels | nindent 8 }}
+    spec:
+      {{- with .nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      {{- with .tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      terminationGracePeriodSeconds: {{ $.Values.warmNodes.terminationGracePeriodSeconds | default 5 }}
+
+      {{- with $.Values.warmNodes.images }}
+      initContainers:
+        {{- range . }}
+        - name: {{ . | replace "/" "-" | replace ":" "-" | replace "." "-" | replace "@" "-" | trunc 63 | trimSuffix "-" }}
+          image: {{ . }}
+          command: []
+        {{- end }}
+      {{- end }}
+
+      containers:
+        - name: pause
+          image: {{ $.Values.warmNodes.pauseImage | default "registry.k8s.io/pause:3.9" }}
+          {{- with $.Values.warmNodes.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+{{- end }}
+{{- end }}

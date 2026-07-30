@@ -47,3 +47,48 @@ mutatingPolicy:
     #         } :
     #         null
     #       ).filter(p, p != null) 
+
+warmNodes:
+  enabled: false
+  namespace: "default"
+
+  annotations: {}
+    # "helm.sh/hook": post-install
+    # "helm.sh/hook-weight": "-5"
+    # "helm.sh/hook-delete-policy": hook-succeeded
+
+  labels:
+    app.kubernetes.io/name: "img-fetch"
+    app.kubernetes.io/part-of: "coder-workspaces"
+
+  selectorLabels:
+    app.kubernetes.io/name: "img-fetch"
+
+  terminationGracePeriodSeconds: 5
+
+  pauseImage: "registry.k8s.io/pause:3.9"
+
+  resources:
+    requests:
+      cpu: "1m"
+      memory: "1Mi"
+    limits:
+      cpu: "10m"
+      memory: "10Mi"
+
+  # List of images to pre-warm on nodes
+  images:
+    - "codercom/enterprise-java:latest"
+    - "codercom/enterprise-golang:latest"
+    - "codercom/enterprise-node:latest"
+    - "codercom/enterprise-base:ubuntu"
+    - "public.ecr.aws/f7a1d7a4/coder-aienv:1.1.4"
+
+  # DaemonSets to create (one per target node pool)
+  daemonSets:
+    - name: "imgs-for-coder-workspace"
+      nodeSelector: {}
+      tolerations: []
+    - name: "imgs-for-coder-workspace-static"
+      nodeSelector: {}
+      tolerations: []
