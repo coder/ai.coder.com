@@ -1,405 +1,246 @@
 # AI Demo Environment (ai.coder.com)
 
-Welcome to the AI Demo Environment's Github repository! 
+Welcome to the AI Demo Environment's GitHub repository! 
 
-This project is used by ["ai.coder.com"](https://ai.coder.com), allowing users to experiment with the latest AI features in Coder and create demoes for them.
+This project powers [ai.coder.com](https://ai.coder.com), allowing users to experiment with the latest AI features in Coder.
 
 ---
 
-## Getting Hand's On
+## Getting Started
 
-> [!IMPORTANT] Before accessing the deployment, make sure you've been invited to our "coder-contrib" Github organization.  If not, reach out to `jullian@coder.com` and send your Github handle to be added in. Otherwise, if you're an internal user, you should already have access to to the environment.
+> [!IMPORTANT] Before accessing the deployment, make sure you've been invited to the "coder-contrib" GitHub organization. If not, reach out to `jullian@coder.com` with your GitHub handle. Coder employees should already have access.
 
-### Accessing the Deployment:  
+### Accessing the Deployment
 
 Get Started Here 👉 [https://ai.coder.com](https://ai.coder.com)
 
-**Login Flow**  
+**Login Flow**
 
-- Non-Coder Employee
-
-1. Select "GitHub"
-
-2. Login with your Github account (that has access to the coder-contrib Github Organization).
-
-- Coder Employee
-
-1. Select "Okta"
-
-2. Login with your Github account (that has access to the coder-contrib Github Organization).
+- **Non-Coder Employee**: Select "GitHub" and login with your GitHub account
+- **Coder Employee**: Select "Okta" and login with your Okta account
 
 
 --- 
 
-## How-To-Deploy
+## Architecture Overview
 
-> [!WARNING] The following environment is heavily opinionated towards: AWS. Make sure to pull the modules and modify according to your use-case. Additionally, the [`infra/aws/us-east-2`](./infra/aws/us-east-2) project is not repeatable. For repeatable references, check out [`infra/aws/us-west-2`](./infra/aws/us-west-2) and [`infra/aws/eu-west-2`](./infra/aws/eu-west-2)
+This deployment uses **Terragrunt** for infrastructure management and **ArgoCD** for Kubernetes application delivery.
 
-In this repository, we deploy the infrastructure separately from the K8s applications which includes Coder.
+### Infrastructure Components
 
-To make things easy, we generate K8s app manifests from any `k8s/` project subfolders which reference the main `eks/` application indirectly which auto-populates any infrastructure dependent resource names.
+**Regions:**
+- **us-east-2** (Primary): Full deployment with Coder server, RDS database, monitoring, and Grafana
+- **eu-west-2** (Proxy): Regional proxy deployment for improved latency
 
-### About the Infrastructure
+**Core Infrastructure:**
+- **VPC**: Custom VPC with public and private subnets across multiple availability zones
+- **EKS**: Amazon EKS clusters with Karpenter for dynamic node provisioning
+- **RDS**: PostgreSQL database (us-east-2 only)
+- **S3**: Terraform state backend
+- **Monitoring**: CloudWatch integration with Grafana (us-east-2 only)
 
-The deployment currently has 2 repeatable components: [`eks-vpc` module](./modules/network/eks-vpc) and [`eks-cluster` module](./modules/compute/cluster).
+### Kubernetes Applications (via ArgoCD)
 
-#### [`eks-vpc`](./modules/network/eks-vpc)
+Applications are deployed using ArgoCD and managed through Terraform-generated ArgoCD Application manifests in `infra/aws/{region}/k8s/argo/`:
 
-The following module creates an opinionated VPC that let's you granularly define individual subnets. This includes unevenly defining public and private subnets.
+**Bootstrap Components:**
+- AWS Load Balancer Controller
+- AWS EBS CSI Driver
+- Cert Manager
+- External Secrets Operator
+- Karpenter
+- Metrics Server
+- AWS for Fluent Bit (logging)
 
-This will come with an Internet Gateway and a Custom NAT Gateway (using [RaJiska/terraform-aws-fck-nat](github.com/RaJiska/terraform-aws-fck-nat)).
+**Coder Components:**
+- Coder Server (us-east-2)
+- Coder Proxy (eu-west-2)
+- Coder Provisioner/Workspace
 
-The public subnets will have automatic routes to the IGW and private subnets with routes to the NAT.
+**Additional Services:**
+- Vantage (cost monitoring)
+- Monitoring stack (us-east-2)
+- Kyverno (policy engine, us-east-2)
+- CloudFront controllers (us-east-2)
 
-#### [`eks-cluster`](./modules/compute/cluster).
+### Deployment Structure
 
-The following module creates an opinionated cluster, similar to [EKS Auto Mode](https://docs.aws.amazon.com/eks/latest/userguide/automode.html), that creates both the EKS Cluster (using the [AWS Managed Terraform EKS module](https://github.com/terraform-aws-modules/terraform-aws-eks/tree/master)), and resources needed by:
+```
+infra/
+├── root.hcl                    # Root Terragrunt configuration
+├── coder/                      # Coder-specific Terraform config
+├── aws/
+│   ├── us-east-2/              # Primary region
+│   │   ├── config.hcl          # Region-specific config
+│   │   ├── vpc/                # VPC infrastructure
+│   │   ├── eks/                # EKS cluster
+│   │   ├── rds/                # PostgreSQL database
+│   │   ├── s3/                 # S3 buckets
+│   │   ├── monitoring/         # CloudWatch resources
+│   │   ├── grafana/            # Grafana resources
+│   │   └── k8s/
+│   │       ├── argo/           # ArgoCD Application manifests
+│   │       └── other/          # Additional K8s resources
+│   └── eu-west-2/              # Proxy region
+│       ├── config.hcl
+│       ├── vpc/
+│       ├── eks/
+│       └── k8s/argo/
+└── modules/                     # Reusable Terraform modules
+    ├── coder/                   # Coder module
+    ├── coderd/                  # Coder daemon module
+    ├── network/                 # Network modules
+    └── security/                # Security modules
 
-- [Karpenter](https://karpenter.sh/)
-- [Amazon Bedrock](https://docs.aws.amazon.com/bedrock/latest/userguide/what-is-bedrock.html)
-- [AWS EBS Controller](https://github.com/kubernetes-sigs/aws-ebs-csi-driver)
-- [AWS Load Balancer Controller](https://github.com/kubernetes-sigs/aws-load-balancer-controller)
-- [Coder External Provisioner](https://coder.com/docs/admin/provisioners)
-
-##### Karpenter
-
-We use the the [AWS Managed Terraform EKS Module for Karpenter in the background](https://github.com/terraform-aws-modules/terraform-aws-eks/tree/master/modules/karpenter).
-
-This automatically creates:
-- SQS Queue
-- IAM Roles
-- Event Bridge
-
-##### Amazon Bedrock
-
-Auto-Creates
-- IAM Role
-
-##### AWS EBS Controller
-
-Auto-Creates
-- IAM Role
-
-##### AWS Load Balancer Controller
-
-Auto-Creates
-- IAM Role
-
-
-##### Coder External Provisioner
-
-Auto-Creates
-- IAM Role
-
-
-### Creating the Infrastructure (on AWS)
-
-To deploy the base infrastructure, you can get started with referencing our [modules directory](./modules). 
-
-If you don't have an existing network infrastructure, then you can start with deploying the [`eks-vpc` module](./modules/network/eks-vpc).
-
-Additionally, if you don't have an existing cluster infrastructure, then you can start with deploying the [`eks-cluster` module](./modules/compute/cluster).
-
-Lastly, for Coder's backend database, you can refer to our deployment in [`./aidev/infra/aws/us-east-2/rds`](./aidev/infra/aws/us-east-2/rds) to see how to deploy it. 
-
-We just an [`aws_db_instance`](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/db_instance) that uses Postgres.
-
-Refer to the example below to see how this would look like put together:
-
-```terraform
-
-terraform {
-    required_version = ">= 1.0"
-    required_providers {
-        aws = {
-            source  = "hashicorp/aws"
-            version = ">= 5.100.0"
-        }
-    }  
-}
-
-variable "name" {
-    description = "The resource name."
-    type        = string
-}
-
-variable "region" {
-    description = "The aws region to deploy eks cluster"
-    type        = string
-}
-
-variable "cluster_version" {
-    description = "The EKS Version"
-    type        = string
-}
-
-variable "cluster_instance_type" {
-    description = "EKS Instance Size/Type."
-    default     = "t3.xlarge"
-    type        = string
-}
-
-variable "coder_ws_volume_size" {
-    description = "Coder Workspace K8s Node Volume Size."
-    default     = 50
-    type        = number
-}
-
-variable "coder_ws_instance_type" {
-    description = "Coder Workspace K8s Node Instance Size/Type."
-    default     = "t3.xlarge"
-    type        = string
-}
-
-variable "network_cidr_block" {
-    description = "VPC CIDR Block"
-    type = string
-    default = "10.0.0.0/16"
-}
-
-variable "db_instance_class" {
-    description = "RDS DB Instance Class"
-    type = string
-    default = "db.m5.large"
-}
-
-variable "db_allocated_storage" {
-    description = "RDS DB Allocated Storage Amount"
-    type = string
-    default = "40"
-}
-
-variable "db_master_username" {
-    description = "RDS DB Master Username"
-    type = string
-    sensitive = true
-}
-
-variable "db_master_password" {
-    description = "RDS DB Master Password"
-    type = string
-    sensitive = true
-}
-
-module "eks-network" {
-    source = "../../../../modules/network/eks-vpc"
-
-    name = var.name
-    vpc_cidr_block = var.network_cidr_block
-    public_subnets = {
-        # System subnets requiring public access (e.g. NAT Gateways, Load Balancers, IGW, etc.)
-        "system0" = {
-            cidr_block = "10.0.10.0/24"
-            availability_zone = "${data.aws_region.this.name}a"
-            map_public_ip_on_launch = true
-            private_dns_hostname_type_on_launch = "ip-name"
-        }
-        "system1" = {
-            cidr_block = "10.0.11.0/24"
-            availability_zone = "${data.aws_region.this.name}b"
-            map_public_ip_on_launch = true
-            private_dns_hostname_type_on_launch = "ip-name"
-        }
-    }
-    private_subnets = {
-        # System subnets that don't need to be exposed publically (e.g. K8s Worker Nodes, Database, etc.)
-        "system0" = {
-            cidr_block = "10.0.20.0/24"
-            availability_zone = "${data.aws_region.this.name}a"
-            private_dns_hostname_type_on_launch = "ip-name"
-            tags = local.system_subnet_tags
-        }
-        "system1" = {
-            cidr_block = "10.0.21.0/24"
-            availability_zone = "${data.aws_region.this.name}b"
-            private_dns_hostname_type_on_launch = "ip-name"
-            tags = local.system_subnet_tags
-        }
-        "provisioner" = {
-            cidr_block = "10.0.22.0/24"
-            availability_zone = "${data.aws_region.this.name}a"
-            map_public_ip_on_launch = true
-            private_dns_hostname_type_on_launch = "ip-name"
-            tags = local.provisioner_subnet_tags
-        }
-        "ws-all" = {
-            cidr_block = "10.0.16.0/22"
-            availability_zone = "${data.aws_region.this.name}b"
-            map_public_ip_on_launch = true
-            private_dns_hostname_type_on_launch = "ip-name"
-            tags = local.ws_all_subnet_tags
-        }
-    }
-}
-
-data "aws_iam_policy_document" "sts" {
-    statement {
-        effect = "Allow"
-        actions = ["sts:*"]
-        resources = ["*"]
-    }
-}
-
-resource "aws_iam_policy" "sts" {
-    name_prefix = "sts"
-    path = "/"
-    description = "Assume Role Policy"
-    policy = data.aws_iam_policy_document.sts.json
-}
-
-module "eks-cluster" {
-    source = "../../../../modules/compute/cluster"
-
-    vpc_id     = module.eks-network.vpc_id
-    cluster_public_subnet_ids = module.eks-network.public_subnet_ids
-    cluster_private_subnet_ids = module.eks-network.private_subnet_ids
-    cluster_intra_subnet_ids = module.eks-network.intra_subnet_ids
-    cluster_instance_type = var.cluster_instance_type
-
-    cluster_name                    = var.name
-    cluster_version                 = var.cluster_version
-    cluster_asg_additional_policies = {
-        AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-        STSAssumeRole = aws_iam_policy.sts.arn
-    }
-    cluster_node_security_group_tags = merge(
-        local.system_sg_tags,
-        merge(local.provisioner_sg_tags, local.ws_all_sg_tags)
-    )
-    cluster_asg_node_labels = local.cluster_asg_node_labels
-    cluster_addons = {
-        coredns = {
-            most_recent = true
-        }
-        kube-proxy = {
-            most_recent = true
-        }
-        vpc-cni = {
-            most_recent = true
-        }
-    }
-
-    karpenter_controller_policy_statements = [{
-      effect = "Allow",
-      actions = toset(["iam:PassRole"]),
-      resources = toset(["*"]),
-    }]
-
-    karpenter_node_role_policies = {
-        AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-        STSAssumeRole = aws_iam_policy.sts.arn
-    }
-
-    coder_ws_instance_type = var.coder_ws_instance_type
-    coder_ws_volume_size = var.coder_ws_volume_size
-}
-
-###
-# Only deploy the database if you're creating the central Coder infrastructure. 
-# Otherwise, if you're deploying separate clusters for Coder proxies + provisioners in a different network, then there's no need for another database.
-###
-
-resource "aws_db_subnet_group" "db_subnet_group" {
-  name       = "${var.name}-db-subnet-group"
-  subnet_ids = module.eks-network.private_subnet_ids
-
-  tags = {
-    Name = "${var.name}-db-subnet-group"
-  }
-}
-
-resource "aws_db_instance" "db" {
-  identifier        = "${var.name}-db"
-  instance_class    = var.instance_class
-  allocated_storage = var.allocated_storage
-  engine            = "postgres"
-  engine_version    = "15.12"
-  username               = var.master_username
-  password               = var.master_password
-  db_name                = "coder"
-  db_subnet_group_name   = aws_db_subnet_group.db_subnet_group.name
-  vpc_security_group_ids = [ aws_security_group.postgres.id ]
-  publicly_accessible = false
-  skip_final_snapshot = false
-
-  tags = {
-    Name = "${var.name}-rds-db"
-  }
-  lifecycle {
-    ignore_changes = [
-      snapshot_identifier
-    ]
-  }
-}
-
-resource "aws_vpc_security_group_ingress_rule" "postgres" {
-  security_group_id = aws_security_group.postgres.id
-  cidr_ipv4 = var.network_cidr_block
-  ip_protocol = "tcp"
-  from_port = 5432
-  to_port = 5432
-}
-
-resource "aws_vpc_security_group_egress_rule" "all" {
-  security_group_id = aws_security_group.postgres.id
-  cidr_ipv4 = "0.0.0.0/0"
-  ip_protocol = -1
-}
-
-resource "aws_security_group" "postgres" {
-  vpc_id      = module.eks-network.vpc_id
-  name        = "${var.name}-postgres"
-  description = "Security Group for Postgres traffic"
-  tags = {
-    Name = "${var.name}-postgres"
-  }
-}
+charts/                          # Helm charts for applications
+├── coder/
+├── coder-provisioner/
+├── cert-manager/
+├── karpenter/
+├── vantage/
+└── ...
 ```
 
-The deployment may take a while (~20 minutes or more). In the meantime, you can then get started with creating other dependencies.
+---
 
-### Deploying Required Apps
+## Deployment Guide
 
-Once the K8s (and maybe the Database) infrastructure is deployed, the next step is to deploy the K8s apps. 
+### Prerequisites
 
-Before getting to Coder, we should first deploy:
+- AWS Account with appropriate permissions
+- Terraform >= 1.15.8
+- Terragrunt >= 0.99.1
+- kubectl configured for EKS access
+- AWS CLI configured
 
-- [`AWS Load Balancer Controller`](https://github.com/kubernetes-sigs/aws-load-balancer-controller)
-- [`AWS EBS Controller`](https://github.com/kubernetes-sigs/aws-ebs-csi-driver)
-- [`K8s Metrics Server`](github.com/kubernetes-sigs/metrics-server)
-- [`Karpenter`](https://karpenter.sh/docs/getting-started/getting-started-with-karpenter/#4-install-karpenter)
-- [`Cert-Manager`](https://cert-manager.io/docs/installation/helm/)
+### Deployment Order
 
-Afterwards, you can then deploy
+1. **VPC Infrastructure**
+   ```bash
+   cd infra/aws/us-east-2/vpc
+   terragrunt apply
+   ```
 
-- [`Coder Server`](https://artifacthub.io/packages/helm/coder-v2/coder)
-- [`Coder Proxy` (uses same chart as the Coder Server)](https://artifacthub.io/packages/helm/coder-v2/coder)
-- [`Coder Workspace`](https://artifacthub.io/packages/helm/coder-v2/coder-provisioner)
+2. **EKS Cluster**
+   ```bash
+   cd infra/aws/us-east-2/eks
+   terragrunt apply
+   ```
 
-You can deploy the above manually yourself following your own preferred methods. 
+3. **RDS Database** (us-east-2 only)
+   ```bash
+   cd infra/aws/us-east-2/rds
+   terragrunt apply
+   ```
 
-Otherwise, you can leverage our K8s app TF modules to automatically generate the manifests:
+4. **ArgoCD Applications**
+   
+   After the EKS cluster is ready, install ArgoCD first, then deploy the application manifests:
+   
+   ```bash
+   # Install ArgoCD
+   kubectl create namespace argocd
+   kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+   
+   # Deploy applications via Terragrunt
+   cd infra/aws/us-east-2/k8s/argo
+   terragrunt run-all apply
+   ```
 
-#### [`lb-controller`](./modules/k8s/bootstrap/lb-controller)
+5. **Coder Configuration**
+   ```bash
+   cd infra/coder
+   terragrunt apply
+   ```
 
-#### [`ebs-controller`](./modules/k8s/bootstrap/ebs-controller)
+### Environment Variables
 
-#### [`metrics-server`](./modules/k8s/bootstrap/metrics-server)
+Configuration is managed through environment variables. See `infra/coder.env` for an example configuration:
 
-#### [`karpenter`](./modules/k8s/bootstrap/karpenter)
+- `CODER_AWS_REGION`: AWS region
+- `CODER_CLUSTER_NAME`: EKS cluster name
+- `CODER_CLUSTER_VERSION`: Kubernetes version
+- `CODER_VPC_CIDR`: VPC CIDR block
+- Database credentials and other secrets
 
-#### [`cert-manager`](./modules/k8s/bootstrap/cert-manager)
+### Helm Charts
 
-#### [`coder-server`](./modules/k8s/bootstrap/coder-server)
+Custom Helm charts are located in the `charts/` directory:
 
-#### [`coder-proxy`](./modules/k8s/bootstrap/coder-proxy)
+- `charts/coder/`: Coder server deployment
+- `charts/coder-provisioner/`: Coder workspace provisioner
+- `charts/karpenter/`: Karpenter autoscaler configuration
+- `charts/cert-manager/`: Certificate management
+- `charts/vantage/`: Cost monitoring
 
-#### [`coder-provisioner`](./modules/k8s/bootstrap/coder-provisioner)
+Charts are deployed by ArgoCD using the Terraform-generated Application manifests.
 
-## How-It-Works
+---
 
-> <!TODO>
+## Development
 
-### Coder Tasks
+### Terraform Modules
 
-> <!TODO>
+Reusable Terraform modules are located in `modules/`:
+
+- **`modules/coder/`**: Coder-specific resources and configurations
+- **`modules/coderd/`**: Coder daemon configurations
+- **`modules/network/`**: VPC and networking components
+- **`modules/security/`**: Security groups and IAM policies
+
+### CI/CD
+
+GitHub Actions workflows handle automated deployments:
+
+- **`tf-validate.yml`**: Validates Terraform/Terragrunt syntax and formatting
+- **`tf-deploy.yml`**: Applies infrastructure changes on merge to main
+
+### Making Changes
+
+1. Create a feature branch
+2. Make your changes to infrastructure or charts
+3. Run `terraform fmt` and `terragrunt hclfmt` to format code
+4. Test changes in a non-production environment if possible
+5. Submit a PR for review
+6. After merge, changes are automatically applied via GitHub Actions
+
+---
+
+## Troubleshooting
+
+### Common Issues
+
+**ArgoCD Applications Not Syncing:**
+- Verify the Application manifest was created: `kubectl get applications -n argocd`
+- Check repository connectivity and credentials
+
+**EKS Access Issues:**
+- Verify IAM permissions for cluster access
+
+**Karpenter Not Scaling:**
+- Check Karpenter logs: `kubectl logs -n karpenter -l app.kubernetes.io/name=karpenter`
+- Verify NodePool and EC2NodeClass configurations
+- Check IAM roles and instance profiles
+
+### Useful Commands
+
+```bash
+# Watch Karpenter logs
+kubectl logs -n karpenter -l app.kubernetes.io/name=karpenter -f
+
+# List all Terragrunt modules
+cd infra && terragrunt run-all init --terragrunt-ignore-external-dependencies
+```
+
+---
+
+## Contributing
+
+We welcome contributions! Please:
+
+1. Follow the existing code style and conventions
+2. Test your changes thoroughly
+3. Update documentation as needed
+4. Submit PRs with clear descriptions
+
+For questions or issues, reach out to `jullian@coder.com` or open a GitHub issue.
