@@ -126,6 +126,41 @@ module "coder-provisioner" {
   provisioner_tags = {}
 }
 
+locals {
+  key_secret_key = "CODER_PROVISIONER_DAEMON_KEY"
+}
+
+resource "aws_secretsmanager_secret" "coder" {
+
+  for_each = local.coder-ws
+
+  region = var.region
+  name   = "${each.key}.provisioner"
+}
+
+resource "time_static" "secret_update" {
+
+  for_each = local.coder-ws
+
+  triggers = {
+    checksum = sha256(sensitive(jsonencode({
+      (local.key_secret_key) = module.coder-provisioner[each.key].provisioner_key_secret
+    })))
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "coder" {
+
+  for_each = local.coder-ws
+
+  region                   = var.region
+  secret_id                = aws_secretsmanager_secret.coder[each.key].id
+  secret_string_wo         = sensitive(jsonencode({
+    (local.key_secret_key) = module.coder-provisioner[each.key].provisioner_key_secret
+  }))
+  secret_string_wo_version = time_static.secret_update[each.key].unix
+}
+
 # Avoide ApplicationSets as a K8s Manifest: 
 # - https://github.com/hashicorp/terraform-provider-kubernetes/pull/2800
 # - https://github.com/hashicorp/terraform-provider-kubernetes/issues/2757
@@ -272,9 +307,24 @@ resource "kubernetes_manifest" "coder-provisioner" {
               topologySpreadConstraints = local.topology_spread
             }
             provisionerDaemon = {
-              keySecretKey                  = "key"
-              keySecretName                 = kubernetes_secret_v1.coder-provisioner-key[each.key].metadata[0].name
+              keySecretKey                  = local.key_secret_key
+              keySecretName                 = "${each.key}.secrets"
               terminationGracePeriodSeconds = 600
+              secretStore = {
+                aws = {
+                  region = var.region
+                }
+              }
+              secrets = {
+                annotations = {
+                  "checksum/config" = sha256(join(",", [
+                    jsonencode(sensitive(module.coder-provisioner[each.key].provisioner_key_secret)),
+                  ]))
+                }
+                refreshInterval = "1h0m0s"
+                refreshPolicy   = "Periodic"
+                secretArn       = aws_secretsmanager_secret.coder[each.key].arn
+              }
             }
             extraTemplates = []
           })

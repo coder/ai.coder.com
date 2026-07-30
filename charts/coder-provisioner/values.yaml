@@ -247,6 +247,20 @@ provisionerDaemon:
   # redeployments do not interrupt builds in progress.
   terminationGracePeriodSeconds: 600
 
+  secrets:
+    labels: {}
+    annotations: {}
+    refreshInterval: 1h0m0s
+    refreshPolicy: Periodic
+    secretArn: arn:aws:secretsmanager:us-east-1:123456789012:secret:coder-abc123
+
+  secretStore:
+    labels: {}
+    annotations: {}
+    aws:
+      region: us-east-1
+
+
 # extraTemplates -- Array of extra objects to deploy with the release. Strings
 # are evaluated as a template and can use template expansions and functions. All
 # other objects are used as yaml.
