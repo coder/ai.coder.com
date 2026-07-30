@@ -1,0 +1,49 @@
+kyverno:
+  enabled: false
+
+mutatingPolicy:
+  enabled: false
+  name: "mutate-ws-image"
+  # namespace: "" # Optional: leave empty for cluster-scoped
+  matchPolicy: "Equivalent"
+
+  annotations: {}
+    # "helm.sh/hook": post-install
+    # "helm.sh/hook-weight": "-5"
+    # "helm.sh/hook-delete-policy": hook-succeeded
+
+  namespaceSelector:
+    matchExpressions:
+      - key: "kubernetes.io/metadata.name"
+        operator: "In"
+        values: []
+
+  objectSelector:
+    matchExpressions:
+      - key: "app.kubernetes.io/name"
+        operator: "NotIn"
+        values: []
+      - key: "app.kubernetes.io/managed-by"
+        operator: "NotIn"
+        values: []
+
+  resourceRules:
+    - apiGroups: [""]
+      apiVersions: ["v1"]
+      operations: ["CREATE", "UPDATE"]
+      resources: ["pods"]
+
+  mutations: []
+    # Example mutation for image registry rewriting:
+    # - patchType: "JSONPatch"
+    #   jsonPatch:
+    #     expression: |
+    #       object.spec.?containers.orValue([]).map(c,
+    #         image(c.image).registry() == "ghcr.io" ?
+    #         JSONPatch{
+    #           op: "replace",
+    #           path: "/spec/containers/" + string(object.spec.?containers.orValue([]).indexOf(c)) + "/image",
+    #           value: "123456789.dkr.ecr.us-east-2.amazonaws.com/ghcr/" + string(image(c.image).repository()) + ":" + string(image(c.image).tag())
+    #         } :
+    #         null
+    #       ).filter(p, p != null) 
