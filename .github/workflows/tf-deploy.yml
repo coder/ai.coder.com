@@ -22,8 +22,110 @@ env:
   TERRAGRUNT_VERSION: "0.99.1"
 
 jobs:
+  discover-changes:
+    name: Discover Changed Directories
+    runs-on: ubuntu-latest
+    outputs:
+      changed_dirs: ${{ steps.find-changes.outputs.changed_dirs }}
+      filter_args: ${{ steps.build-filters.outputs.filter_args }}
+      has_changes: ${{ steps.find-changes.outputs.has_changes }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find changed directories
+        id: find-changes
+        shell: bash
+        run: |
+          # For push events, compare with previous commit
+          if [ "${{ github.event_name }}" = "push" ]; then
+            BASE_REF="${{ github.event.before }}"
+            HEAD_REF="${{ github.sha }}"
+          else
+            # For workflow_dispatch, we'll scan all directories
+            echo "Workflow dispatch - will process all directories"
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "changed_dirs=[]" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Find all changed files in infra/
+          changed_files=$(git diff --name-only "$BASE_REF" "$HEAD_REF" -- infra/ || echo "")
+
+          if [ -z "$changed_files" ]; then
+            echo "No changes detected in infra/"
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "changed_dirs=[]" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "Changed files:"
+          echo "$changed_files"
+          echo ""
+
+          # Find directories containing terragrunt.hcl files
+          terragrunt_dirs=$(find infra -type f -name "terragrunt.hcl" -not -path "*/.terraform/*" | sed 's|/terragrunt.hcl||' | sort -u)
+
+          # Identify which Terragrunt directories were affected
+          changed_dirs=""
+          while IFS= read -r file; do
+            file_dir=$(dirname "$file")
+            # Find the closest parent directory that contains a terragrunt.hcl
+            while [ "$file_dir" != "." ] && [ "$file_dir" != "infra" ]; do
+              if echo "$terragrunt_dirs" | grep -q "^$file_dir$"; then
+                changed_dirs="${changed_dirs}${file_dir}"$'\n'
+                break
+              fi
+              file_dir=$(dirname "$file_dir")
+            done
+          done <<< "$changed_files"
+
+          # Remove duplicates and sort
+          changed_dirs=$(echo "$changed_dirs" | sort -u | grep -v '^$' || echo "")
+
+          if [ -z "$changed_dirs" ]; then
+            # Changes were in infra but not in any terragrunt module directory
+            echo "Changes detected but not in terragrunt module directories"
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "changed_dirs=[]" >> $GITHUB_OUTPUT
+          else
+            echo "Changed Terragrunt directories:"
+            echo "$changed_dirs"
+
+            # Convert to JSON array
+            changed_dirs_json=$(echo "$changed_dirs" | jq -R -s -c 'split("\n") | map(select(length > 0))')
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "changed_dirs=$changed_dirs_json" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build filter arguments
+        id: build-filters
+        shell: bash
+        run: |
+          changed_dirs='${{ steps.find-changes.outputs.changed_dirs }}'
+
+          if [ "$changed_dirs" = "[]" ] || [ -z "$changed_dirs" ]; then
+            echo "filter_args=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Build --filter arguments for each changed directory
+          filter_args=""
+          for dir in $(echo "$changed_dirs" | jq -r '.[]'); do
+            filter_args="${filter_args} --filter=${dir}"
+          done
+
+          # Trim leading space
+          filter_args=$(echo "$filter_args" | sed 's/^ //')
+
+          echo "Filter arguments: $filter_args"
+          echo "filter_args=$filter_args" >> $GITHUB_OUTPUT
+
   apply:
     name: Apply Infrastructure
+    needs: discover-changes
     runs-on: ubuntu-latest
     environment:
       name: production
@@ -109,7 +211,26 @@ jobs:
         working-directory: infra
         run: |
           echo "::group::Initializing all modules"
-          terragrunt run --all --queue-exclude-dir="./" --provider-cache ${TERRAGRUNT_ARGS:+$TERRAGRUNT_ARGS} -- init -input=false -reconfigure -upgrade ${TERRAFORM_INIT_ARGS:+$TERRAFORM_INIT_ARGS}
+          FILTER_ARGS="${{ needs.discover-changes.outputs.filter_args }}"
+
+          # Build the full command with filters
+          CMD="terragrunt run --all --queue-exclude-dir='./' --provider-cache"
+          if [ -n "$FILTER_ARGS" ]; then
+            CMD="$CMD $FILTER_ARGS"
+            echo "Applying filters: $FILTER_ARGS"
+          else
+            echo "No filters - processing all modules"
+          fi
+          if [ -n "${TERRAGRUNT_ARGS}" ]; then
+            CMD="$CMD ${TERRAGRUNT_ARGS}"
+          fi
+          CMD="$CMD -- init -input=false -reconfigure -upgrade"
+          if [ -n "${TERRAFORM_INIT_ARGS}" ]; then
+            CMD="$CMD ${TERRAFORM_INIT_ARGS}"
+          fi
+
+          echo "Running: $CMD"
+          eval "$CMD"
           echo "✓ Initialization successful"
           echo "::endgroup::"
 
@@ -118,7 +239,26 @@ jobs:
         working-directory: infra
         run: |
           echo "::group::Running Terragrunt run-all apply"
-          terragrunt run --all --queue-exclude-dir="./" --provider-cache ${TERRAGRUNT_ARGS:+$TERRAGRUNT_ARGS} -- apply -input=false -auto-approve ${TERRAFORM_APPLY_ARGS:+$TERRAFORM_APPLY_ARGS} 2>&1 | tee apply.log
+          FILTER_ARGS="${{ needs.discover-changes.outputs.filter_args }}"
+
+          # Build the full command with filters
+          CMD="terragrunt run --all --queue-exclude-dir='./' --provider-cache"
+          if [ -n "$FILTER_ARGS" ]; then
+            CMD="$CMD $FILTER_ARGS"
+            echo "Applying filters: $FILTER_ARGS"
+          else
+            echo "No filters - processing all modules"
+          fi
+          if [ -n "${TERRAGRUNT_ARGS}" ]; then
+            CMD="$CMD ${TERRAGRUNT_ARGS}"
+          fi
+          CMD="$CMD -- apply -input=false -auto-approve"
+          if [ -n "${TERRAFORM_APPLY_ARGS}" ]; then
+            CMD="$CMD ${TERRAFORM_APPLY_ARGS}"
+          fi
+
+          echo "Running: $CMD"
+          eval "$CMD" 2>&1 | tee apply.log
           EXIT_CODE=${PIPESTATUS[0]}
           echo "::endgroup::"
 
@@ -139,7 +279,7 @@ jobs:
 
   summary:
     name: Deployment Summary
-    needs: apply
+    needs: [discover-changes, apply]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -149,7 +289,25 @@ jobs:
           echo "## Terraform Deployment Summary"
           echo ""
 
+          changed_dirs='${{ needs.discover-changes.outputs.changed_dirs }}'
+          has_changes="${{ needs.discover-changes.outputs.has_changes }}"
           apply_result="${{ needs.apply.result }}"
+
+          # Display changed directories
+          if [ "$has_changes" = "true" ] && [ "$changed_dirs" != "[]" ] && [ -n "$changed_dirs" ]; then
+            echo "Deployed Terragrunt directories:"
+            echo "$changed_dirs" | jq -r '.[]' | sed 's/^/  - /'
+            echo ""
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Manual deployment - all modules processed"
+            echo ""
+          elif [ "$has_changes" = "true" ]; then
+            echo "Changes detected in infra/ but not in terragrunt module directories"
+            echo ""
+          else
+            echo "No changes detected in infra/"
+            echo ""
+          fi
 
           echo "Deployment result: $apply_result"
           echo ""

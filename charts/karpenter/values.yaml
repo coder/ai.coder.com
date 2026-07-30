@@ -1,3 +1,6 @@
+karpenter:
+  enabled: false
+
 extra:
   sa:
     controller:

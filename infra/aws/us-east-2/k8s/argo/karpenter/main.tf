@@ -130,6 +130,7 @@ resource "kubernetes_manifest" "karpenter" {
               }
             }
             karpenter = {
+              enabled = true
               controller = {
                 resources = {
                   limits   = null

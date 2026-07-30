@@ -96,6 +96,7 @@ resource "kubernetes_manifest" "vantage" {
               }
             }
             vantage = {
+              enabled = true
               agent = {
                 secret = {
                   name = "vantage-kubernetes-agent.secrets"
