@@ -1,3 +1,6 @@
+vantage:
+  enabled: false
+
 extra:
   
   secrets:

@@ -7,6 +7,7 @@ appVersion: 0.1.0
 
 dependencies:
   - name: vantage-kubernetes-agent
+    condition: vantage.enabled
     version: 1.9.1
     repository: "https://vantage-sh.github.io/helm-charts"
     alias: vantage
