@@ -76,6 +76,9 @@ resource "kubernetes_manifest" "metrics-server" {
         namespace = "kube-system"
       }
       syncPolicy = {
+        automated = {
+          prune = true
+        }
         syncOptions = [
           "CreateNamespace=false",
           "Delete=confirm"
