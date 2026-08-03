@@ -1,0 +1,134 @@
+suite: test NodeClass generation for Auto Mode
+templates:
+  - nodeClasses.yaml
+tests:
+  - it: should create a NodeClass for Auto Mode (platform)
+    set:
+      nodeClasses:
+        - apiVersion: eks.amazonaws.com/v1
+          kind: NodeClass
+          name: platform
+          roleArn: arn:aws:iam::123456789012:role/auto-mode-node-role
+          subnetSelectorTerms:
+            - id: subnet-11111111
+            - id: subnet-22222222
+          securityGroupSelectorTerms:
+            - id: sg-abcdef123456
+          networkPolicy: DefaultAllow
+          networkPolicyEventLogs: Disabled
+          snatPolicy: Disabled
+          ephemeralStorage:
+            iops: 3000
+            size: 80Gi
+            throughput: 125
+          tags:
+            Name: platform-node
+            Environment: test
+    asserts:
+      - isKind:
+          of: NodeClass
+      - equal:
+          path: apiVersion
+          value: eks.amazonaws.com/v1
+      - equal:
+          path: metadata.name
+          value: platform
+      - equal:
+          path: spec.role
+          value: arn:aws:iam::123456789012:role/auto-mode-node-role
+      - equal:
+          path: spec.subnetSelectorTerms[0].id
+          value: subnet-11111111
+      - equal:
+          path: spec.securityGroupSelectorTerms[0].id
+          value: sg-abcdef123456
+      - equal:
+          path: spec.networkPolicy
+          value: DefaultAllow
+      - equal:
+          path: spec.networkPolicyEventLogs
+          value: Disabled
+      - equal:
+          path: spec.snatPolicy
+          value: Disabled
+      - equal:
+          path: spec.ephemeralStorage.iops
+          value: 3000
+      - equal:
+          path: spec.ephemeralStorage.size
+          value: 80Gi
+      - equal:
+          path: spec.ephemeralStorage.throughput
+          value: 125
+      - equal:
+          path: spec.tags.Name
+          value: platform-node
+
+  - it: should create a NodeClass for coder-provisioner with Auto Mode
+    set:
+      nodeClasses:
+        - apiVersion: eks.amazonaws.com/v1
+          kind: NodeClass
+          name: coder-provisioner
+          roleArn: arn:aws:iam::123456789012:role/auto-mode-node-role
+          subnetSelectorTerms:
+            - id: subnet-11111111
+            - id: subnet-22222222
+          securityGroupSelectorTerms:
+            - id: sg-abcdef123456
+          networkPolicy: DefaultAllow
+          networkPolicyEventLogs: Disabled
+          snatPolicy: Disabled
+          ephemeralStorage:
+            iops: 3000
+            size: 80Gi
+            throughput: 125
+          tags:
+            Name: coder-provisioner-node
+    asserts:
+      - isKind:
+          of: NodeClass
+      - equal:
+          path: apiVersion
+          value: eks.amazonaws.com/v1
+      - equal:
+          path: metadata.name
+          value: coder-provisioner
+      - equal:
+          path: spec.tags.Name
+          value: coder-provisioner-node
+
+  - it: should include helm hook annotations
+    set:
+      nodeClasses:
+        - apiVersion: eks.amazonaws.com/v1
+          kind: NodeClass
+          name: platform
+          roleArn: arn:aws:iam::123456789012:role/auto-mode-node-role
+          annotations:
+            custom.annotation: test-value
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: post-install,post-upgrade
+      - equal:
+          path: metadata.annotations["custom.annotation"]
+          value: test-value
+
+  - it: should include custom labels
+    set:
+      nodeClasses:
+        - apiVersion: eks.amazonaws.com/v1
+          kind: NodeClass
+          name: platform
+          roleArn: arn:aws:iam::123456789012:role/auto-mode-node-role
+          labels:
+            environment: production
+            team: platform
+    asserts:
+      - equal:
+          path: metadata.labels.environment
+          value: production
+      - equal:
+          path: metadata.labels.team
+          value: platform
