@@ -159,8 +159,8 @@ resource "kubernetes_manifest" "ebs-controller" {
                 }
               },
               {
-                name                 = "gp3"
-                namespace            = "gp3-automode"
+                name                 = "gp3-automode"
+                namespace            = "default"
                 annotations          = {}
                 provisioner          = "ebs.csi.eks.amazonaws.com"
                 volumeBindingMode    = "WaitForFirstConsumer"
