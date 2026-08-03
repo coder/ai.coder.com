@@ -1,0 +1,43 @@
+{{- range .Values.nodePools }}
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: {{ .name }}
+  {{- with .annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+    "helm.sh/hook": post-install,post-upgrade
+  {{- end }}
+  {{- with .labels }}
+  labels:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  disruption:
+    consolidationPolicy: {{ .consolidationPolicy | default "WhenEmptyOrUnderutilized" | quote }}
+    consolidateAfter: {{ .consolidateAfter | default "0s" | quote }}
+    {{- with .budgets }}
+    budgets:
+      {{- toYaml . | nindent 4 }}
+    {{- end }}
+  replicas: {{ .replicas }}
+  limits: {{ .limits }}
+  template:
+    metadata:
+      {{- with .labels }}
+      labels:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      expireAfter: {{ .expireAfter | default "480h" | quote }}
+      {{- with .taints }}
+      taints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .requirements }}
+      requirements:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      nodeClassRef {{ .nodeClassRef | default "eks.amazonaws.com" | quote }}
+{{- end }}

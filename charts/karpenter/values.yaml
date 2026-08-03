@@ -9,3 +9,6 @@ extra:
     node:
       labels: {}
       annotations: {}
+
+nodeClasses: []
+nodePools: []

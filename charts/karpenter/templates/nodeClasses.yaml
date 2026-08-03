@@ -1,0 +1,61 @@
+{{- range .Values.nodeClasses }}
+---
+apiVersion: {{ .apiVersion }}
+kind: {{ .kind }}
+metadata:
+  name: {{ .name }}
+  {{- with .annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+    "helm.sh/hook": post-install,post-upgrade
+  {{- end }}
+  {{- with .labels }}
+  labels:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  role: {{ .roleArn }}
+  {{- with .tags }}
+  tags:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .subnetSelectorTerms }}
+  subnetSelectorTerms:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .securityGroupSelectorTerms }}
+  securityGroupSelectorTerms:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{ if (.networkPolicy) }}
+  networkPolicy: {{ (.networkPolicy) }}
+  {{ end }}
+  {{ if (.networkPolicyEventLogs) }}
+  networkPolicyEventLogs: {{ (.networkPolicyEventLogs) }}
+  {{ end }}
+  {{ if (.snatPolicy) }}
+  snatPolicy: {{ (.snatPolicy) }}
+  {{ end }}
+  {{ if (.ephemeralStorage) }}
+  {{- with (.ephemeralStorage) }}
+  ephemeralStorage:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{ end }}
+  {{ if (.amiSelectorTerms) }}
+  {{- with (.amiSelectorTerms) }}
+  amiSelectorTerms:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{ end }}
+  {{ if (.blockDeviceMappings) }}
+  {{- with .blockDeviceMappings }}
+  blockDeviceMappings:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{ end }}
+  {{- with .userData }}
+  userData:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}
