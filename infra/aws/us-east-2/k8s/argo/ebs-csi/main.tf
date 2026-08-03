@@ -82,6 +82,7 @@ resource "kubernetes_manifest" "ebs-controller" {
           releaseName = "aws-ebs-csi-driver"
           values = yamlencode({
             aws-ebs-csi-driver = {
+              enabled = true
               controller = {
                 serviceAccount = {
                   # https://github.com/kubernetes-sigs/aws-ebs-csi-driver/blob/master/docs/install.md
