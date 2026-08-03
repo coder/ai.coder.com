@@ -19,5 +19,5 @@ inputs = {
   region  = include.config.locals.AWS_REGION
 
   cluster_name = include.root.locals.CODER_CLUSTER_NAME
-  vpc_name     = include.root.locals.CODER_VPC_NAME
+  azs          = include.root.locals.CODER_VPC_AZS
 }
