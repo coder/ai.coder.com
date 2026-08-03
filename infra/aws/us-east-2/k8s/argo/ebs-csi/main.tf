@@ -15,12 +15,6 @@ data "aws_iam_openid_connect_provider" "this" {
   url = data.aws_eks_cluster.this.identity[0].oidc[0].issuer
 }
 
-data "aws_vpc" "this" {
-  tags = {
-    Name = var.vpc_name
-  }
-}
-
 data "aws_region" "this" {}
 
 data "aws_caller_identity" "this" {}
