@@ -1,0 +1,153 @@
+suite: test EC2NodeClass generation for Karpenter
+templates:
+  - nodeClasses.yaml
+tests:
+  - it: should create an EC2NodeClass for coder-workspace
+    set:
+      nodeClasses:
+        - apiVersion: karpenter.k8s.aws/v1
+          kind: EC2NodeClass
+          name: coder-workspace
+          roleArn: arn:aws:iam::123456789012:role/karpenter-node-role
+          subnetSelectorTerms:
+            - id: subnet-11111111
+            - id: subnet-22222222
+          securityGroupSelectorTerms:
+            - id: sg-abcdef123456
+          amiSelectorTerms:
+            - alias: al2023@latest
+          blockDeviceMappings:
+            - deviceName: /dev/xvda
+              ebs:
+                volumeSize: 200Gi
+                volumeType: gp3
+                encrypted: false
+                deleteOnTermination: true
+          userData: |
+            MIME-Version: 1.0
+            Content-Type: multipart/mixed; boundary="//"
+
+            --//
+            Content-Type: application/node.eks.aws
+
+            apiVersion: node.eks.aws/v1alpha1
+            kind: NodeConfig
+            spec:
+              kubelet:
+                config:
+                  registryPullQPS: 30
+            --//--
+          tags:
+            Name: coder-workspace-node
+            Environment: production
+    asserts:
+      - isKind:
+          of: EC2NodeClass
+      - equal:
+          path: apiVersion
+          value: karpenter.k8s.aws/v1
+      - equal:
+          path: metadata.name
+          value: coder-workspace
+      - equal:
+          path: spec.role
+          value: arn:aws:iam::123456789012:role/karpenter-node-role
+      - equal:
+          path: spec.subnetSelectorTerms[0].id
+          value: subnet-11111111
+      - equal:
+          path: spec.securityGroupSelectorTerms[0].id
+          value: sg-abcdef123456
+      - equal:
+          path: spec.amiSelectorTerms[0].alias
+          value: al2023@latest
+      - equal:
+          path: spec.blockDeviceMappings[0].deviceName
+          value: /dev/xvda
+      - equal:
+          path: spec.blockDeviceMappings[0].ebs.volumeSize
+          value: 200Gi
+      - equal:
+          path: spec.blockDeviceMappings[0].ebs.volumeType
+          value: gp3
+      - equal:
+          path: spec.blockDeviceMappings[0].ebs.encrypted
+          value: false
+      - equal:
+          path: spec.blockDeviceMappings[0].ebs.deleteOnTermination
+          value: true
+      - isNotEmpty:
+          path: spec.userData
+      - matchRegex:
+          path: spec.userData
+          pattern: registryPullQPS
+      - equal:
+          path: spec.tags.Name
+          value: coder-workspace-node
+
+  - it: should create EC2NodeClass without optional fields
+    set:
+      nodeClasses:
+        - apiVersion: karpenter.k8s.aws/v1
+          kind: EC2NodeClass
+          name: minimal-ec2
+          roleArn: arn:aws:iam::123456789012:role/karpenter-node-role
+          subnetSelectorTerms:
+            - id: subnet-11111111
+          securityGroupSelectorTerms:
+            - id: sg-abcdef123456
+    asserts:
+      - isKind:
+          of: EC2NodeClass
+      - equal:
+          path: metadata.name
+          value: minimal-ec2
+      - isNull:
+          path: spec.tags
+      - isNull:
+          path: spec.amiSelectorTerms
+      - isNull:
+          path: spec.blockDeviceMappings
+
+  - it: should handle multiple AMI selector terms
+    set:
+      nodeClasses:
+        - apiVersion: karpenter.k8s.aws/v1
+          kind: EC2NodeClass
+          name: multi-ami
+          roleArn: arn:aws:iam::123456789012:role/karpenter-node-role
+          subnetSelectorTerms:
+            - id: subnet-11111111
+          securityGroupSelectorTerms:
+            - id: sg-abcdef123456
+          amiSelectorTerms:
+            - alias: al2023@latest
+            - name: my-custom-ami
+    asserts:
+      - equal:
+          path: spec.amiSelectorTerms[0].alias
+          value: al2023@latest
+      - equal:
+          path: spec.amiSelectorTerms[1].name
+          value: my-custom-ami
+
+  - it: should not include Auto Mode specific fields in EC2NodeClass
+    set:
+      nodeClasses:
+        - apiVersion: karpenter.k8s.aws/v1
+          kind: EC2NodeClass
+          name: coder-workspace
+          roleArn: arn:aws:iam::123456789012:role/karpenter-node-role
+          subnetSelectorTerms:
+            - id: subnet-11111111
+          securityGroupSelectorTerms:
+            - id: sg-abcdef123456
+    asserts:
+      - isNull:
+          path: spec.networkPolicy
+      - isNull:
+          path: spec.networkPolicyEventLogs
+      - isNull:
+          path: spec.snatPolicy
+      - isNull:
+          path: spec.ephemeralStorage

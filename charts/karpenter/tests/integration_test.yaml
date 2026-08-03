@@ -1,0 +1,406 @@
+suite: test complete Karpenter setup (mimics infra/aws/us-east-2/k8s/other)
+templates:
+  - nodeClasses.yaml
+  - nodePools.yaml
+tests:
+  - it: should create complete platform setup with Auto Mode NodeClass and NodePools
+    set:
+      # NodeClasses matching Terraform config
+      nodeClasses:
+        # Platform NodeClass (Auto Mode)
+        - apiVersion: eks.amazonaws.com/v1
+          kind: NodeClass
+          name: platform
+          roleArn: arn:aws:iam::123456789012:role/auto-mode-node-role
+          subnetSelectorTerms:
+            - id: subnet-11111111
+            - id: subnet-22222222
+          securityGroupSelectorTerms:
+            - id: sg-abcdef123456
+          networkPolicy: DefaultAllow
+          networkPolicyEventLogs: Disabled
+          snatPolicy: Disabled
+          ephemeralStorage:
+            iops: 3000
+            size: 80Gi
+            throughput: 125
+          tags:
+            Name: platform-node
+
+        # Coder Provisioner NodeClass (Auto Mode)
+        - apiVersion: eks.amazonaws.com/v1
+          kind: NodeClass
+          name: coder-provisioner
+          roleArn: arn:aws:iam::123456789012:role/auto-mode-node-role
+          subnetSelectorTerms:
+            - id: subnet-11111111
+            - id: subnet-22222222
+          securityGroupSelectorTerms:
+            - id: sg-abcdef123456
+          networkPolicy: DefaultAllow
+          networkPolicyEventLogs: Disabled
+          snatPolicy: Disabled
+          ephemeralStorage:
+            iops: 3000
+            size: 80Gi
+            throughput: 125
+          tags:
+            Name: coder-provisioner-node
+
+        # Coder Workspace EC2NodeClass (Karpenter)
+        - apiVersion: karpenter.k8s.aws/v1
+          kind: EC2NodeClass
+          name: coder-workspace
+          roleArn: arn:aws:iam::123456789012:role/karpenter-node-role
+          subnetSelectorTerms:
+            - id: subnet-11111111
+            - id: subnet-22222222
+          securityGroupSelectorTerms:
+            - id: sg-abcdef123456
+          amiSelectorTerms:
+            - alias: al2023@latest
+          blockDeviceMappings:
+            - deviceName: /dev/xvda
+              ebs:
+                volumeSize: 200Gi
+                volumeType: gp3
+                encrypted: false
+                deleteOnTermination: true
+          userData: |
+            MIME-Version: 1.0
+            Content-Type: multipart/mixed; boundary="//"
+
+            --//
+            Content-Type: application/node.eks.aws
+
+            apiVersion: node.eks.aws/v1alpha1
+            kind: NodeConfig
+            spec:
+              kubelet:
+                config:
+                  registryPullQPS: 30
+            --//--
+          tags:
+            Name: coder-workspace-node
+
+      # NodePools matching Terraform config
+      nodePools:
+        # System NodePool
+        - name: system
+          consolidationPolicy: WhenEmptyOrUnderutilized
+          consolidateAfter: 72h
+          expireAfter: 480h
+          requirements:
+            - key: kubernetes.io/arch
+              operator: In
+              values:
+                - amd64
+                - arm64
+            - key: kubernetes.io/os
+              operator: In
+              values:
+                - linux
+            - key: karpenter.sh/capacity-type
+              operator: In
+              values:
+                - spot
+                - on-demand
+            - key: node.kubernetes.io/instance-type
+              operator: In
+              values:
+                - c6g.large
+                - c6g.xlarge
+                - c6g.2xlarge
+          nodeClassRef:
+            group: eks.amazonaws.com
+            kind: NodeClass
+            name: platform
+          taints:
+            - key: CriticalAddonsOnly
+              value: "true"
+              effect: NoSchedule
+          labels:
+            "node.coder.io/instance": coder-v2
+            "node.coder.io/managed-by": karpenter
+            "node.coder.io/name": coder
+            "node.coder.io/part-of": coder
+            "node.coder.io/used-for": system
+
+        # Coder Server NodePool
+        - name: coder-server
+          consolidationPolicy: WhenEmptyOrUnderutilized
+          consolidateAfter: 8h
+          expireAfter: 480h
+          requirements:
+            - key: kubernetes.io/arch
+              operator: In
+              values:
+                - amd64
+                - arm64
+            - key: kubernetes.io/os
+              operator: In
+              values:
+                - linux
+            - key: karpenter.sh/capacity-type
+              operator: In
+              values:
+                - spot
+                - on-demand
+            - key: node.kubernetes.io/instance-type
+              operator: In
+              values:
+                - c6g.xlarge
+                - c6g.2xlarge
+                - c6g.4xlarge
+          nodeClassRef:
+            group: eks.amazonaws.com
+            kind: NodeClass
+            name: platform
+          taints:
+            - key: platform
+              value: coder-server
+              effect: NoSchedule
+          labels:
+            "node.coder.io/instance": coder-v2
+            "node.coder.io/managed-by": karpenter
+            "node.coder.io/name": coder
+            "node.coder.io/part-of": coder
+            "node.coder.io/used-for": coder-server
+
+        # Coder Provisioner NodePool
+        - name: coder-provisioner
+          consolidationPolicy: WhenEmptyOrUnderutilized
+          consolidateAfter: 8h
+          budgets:
+            - nodes: 100%
+          expireAfter: 8h
+          requirements:
+            - key: kubernetes.io/arch
+              operator: In
+              values:
+                - amd64
+                - arm64
+            - key: kubernetes.io/os
+              operator: In
+              values:
+                - linux
+            - key: karpenter.sh/capacity-type
+              operator: In
+              values:
+                - spot
+                - on-demand
+            - key: node.kubernetes.io/instance-type
+              operator: In
+              values:
+                - c6g.large
+                - c6g.xlarge
+                - c6g.2xlarge
+                - c6g.4xlarge
+          nodeClassRef:
+            group: eks.amazonaws.com
+            kind: NodeClass
+            name: coder-provisioner
+          taints:
+            - key: coder
+              value: provisioner
+              effect: NoSchedule
+          labels:
+            "node.coder.io/instance": coder-v2
+            "node.coder.io/managed-by": karpenter
+            "node.coder.io/name": coder
+            "node.coder.io/part-of": coder
+            "node.coder.io/used-for": coder-provisioner
+
+        # Coder Workspace NodePool (dynamic)
+        - name: coder-workspace
+          consolidationPolicy: WhenEmptyOrUnderutilized
+          consolidateAfter: 4h
+          budgets:
+            - nodes: 100%
+          expireAfter: Never
+          requirements:
+            - key: kubernetes.io/arch
+              operator: In
+              values:
+                - amd64
+                - arm64
+            - key: kubernetes.io/os
+              operator: In
+              values:
+                - linux
+            - key: karpenter.sh/capacity-type
+              operator: In
+              values:
+                - spot
+                - on-demand
+            - key: node.kubernetes.io/instance-type
+              operator: In
+              values:
+                - c6a.4xlarge
+                - c6a.8xlarge
+          nodeClassRef:
+            group: karpenter.k8s.aws
+            kind: EC2NodeClass
+            name: coder-workspace
+          taints: []
+          labels:
+            "node.coder.io/instance": coder-v2
+            "node.coder.io/managed-by": karpenter
+            "node.coder.io/name": coder
+            "node.coder.io/part-of": coder
+            "node.coder.io/used-for": coder-workspace
+
+        # Coder Workspace Static NodePool
+        - name: coder-workspace-static
+          consolidationPolicy: WhenEmptyOrUnderutilized
+          consolidateAfter: 0s
+          budgets:
+            - nodes: 100%
+          replicas: 2
+          limits:
+            nodes: 100
+          expireAfter: Never
+          requirements:
+            - key: kubernetes.io/arch
+              operator: In
+              values:
+                - amd64
+                - arm64
+            - key: kubernetes.io/os
+              operator: In
+              values:
+                - linux
+            - key: karpenter.sh/capacity-type
+              operator: In
+              values:
+                - spot
+                - on-demand
+            - key: node.kubernetes.io/instance-type
+              operator: In
+              values:
+                - c6a.4xlarge
+                - c6a.8xlarge
+          nodeClassRef:
+            group: karpenter.k8s.aws
+            kind: EC2NodeClass
+            name: coder-workspace
+          taints: []
+          labels:
+            "node.coder.io/instance": coder-v2
+            "node.coder.io/managed-by": karpenter
+            "node.coder.io/name": coder
+            "node.coder.io/part-of": coder
+            "node.coder.io/used-for": coder-workspace-static
+
+    asserts:
+      # Verify all NodeClasses are created (3 total)
+      - hasDocuments:
+          count: 3
+        template: nodeClasses.yaml
+      # Verify all NodePools are created (5 total)
+      - hasDocuments:
+          count: 5
+        template: nodePools.yaml
+
+  - it: should validate platform NodeClass references in NodePools
+    set:
+      nodeClasses:
+        - apiVersion: eks.amazonaws.com/v1
+          kind: NodeClass
+          name: platform
+          roleArn: arn:aws:iam::123456789012:role/auto-mode-node-role
+      nodePools:
+        - name: system
+          nodeClassRef:
+            group: eks.amazonaws.com
+            kind: NodeClass
+            name: platform
+          requirements:
+            - key: node.kubernetes.io/instance-type
+              operator: In
+              values:
+                - c6g.large
+    asserts:
+      - hasDocuments:
+          count: 1
+        template: nodeClasses.yaml
+      - hasDocuments:
+          count: 1
+        template: nodePools.yaml
+
+  - it: should validate coder-workspace EC2NodeClass reference in NodePools
+    set:
+      nodeClasses:
+        - apiVersion: karpenter.k8s.aws/v1
+          kind: EC2NodeClass
+          name: coder-workspace
+          roleArn: arn:aws:iam::123456789012:role/karpenter-node-role
+      nodePools:
+        - name: coder-workspace
+          nodeClassRef:
+            group: karpenter.k8s.aws
+            kind: EC2NodeClass
+            name: coder-workspace
+          requirements:
+            - key: node.kubernetes.io/instance-type
+              operator: In
+              values:
+                - c6a.4xlarge
+    asserts:
+      - hasDocuments:
+          count: 1
+        template: nodeClasses.yaml
+      - hasDocuments:
+          count: 1
+        template: nodePools.yaml
+
+  - it: should create observability platform NodePools with platform NodeClass
+    set:
+      nodeClasses:
+        - apiVersion: eks.amazonaws.com/v1
+          kind: NodeClass
+          name: platform
+          roleArn: arn:aws:iam::123456789012:role/auto-mode-node-role
+      nodePools:
+        - name: prometheus
+          consolidationPolicy: WhenEmpty
+          consolidateAfter: 72h
+          expireAfter: 480h
+          requirements:
+            - key: node.kubernetes.io/instance-type
+              operator: In
+              values:
+                - c6g.2xlarge
+          nodeClassRef:
+            group: eks.amazonaws.com
+            kind: NodeClass
+            name: platform
+          taints:
+            - key: platform
+              value: prometheus
+              effect: NoSchedule
+        - name: loki
+          consolidationPolicy: WhenEmpty
+          consolidateAfter: 72h
+          expireAfter: 480h
+          requirements:
+            - key: node.kubernetes.io/instance-type
+              operator: In
+              values:
+                - c6g.medium
+                - c6g.xlarge
+          nodeClassRef:
+            group: eks.amazonaws.com
+            kind: NodeClass
+            name: platform
+          taints:
+            - key: platform
+              value: loki
+              effect: NoSchedule
+    asserts:
+      - hasDocuments:
+          count: 1
+        template: nodeClasses.yaml
+      - hasDocuments:
+          count: 2
+        template: nodePools.yaml

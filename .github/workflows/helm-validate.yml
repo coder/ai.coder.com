@@ -232,9 +232,48 @@ jobs:
           python3 -c "import yaml; yaml.safe_load(open('${{ matrix.chart }}/values.yaml'))"
           echo "values.yaml is valid YAML"
 
+  unit-tests:
+    name: Run Unit Tests
+    needs: discover
+    if: needs.discover.outputs.charts != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        chart: ${{ fromJson(needs.discover.outputs.charts) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Install helm-unittest plugin
+        run: |
+          helm plugin install https://github.com/helm-unittest/helm-unittest.git
+
+      - name: Check if tests exist
+        id: check-tests
+        run: |
+          if [ -d "${{ matrix.chart }}/tests" ]; then
+            echo "has_tests=true" >> $GITHUB_OUTPUT
+            echo "Tests directory found for ${{ matrix.chart }}"
+          else
+            echo "has_tests=false" >> $GITHUB_OUTPUT
+            echo "No tests directory found for ${{ matrix.chart }}, skipping"
+          fi
+
+      - name: Run unit tests
+        if: steps.check-tests.outputs.has_tests == 'true'
+        run: |
+          echo "Running unit tests for ${{ matrix.chart }}"
+          helm unittest "${{ matrix.chart }}" --color
+
   summary:
     name: Validation Summary
-    needs: [lint, template, kubeconform, verify-metadata]
+    needs: [lint, template, kubeconform, verify-metadata, unit-tests]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -243,7 +282,8 @@ jobs:
           if [ "${{ needs.lint.result }}" != "success" ] || \
              [ "${{ needs.template.result }}" != "success" ] || \
              [ "${{ needs.kubeconform.result }}" != "success" ] || \
-             [ "${{ needs.verify-metadata.result }}" != "success" ]; then
+             [ "${{ needs.verify-metadata.result }}" != "success" ] || \
+             [ "${{ needs.unit-tests.result }}" != "success" ]; then
             echo "One or more validation steps failed"
             exit 1
           fi

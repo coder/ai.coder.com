@@ -1,0 +1,312 @@
+suite: test NodePool generation
+templates:
+  - nodePools.yaml
+tests:
+  - it: should create a NodePool with basic configuration
+    set:
+      nodePools:
+        - name: system
+          consolidationPolicy: WhenEmptyOrUnderutilized
+          consolidateAfter: 72h
+          replicas: null
+          limits: null
+          expireAfter: 480h
+          requirements:
+            - key: kubernetes.io/arch
+              operator: In
+              values:
+                - amd64
+                - arm64
+            - key: kubernetes.io/os
+              operator: In
+              values:
+                - linux
+            - key: karpenter.sh/capacity-type
+              operator: In
+              values:
+                - spot
+                - on-demand
+            - key: node.kubernetes.io/instance-type
+              operator: In
+              values:
+                - c6g.large
+                - c6g.xlarge
+                - c6g.2xlarge
+          nodeClassRef:
+            group: eks.amazonaws.com
+            kind: NodeClass
+            name: platform
+          taints:
+            - key: CriticalAddonsOnly
+              value: "true"
+              effect: NoSchedule
+    asserts:
+      - isKind:
+          of: NodePool
+      - equal:
+          path: apiVersion
+          value: karpenter.sh/v1
+      - equal:
+          path: metadata.name
+          value: system
+      - equal:
+          path: spec.disruption.consolidationPolicy
+          value: WhenEmptyOrUnderutilized
+      - equal:
+          path: spec.disruption.consolidateAfter
+          value: 72h
+      - equal:
+          path: spec.template.spec.expireAfter
+          value: 480h
+      - equal:
+          path: spec.template.spec.requirements[0].key
+          value: kubernetes.io/arch
+      - equal:
+          path: spec.template.spec.requirements[0].values[0]
+          value: amd64
+      - equal:
+          path: spec.template.spec.taints[0].key
+          value: CriticalAddonsOnly
+      - equal:
+          path: spec.template.spec.taints[0].effect
+          value: NoSchedule
+
+  - it: should create a NodePool with replicas (static pool)
+    set:
+      nodePools:
+        - name: coder-workspace-static
+          consolidationPolicy: WhenEmptyOrUnderutilized
+          consolidateAfter: 0s
+          budgets:
+            - nodes: 100%
+          replicas: 2
+          limits:
+            nodes: 100
+          requirements:
+            - key: node.kubernetes.io/instance-type
+              operator: In
+              values:
+                - c6a.4xlarge
+                - c6a.8xlarge
+          nodeClassRef:
+            group: karpenter.k8s.aws
+            kind: EC2NodeClass
+            name: coder-workspace
+          taints: []
+    asserts:
+      - isKind:
+          of: NodePool
+      - equal:
+          path: metadata.name
+          value: coder-workspace-static
+      - equal:
+          path: spec.replicas
+          value: 2
+      - equal:
+          path: spec.limits.nodes
+          value: 100
+      # Note: disruption is not included when replicas is set
+      - isNull:
+          path: spec.disruption
+
+  - it: should create NodePool for coder-provisioner with Auto Mode NodeClass
+    set:
+      nodePools:
+        - name: coder-provisioner
+          consolidationPolicy: WhenEmptyOrUnderutilized
+          consolidateAfter: 8h
+          budgets:
+            - nodes: 100%
+          expireAfter: 8h
+          requirements:
+            - key: node.kubernetes.io/instance-type
+              operator: In
+              values:
+                - c6g.large
+                - c6g.xlarge
+                - c6g.2xlarge
+                - c6g.4xlarge
+          nodeClassRef:
+            group: eks.amazonaws.com
+            kind: NodeClass
+            name: coder-provisioner
+          taints:
+            - key: coder
+              value: provisioner
+              effect: NoSchedule
+          labels:
+            "node.coder.io/instance": coder-v2
+            "node.coder.io/managed-by": karpenter
+            "node.coder.io/used-for": coder-provisioner
+    asserts:
+      - equal:
+          path: metadata.name
+          value: coder-provisioner
+      - equal:
+          path: spec.template.spec.expireAfter
+          value: 8h
+      - equal:
+          path: spec.template.metadata.labels["node.coder.io/instance"]
+          value: coder-v2
+      - equal:
+          path: spec.template.spec.taints[0].key
+          value: coder
+      - equal:
+          path: spec.template.spec.taints[0].value
+          value: provisioner
+
+  - it: should create NodePool for coder-workspace with EC2NodeClass
+    set:
+      nodePools:
+        - name: coder-workspace
+          consolidationPolicy: WhenEmptyOrUnderutilized
+          consolidateAfter: 4h
+          budgets:
+            - nodes: 100%
+          expireAfter: Never
+          requirements:
+            - key: kubernetes.io/arch
+              operator: In
+              values:
+                - amd64
+            - key: node.kubernetes.io/instance-type
+              operator: In
+              values:
+                - c6a.4xlarge
+                - c6a.8xlarge
+          nodeClassRef:
+            group: karpenter.k8s.aws
+            kind: EC2NodeClass
+            name: coder-workspace
+          taints: []
+          labels:
+            "node.coder.io/instance": coder-v2
+            "node.coder.io/used-for": coder-workspace
+    asserts:
+      - equal:
+          path: metadata.name
+          value: coder-workspace
+      - equal:
+          path: spec.disruption.consolidateAfter
+          value: 4h
+      - equal:
+          path: spec.template.spec.expireAfter
+          value: Never
+      - equal:
+          path: spec.template.metadata.labels["node.coder.io/used-for"]
+          value: coder-workspace
+      # Empty array means taints field should not be present in the spec
+      - isNull:
+          path: spec.template.spec.taints
+
+  - it: should default consolidationPolicy to WhenEmptyOrUnderutilized
+    set:
+      nodePools:
+        - name: default-policy
+          requirements:
+            - key: node.kubernetes.io/instance-type
+              operator: In
+              values:
+                - c6g.large
+          nodeClassRef:
+            group: eks.amazonaws.com
+            kind: NodeClass
+            name: platform
+    asserts:
+      - equal:
+          path: spec.disruption.consolidationPolicy
+          value: WhenEmptyOrUnderutilized
+
+  - it: should default consolidateAfter to 0s
+    set:
+      nodePools:
+        - name: default-after
+          requirements:
+            - key: node.kubernetes.io/instance-type
+              operator: In
+              values:
+                - c6g.large
+          nodeClassRef:
+            group: eks.amazonaws.com
+            kind: NodeClass
+            name: platform
+    asserts:
+      - equal:
+          path: spec.disruption.consolidateAfter
+          value: 0s
+
+  - it: should default expireAfter to 480h
+    set:
+      nodePools:
+        - name: default-expire
+          requirements:
+            - key: node.kubernetes.io/instance-type
+              operator: In
+              values:
+                - c6g.large
+          nodeClassRef:
+            group: eks.amazonaws.com
+            kind: NodeClass
+            name: platform
+    asserts:
+      - equal:
+          path: spec.template.spec.expireAfter
+          value: 480h
+
+  - it: should include helm hook annotations
+    set:
+      nodePools:
+        - name: test-pool
+          annotations:
+            custom.annotation: test-value
+          requirements:
+            - key: node.kubernetes.io/instance-type
+              operator: In
+              values:
+                - c6g.large
+          nodeClassRef:
+            group: eks.amazonaws.com
+            kind: NodeClass
+            name: platform
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: post-install,post-upgrade
+      - equal:
+          path: metadata.annotations["custom.annotation"]
+          value: test-value
+
+  - it: should support multiple requirements
+    set:
+      nodePools:
+        - name: multi-req
+          requirements:
+            - key: kubernetes.io/arch
+              operator: In
+              values:
+                - amd64
+                - arm64
+            - key: kubernetes.io/os
+              operator: In
+              values:
+                - linux
+            - key: karpenter.sh/capacity-type
+              operator: In
+              values:
+                - spot
+                - on-demand
+            - key: node.kubernetes.io/instance-type
+              operator: In
+              values:
+                - c6g.large
+          nodeClassRef:
+            group: eks.amazonaws.com
+            kind: NodeClass
+            name: platform
+    asserts:
+      - lengthEqual:
+          path: spec.template.spec.requirements
+          count: 4
+      - equal:
+          path: spec.template.spec.requirements[2].key
+          value: karpenter.sh/capacity-type
