@@ -75,71 +75,113 @@ resource "kubernetes_manifest" "ebs-controller" {
     spec = {
       project = "default"
       source = {
-        repoURL        = "https://kubernetes-sigs.github.io/aws-ebs-csi-driver"
-        chart          = "aws-ebs-csi-driver"
-        targetRevision = "2.22.1"
+        repoURL        = "https://github.com/coder/ai.coder.com"
+        path           = "charts/aws-ebs-csi-driver"
+        targetRevision = "main"
         helm = {
           releaseName = "aws-ebs-csi-driver"
           values = yamlencode({
-            controller = {
-              serviceAccount = {
-                # https://github.com/kubernetes-sigs/aws-ebs-csi-driver/blob/master/docs/install.md
-                annotations = {
-                  "eks.amazonaws.com/role-arn" = module.oidc-role.role_arn
-                }
-              }
-              nodeSelector = {}
-              tolerations = [{
-                key      = "CriticalAddonsOnly"
-                operator = "Exists"
-                }, {
-                key    = "dedicated"
-                value  = "general"
-                effect = "NoSchedule"
-              }]
-              topologySpreadConstraints = [{
-                topologyKey       = "topology.kubernetes.io/zone"
-                maxSkew           = 1
-                whenUnsatisfiable = "ScheduleAnyway"
-              }]
-              affinity = {
-                nodeAffinity = {
-                  preferredDuringSchedulingIgnoredDuringExecution = []
-                  requiredDuringSchedulingIgnoredDuringExecution = {
-                    nodeSelectorTerms = [{
-                      matchExpressions = [
-                        {
-                          key      = "eks.amazonaws.com/compute-type",
-                          operator = "In",
-                          values   = ["auto"]
-                        }
-                      ]
-                    }]
+            aws-ebs-csi-driver = {
+              controller = {
+                serviceAccount = {
+                  # https://github.com/kubernetes-sigs/aws-ebs-csi-driver/blob/master/docs/install.md
+                  annotations = {
+                    "eks.amazonaws.com/role-arn" = module.oidc-role.role_arn
                   }
                 }
-                podAntiAffinity = {
-                  preferredDuringSchedulingIgnoredDuringExecution = [{
-                    podAffinityTerm = {
-                      topologyKey = "topology.kubernetes.io/zone"
+                nodeSelector = {}
+                tolerations = [{
+                  key      = "CriticalAddonsOnly"
+                  operator = "Exists"
+                  }, {
+                  key    = "dedicated"
+                  value  = "general"
+                  effect = "NoSchedule"
+                }]
+                topologySpreadConstraints = [{
+                  topologyKey       = "topology.kubernetes.io/zone"
+                  maxSkew           = 1
+                  whenUnsatisfiable = "ScheduleAnyway"
+                }]
+                affinity = {
+                  nodeAffinity = {
+                    preferredDuringSchedulingIgnoredDuringExecution = []
+                    requiredDuringSchedulingIgnoredDuringExecution = {
+                      nodeSelectorTerms = [{
+                        matchExpressions = [
+                          {
+                            key      = "eks.amazonaws.com/compute-type",
+                            operator = "In",
+                            values   = ["auto"]
+                          }
+                        ]
+                      }]
+                    }
+                  }
+                  podAntiAffinity = {
+                    preferredDuringSchedulingIgnoredDuringExecution = [{
+                      podAffinityTerm = {
+                        topologyKey = "topology.kubernetes.io/zone"
+                        labelSelector = {
+                          matchLabels = {
+                            "app" = "ebs-csi-controller"
+                          }
+                        }
+                      }
+                      weight = 100
+                    }]
+                    requiredDuringSchedulingIgnoredDuringExecution = [{
+                      topologyKey = "kubernetes.io/hostname"
                       labelSelector = {
                         matchLabels = {
                           "app" = "ebs-csi-controller"
                         }
                       }
-                    }
-                    weight = 100
-                  }]
-                  requiredDuringSchedulingIgnoredDuringExecution = [{
-                    topologyKey = "kubernetes.io/hostname"
-                    labelSelector = {
-                      matchLabels = {
-                        "app" = "ebs-csi-controller"
-                      }
-                    }
-                  }]
+                    }]
+                  }
                 }
               }
             }
+            storageClasses = [
+              {
+                name      = "gp3"
+                namespace = "default"
+                annotations = {
+                  "storageclass.kubernetes.io/is-default-class" = "true"
+                }
+                provisioner          = "ebs.csi.aws.com"
+                volumeBindingMode    = "WaitForFirstConsumer"
+                allowVolumeExpansion = true
+                allowedTopologies = [{
+                  matchLabelExpressions = [{
+                    key    = "topology.ebs.csi.aws.com/zone"
+                    values = [for az in var.azs : "${data.aws_region.this.region}${az}"]
+                  }]
+                }]
+                parameters = {
+                  type      = "gp3"
+                  encrypted = "true"
+                }
+              },
+              {
+                name                 = "gp3"
+                namespace            = "gp3-automode"
+                annotations          = {}
+                provisioner          = "ebs.csi.eks.amazonaws.com"
+                volumeBindingMode    = "WaitForFirstConsumer"
+                allowVolumeExpansion = true
+                allowedTopologies = [{
+                  matchLabelExpressions = [{
+                    key    = "eks.amazonaws.com/compute-type"
+                    values = ["auto"]
+                  }]
+                }]
+                parameters = {
+                  type      = "gp3"
+                  encrypted = "true"
+                }
+              }
+            ]
           })
         }
       }
