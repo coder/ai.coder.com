@@ -20,4 +20,8 @@ allowVolumeExpansion: {{ .allowVolumeExpansion | default true }}
 allowedTopologies:
   {{- toYaml . | nindent 2}}
 {{- end }}
+{{- with .parameters }}
+parameters:
+  {{- toYaml . | nindent 2}}
+{{- end }}
 {{- end }}
