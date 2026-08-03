@@ -252,7 +252,7 @@ jobs:
 
       - name: Install helm-unittest plugin
         run: |
-          helm plugin install https://github.com/helm-unittest/helm-unittest.git
+          helm plugin install https://github.com/helm-unittest/helm-unittest.git --verify=false
 
       - name: Check if tests exist
         id: check-tests
