@@ -8,6 +8,7 @@ metadata:
   {{- with .annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
+    "helm.sh/hook": post-install,post-upgrade
   {{- end }}
   {{- with .labels }}
   labels:
