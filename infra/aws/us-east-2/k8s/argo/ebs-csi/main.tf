@@ -84,6 +84,11 @@ resource "kubernetes_manifest" "ebs-controller" {
                     "eks.amazonaws.com/role-arn" = module.oidc-role.role_arn
                   }
                 }
+                podAnnotations = {
+                  "checksum/config" = sha256(join(",", [
+                    module.oidc-role.role_arn
+                  ]))
+                }
                 nodeSelector = {}
                 tolerations = [{
                   key      = "CriticalAddonsOnly"
