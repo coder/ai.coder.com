@@ -1,0 +1,23 @@
+{{- range .Values.storageClasses }}
+---
+apiVersion: v1
+kind: StorageClass
+metadata:
+  name: {{ .name }}
+  namespace: {{ .namespace | default "default" | quote }}
+  {{- with .annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .labels }}
+  labels:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+provisioner: {{ .provisioner }}
+volumeBindingMode: {{ .volumeBindingMode | default "WaitForFirstConsumer" | quote }}
+allowVolumeExpansion: {{ .allowVolumeExpansion | default true }}
+{{- with .allowedTopologies }}
+allowedTopologies:
+  {{- toYaml . | nindent 2}}
+{{- end }}
+{{- end }}

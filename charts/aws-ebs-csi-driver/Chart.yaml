@@ -1,0 +1,13 @@
+apiVersion: v2
+name: aws-ebs-csi-driver
+description: A Helm chart for optionally managing the AWS EBS CSI Controller and other VolumeClasses
+type: application
+version: 0.1.0
+appVersion: 0.1.0
+
+dependencies:
+  - name: aws-ebs-csi-driver
+    condition: aws-ebs-csi-driver.enabled
+    version: 2.22.1
+    repository: "https://kubernetes-sigs.github.io/aws-ebs-csi-driver"
+    alias: aws-ebs-csi-driver
