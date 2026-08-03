@@ -17,7 +17,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  HELM_VERSION: "3.15.3"
+  HELM_VERSION: "4.1.0"
   KUBERNETES_VERSION: "1.30.0"
 
 jobs:
