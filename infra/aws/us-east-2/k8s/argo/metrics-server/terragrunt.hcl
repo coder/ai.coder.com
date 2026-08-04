@@ -15,7 +15,6 @@ dependencies {
     "../karpenter",
     "../lb-controller",
     "../cert-manager",
-    "../../other" # Deploy's auxillary manifests
   ]
 }
 
