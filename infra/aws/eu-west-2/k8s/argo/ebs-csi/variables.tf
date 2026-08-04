@@ -6,6 +6,10 @@ variable "region" {
   type = string
 }
 
+variable "controller_region" {
+  type = string
+}
+
 variable "azs" {
   type    = list(string)
   default = ["a", "b", "c"]
