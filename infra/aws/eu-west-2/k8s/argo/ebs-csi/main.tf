@@ -154,8 +154,8 @@ resource "kubernetes_manifest" "ebs-controller" {
             }
             storageClasses = [
               {
-                name                 = "gp3-automode"
-                namespace            = "default"
+                name      = "gp3-automode"
+                namespace = "default"
                 annotations = {
                   "storageclass.kubernetes.io/is-default-class" = "true"
                 }
