@@ -196,6 +196,26 @@ resource "aws_eks_access_policy_association" "runner" {
   }
 }
 
+##
+# ReadOnly Access for SSO Admins
+##
+resource "aws_eks_access_entry" "admin-view" {
+  principal_arn = "arn:aws:iam::${data.aws_caller_identity.me.account_id}:role/aws-reserved/sso.amazonaws.com/AWSReservedSSO_AWSAdministratorAccess_93fb9e9f44bd25bb"
+  cluster_name  = module.eks.cluster_name
+  type          = "STANDARD"
+}
+
+resource "aws_eks_access_policy_association" "admin-view" {
+
+  cluster_name  = module.eks.cluster_name
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSAdminViewPolicy"
+  principal_arn = "arn:aws:iam::${data.aws_caller_identity.me.account_id}:role/aws-reserved/sso.amazonaws.com/AWSReservedSSO_AWSAdministratorAccess_93fb9e9f44bd25bb"
+
+  access_scope {
+    type = "cluster"
+  }
+}
+
 provider "kubernetes" {
   host                   = module.eks.cluster_endpoint
   cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)

@@ -167,6 +167,29 @@ module "eks-argocd-capability" {
   tags = local.tags
 }
 
+##
+# ReadOnly Access for SSO Admins
+##
+resource "aws_eks_access_entry" "admin-view" {
+  principal_arn = "arn:aws:iam::${data.aws_caller_identity.me.account_id}:role/aws-reserved/sso.amazonaws.com/AWSReservedSSO_AWSAdministratorAccess_93fb9e9f44bd25bb"
+  cluster_name  = module.eks.cluster_name
+  type          = "STANDARD"
+}
+
+resource "aws_eks_access_policy_association" "admin-view" {
+
+  cluster_name  = module.eks.cluster_name
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSAdminViewPolicy"
+  principal_arn = "arn:aws:iam::${data.aws_caller_identity.me.account_id}:role/aws-reserved/sso.amazonaws.com/AWSReservedSSO_AWSAdministratorAccess_93fb9e9f44bd25bb"
+
+  access_scope {
+    type = "cluster"
+  }
+}
+
+##
+# Access Entry for the Github Runner
+##
 resource "aws_eks_access_policy_association" "argocd" {
   cluster_name  = module.eks.cluster_name
   policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
@@ -177,9 +200,6 @@ resource "aws_eks_access_policy_association" "argocd" {
   }
 }
 
-##
-# Access Entry for the Github Runner
-##
 resource "aws_eks_access_entry" "runner" {
   principal_arn = "arn:aws:iam::${data.aws_caller_identity.me.account_id}:role/tf-runner-role"
   cluster_name  = module.eks.cluster_name
@@ -226,18 +246,6 @@ provider "kubernetes" {
     api_version = "client.authentication.k8s.io/v1beta1"
     args        = ["eks", "get-token", "--cluster-name", var.name, "--region", var.region, "--profile", var.profile]
     command     = "aws"
-  }
-}
-
-resource "kubernetes_service_account_v1" "auto-mode-node-role" {
-
-  metadata {
-    name      = "auto-mode-node-role"
-    namespace = "default"
-    annotations = {
-      "eks.amazonaws.com/role-arn"  = module.eks.node_iam_role_arn
-      "eks.amazonaws.com/role-name" = module.eks.node_iam_role_name
-    }
   }
 }
 
