@@ -15,9 +15,9 @@ dependencies {
 }
 
 inputs = {
-  profile = include.root.locals.CODER_AWS_PROFILE
-  region  = include.config.locals.AWS_REGION
-
-  cluster_name = include.root.locals.CODER_CLUSTER_NAME
-  azs          = include.root.locals.CODER_VPC_AZS
+  profile           = include.root.locals.CODER_AWS_PROFILE
+  region            = include.config.locals.AWS_REGION
+  controller_region = include.config.locals.AWS_REGION_CONTROLLER
+  cluster_name      = include.root.locals.CODER_CLUSTER_NAME
+  azs               = include.root.locals.CODER_VPC_AZS
 }
