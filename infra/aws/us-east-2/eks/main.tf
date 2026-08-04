@@ -1,3 +1,5 @@
+# Manual Trigger - 1
+
 provider "aws" {
   region  = var.region
   profile = var.profile
@@ -407,4 +409,8 @@ resource "kubernetes_secret_v1" "argocd-target-cluster-config-eu-west-2" {
 
 output "argocd_server_url" {
   value = module.eks-argocd-capability.argocd_server_url
+}
+
+output "eks_node_iam_role_name" {
+  value = module.eks.node_iam_role_name
 }
