@@ -5,6 +5,23 @@ provider "aws" {
   profile = var.profile
 }
 
+data "aws_vpc" "this" {
+  tags = {
+    Name = var.vpc_name
+  }
+}
+
+data "aws_subnets" "private" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.this.id]
+  }
+
+  tags = {
+    Name = "*${var.private_subnet_suffix}*"
+  }
+}
+
 data "aws_eks_cluster" "this" {
   name = var.cluster_name
 }
@@ -36,6 +53,29 @@ locals {
 
 locals {
   cluster_oidc_provider = trimprefix(data.aws_iam_openid_connect_provider.this.url, "https://")
+  common_labels = {
+    "node.coder.io/instance"   = "coder-v2"
+    "node.coder.io/managed-by" = "karpenter"
+    "node.coder.io/name"       = "coder"
+    "node.coder.io/part-of"    = "coder"
+  }
+  common_node_requirements = [
+    {
+      key      = "kubernetes.io/arch"
+      operator = "In"
+      values   = ["amd64", "arm64"]
+    },
+    {
+      key      = "kubernetes.io/os"
+      operator = "In"
+      values   = ["linux"]
+    },
+    {
+      key      = "karpenter.sh/capacity-type"
+      operator = "In"
+      values   = ["spot", "on-demand"]
+    }
+  ]
 }
 
 module "karpenter" {
@@ -197,6 +237,234 @@ resource "kubernetes_manifest" "karpenter" {
                 interruptionQueue = module.karpenter.queue_name
               }
             }
+            nodeClasses = [
+              {
+                name                   = "platform"
+                apiVersion             = "eks.amazonaws.com/v1"
+                kind                   = "NodeClass"
+                subnetSelectorTerms    = [for subnet_id in data.aws_subnets.private.ids : { id = subnet_id }]
+                sgSelectorTerms        = [{ id = data.aws_eks_cluster.this.vpc_config[0].cluster_security_group_id }]
+                networkPolicy          = "DefaultAllow"
+                networkPolicyEventLogs = "Disabled"
+                snatPolicy             = "Disabled"
+                ephemeralStorage = {
+                  iops       = 3000
+                  size       = "80Gi"
+                  throughput = 125
+                }
+                role = var.cluster_node_iam_role_name
+                tags = {
+                  Name = "platform-node"
+                }
+              },
+              {
+                name                   = "coder-provisioner"
+                apiVersion             = "eks.amazonaws.com/v1"
+                kind                   = "NodeClass"
+                subnetSelectorTerms    = [for subnet_id in data.aws_subnets.private.ids : { id = subnet_id }]
+                sgSelectorTerms        = [{ id = data.aws_eks_cluster.this.vpc_config[0].cluster_security_group_id }]
+                networkPolicy          = "DefaultAllow"
+                networkPolicyEventLogs = "Disabled"
+                snatPolicy             = "Disabled"
+                ephemeralStorage = {
+                  iops       = 3000
+                  size       = "80Gi"
+                  throughput = 125
+                }
+                role = var.cluster_node_iam_role_name
+                tags = {
+                  Name = "coder-provisioner-node"
+                }
+              },
+              {
+                name                = "coder-workspace"
+                apiVersion          = "karpenter.k8s.aws/v1"
+                kind                = "EC2NodeClass"
+                userData            = <<-EOT
+                  MIME-Version: 1.0
+                  Content-Type: multipart/mixed; boundary="//"
+
+                  --//
+                  Content-Type: application/node.eks.aws
+
+                  apiVersion: node.eks.aws/v1alpha1
+                  kind: NodeConfig
+                  spec:
+                    kubelet:
+                      config:
+                        registryPullQPS: 30
+                  --//--
+                EOT
+                subnetSelectorTerms = [for subnet_id in data.aws_subnets.private.ids : { id = subnet_id }]
+                amiSelectorTerms    = [{ alias = "al2023@latest" }]
+                sgSelector          = [{ id = data.aws_eks_cluster.this.vpc_config[0].cluster_security_group_id }]
+                blockDeviceMappings = [{
+                  deviceName = "/dev/xvda"
+                  ebs = {
+                    volumeSize          = "200Gi"
+                    volumeType          = "gp3"
+                    encrypted           = false
+                    deleteOnTermination = true
+                  }
+                }]
+                role = module.karpenter.node_iam_role_name
+                tags = {
+                  Name = "coder-workspace-node"
+                }
+              }
+            ]
+            nodePools = [
+              {
+                name                = "system"
+                consolidationPolicy = "WhenEmptyOrUnderutilized"
+                consolidateAfter    = "72h"
+                budgets             = [{ nodes = "10%" }]
+                labels = merge(local.common_labels, {
+                  "node.coder.io/used-for" = "system"
+                })
+                expireAfter = "480h"
+                taints = [{
+                  key    = "CriticalAddonsOnly"
+                  value  = "true"
+                  effect = "NoSchedule"
+                }]
+                requirements = concat(local.common_node_requirements, [{
+                  key      = "node.kubernetes.io/instance-type"
+                  operator = "In"
+                  values   = ["c6g.large", "c6g.xlarge", "c6g.2xlarge"]
+                }])
+                nodeClassRef = {
+                  group = "eks.amazonaws.com"
+                  kind  = "NodeClass"
+                  name  = "platform"
+                }
+              },
+              {
+                name                = "observability-platform"
+                consolidationPolicy = "WhenEmptyOrUnderutilized"
+                consolidateAfter    = "72h"
+                budgets             = [{ nodes = "10%" }]
+                labels = merge(local.common_labels, {
+                  "node.coder.io/used-for" = "observability-platform"
+                })
+                expireAfter = "480h"
+                taints = [{
+                  key    = "platform"
+                  value  = "observability-platform"
+                  effect = "NoSchedule"
+                }]
+                requirements = concat(local.common_node_requirements, [{
+                  key      = "node.kubernetes.io/instance-type"
+                  operator = "In"
+                  values   = ["c6g.large", "c6g.xlarge"]
+                }])
+                nodeClassRef = {
+                  group = "eks.amazonaws.com"
+                  kind  = "NodeClass"
+                  name  = "platform"
+                }
+              },
+              {
+                name                = "coder-server"
+                consolidationPolicy = "WhenEmptyOrUnderutilized"
+                consolidateAfter    = "8h"
+                budgets             = [{ nodes = "10%" }]
+                labels = merge(local.common_labels, {
+                  "node.coder.io/used-for" = "coder-server"
+                })
+                expireAfter = "480h"
+                taints = [{
+                  key    = "platform"
+                  value  = "coder-server"
+                  effect = "NoSchedule"
+                }]
+                requirements = concat(local.common_node_requirements, [{
+                  key      = "node.kubernetes.io/instance-type"
+                  operator = "In"
+                  values   = ["c6g.xlarge", "c6g.2xlarge", "c6g.4xlarge"]
+                }])
+                nodeClassRef = {
+                  group = "eks.amazonaws.com"
+                  kind  = "NodeClass"
+                  name  = "platform"
+                }
+              },
+              {
+                name                = "coder-provisioner"
+                consolidationPolicy = "WhenEmptyOrUnderutilized"
+                consolidateAfter    = "8h"
+                budgets             = [{ nodes = "100%" }]
+                labels = merge(local.common_labels, {
+                  "node.coder.io/used-for" = "coder-provisioner"
+                })
+                expireAfter = "8h"
+                taints = [{
+                  key    = "coder"
+                  value  = "provisioner"
+                  effect = "NoSchedule"
+                }]
+                requirements = concat(local.common_node_requirements, [{
+                  key      = "node.kubernetes.io/instance-type"
+                  operator = "In"
+                  values   = ["c6g.large", "c6g.xlarge", "c6g.2xlarge", "c6g.4xlarge"]
+                }])
+                nodeClassRef = {
+                  group = "eks.amazonaws.com"
+                  kind  = "NodeClass"
+                  name  = "platform"
+                }
+              },
+              {
+                name                = "coder-workspace"
+                consolidationPolicy = "WhenEmptyOrUnderutilized"
+                consolidateAfter    = "4h"
+                budgets             = [{ nodes = "100%" }]
+                labels = {
+                  "node.coder.io/instance"   = "coder-v2"
+                  "node.coder.io/managed-by" = "karpenter"
+                  "node.coder.io/name"       = "coder"
+                  "node.coder.io/part-of"    = "coder"
+                  "node.coder.io/used-for"   = "coder-workspace"
+                }
+                expireAfter = "Never"
+                taints      = []
+                requirements = concat(local.common_node_requirements, [{
+                  key      = "node.kubernetes.io/instance-type"
+                  operator = "In"
+                  values   = ["c6a.4xlarge", "c6a.8xlarge"]
+                }])
+                nodeClassRef = {
+                  group = "karpenter.k8s.aws"
+                  kind  = "EC2NodeClass"
+                  name  = "coder-workspace"
+                }
+              },
+              {
+                name                = "coder-workspace-static"
+                consolidationPolicy = "WhenEmptyOrUnderutilized"
+                consolidateAfter    = "0s"
+                budgets             = [{ nodes = "100%" }]
+                replicas            = 2
+                limits = {
+                  nodes = 100
+                }
+                labels = merge(local.common_labels, {
+                  "node.coder.io/used-for" = "coder-workspace-static"
+                })
+                expireAfter = "Never"
+                taints      = []
+                requirements = concat(local.common_node_requirements, [{
+                  key      = "node.kubernetes.io/instance-type"
+                  operator = "In"
+                  values   = ["c6a.4xlarge", "c6a.8xlarge"]
+                }])
+                nodeClassRef = {
+                  group = "karpenter.k8s.aws"
+                  kind  = "EC2NodeClass"
+                  name  = "coder-workspace"
+                }
+              }
+            ]
           })
         }
       }
