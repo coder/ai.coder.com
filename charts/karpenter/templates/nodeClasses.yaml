@@ -14,7 +14,7 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
-  role: {{ .roleArn }}
+  role: {{ .roleName }}
   {{- with .tags }}
   tags:
     {{- toYaml . | nindent 4 }}

@@ -252,7 +252,7 @@ resource "kubernetes_manifest" "karpenter" {
                   size       = "80Gi"
                   throughput = 125
                 }
-                role = var.cluster_node_iam_role_name
+                roleName = var.cluster_node_iam_role_name
                 tags = {
                   Name = "platform-node"
                 }
@@ -271,7 +271,7 @@ resource "kubernetes_manifest" "karpenter" {
                   size       = "80Gi"
                   throughput = 125
                 }
-                role = var.cluster_node_iam_role_name
+                roleName = var.cluster_node_iam_role_name
                 tags = {
                   Name = "coder-provisioner-node"
                 }
@@ -307,7 +307,7 @@ resource "kubernetes_manifest" "karpenter" {
                     deleteOnTermination = true
                   }
                 }]
-                role = module.karpenter.node_iam_role_name
+                roleName = module.karpenter.node_iam_role_name
                 tags = {
                   Name = "coder-workspace-node"
                 }
