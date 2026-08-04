@@ -344,17 +344,6 @@ resource "kubernetes_manifest" "coder-provisioner" {
   }
 }
 
-resource "kubernetes_secret_v1" "coder-provisioner-key" {
-  for_each = local.coder-ws
-  metadata {
-    name      = "coder-provisioner-key"
-    namespace = each.value.namespace
-  }
-  data = {
-    key = sensitive(module.coder-provisioner[each.key].provisioner_key_secret)
-  }
-}
-
 resource "kubernetes_manifest" "coder-logstream-kube" {
 
   depends_on = [kubernetes_manifest.coder-provisioner]
