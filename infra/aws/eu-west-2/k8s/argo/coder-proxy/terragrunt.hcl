@@ -13,7 +13,6 @@ dependencies {
     "../../../eks",
     "../lb-controller",
     "../cert-manager",
-    "../../other",
     "../../../../us-east-2/k8s/argo/coder-server"
   ]
 }

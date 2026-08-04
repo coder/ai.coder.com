@@ -13,7 +13,6 @@ dependencies {
     "../../../eks",
     "../coder-server",
     "../kyverno",
-    "../../other" # Deploy's auxillary manifests
   ]
 }
 
