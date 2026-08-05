@@ -104,7 +104,7 @@ locals {
       namespace = "coder-ws-demo"
     }
   }
-  coder = { for k in keys(locals.coder-ws) : k => {
+  coder = { for k in keys(local.coder-ws) : k => {
     CODER_URL                            = var.coder_access_url
     CODER_PROMETHEUS_ENABLE              = "true"
     CODER_PROMETHEUS_COLLECT_AGENT_STATS = "true"
