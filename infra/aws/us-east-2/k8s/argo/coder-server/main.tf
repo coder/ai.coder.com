@@ -119,6 +119,8 @@ locals {
     CODER_QUIET_HOURS_DEFAULT_SCHEDULE      = "CRON_TZ=America/Los_Angeles 50 23 * * *"
     CODER_ALLOW_CUSTOM_QUIET_HOURS          = "false"
     CODER_EXPERIMENTS                       = join(",", [])
+    CODER_MAX_TOKEN_LIFETIME                = "876600h0m0s"
+    CODER_MAX_ADMIN_TOKEN_LIFETIME          = "8766h0m0s" # 1 year
 
     CODER_PROMETHEUS_ENABLE              = "true"
     CODER_PROMETHEUS_COLLECT_AGENT_STATS = "true"
