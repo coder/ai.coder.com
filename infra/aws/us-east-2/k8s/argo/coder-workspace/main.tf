@@ -31,15 +31,9 @@ provider "coderd" {
 }
 
 locals {
-  release_name = "coder"
-  chart_name   = "coder-provisioner"
-  namespace    = "coder"
-  coder = {
-    CODER_URL                            = var.coder_access_url
-    CODER_PROMETHEUS_ENABLE              = "true"
-    CODER_PROMETHEUS_COLLECT_AGENT_STATS = "true"
-    CODER_PROMETHEUS_COLLECT_DB_METRICS  = "true"
-  }
+  release_name    = "coder"
+  chart_name      = "coder-provisioner"
+  namespace       = "coder"
   node_selector   = {}
   topology_spread = []
   tolerations = [{
@@ -110,6 +104,13 @@ locals {
       namespace = "coder-ws-demo"
     }
   }
+  coder = { for k in keys(local.coder-ws) : k => {
+    CODER_URL                            = var.coder_access_url
+    CODER_PROMETHEUS_ENABLE              = "true"
+    CODER_PROMETHEUS_COLLECT_AGENT_STATS = "true"
+    CODER_PROMETHEUS_COLLECT_DB_METRICS  = "true"
+    TF_VAR_namespace                     = k
+  } }
 }
 
 data "coderd_organization" "coder" {
@@ -251,13 +252,13 @@ resource "kubernetes_manifest" "coder-provisioner" {
                 "prometheus.io/scrape" = "true"
                 "prometheus.io/port"   = "2112"
                 "checksum/config" = sha256(join(",", [
-                  jsonencode(local.coder),
+                  jsonencode(local.coder[each.key]),
                   jsonencode(sensitive(module.coder-provisioner[each.key].provisioner_key_secret)),
                   jsonencode(module.oidc-role.role_arn)
                 ]))
               }
               env = [
-                for k, v in local.coder : { name = k, value = v }
+                for k, v in local.coder[each.key] : { name = k, value = v }
               ]
               volumeClaimTemplates = [{
                 metadata = {
